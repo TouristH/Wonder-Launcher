@@ -6,7 +6,7 @@
 
 - 申请应用显示名：**Wonder Launcher**。中文短名：奇想启动器。
 - 开发者：[TouristH](https://github.com/TouristH)。联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
-- 源码仓库计划地址：[TouristH/Wonder-Launcher](https://github.com/TouristH/Wonder-Launcher)。
+- 公开源码仓库：[TouristH/Wonder-Launcher](https://github.com/TouristH/Wonder-Launcher)。
 - 当前版本：0.5.1。Windows x64 桌面程序，使用 .NET 10 与 Avalonia。
 - 许可：[GPL-3.0-only](../LICENSE) 及适用的[第 7 条附加条款](../ADDITIONAL_TERMS.md)，[品牌政策](../BRANDING.md)单独说明来源与商标边界。第三方依赖另行声明，不将代码开源等同于服务访问授权。
 - Application (Client) ID / Directory (Tenant) ID：本次发布未提供可核验的注册信息；实际申请时由维护者填写真实注册值。

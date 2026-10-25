@@ -1,0 +1,27 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only; additional terms: see ADDITIONAL_TERMS.md in the repository root. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>0.5.1</Version>
+    <AssemblyName>Wonder.Desktop</AssemblyName>
+    <RootNamespace>Wonder.Desktop</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Wonder.Desktop.Tests" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <ProjectReference Include="../Wonder.Workspace/Wonder.Workspace.csproj" />
+    <ProjectReference Include="../Wonder.Extensibility.Contracts/Wonder.Extensibility.Contracts.csproj" />
+    <ProjectReference Include="../Wonder.Application/Wonder.Application.csproj" />
+    <ProjectReference Include="../Wonder.Infrastructure/Wonder.Infrastructure.csproj" />
+  </ItemGroup>
+  <Target Name="ExcludePackageDebugSymbols" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+</Project>

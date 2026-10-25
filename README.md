@@ -1,0 +1,77 @@
+# 奇想启动器 · Wonder Launcher
+
+面向 Minecraft Java Edition 的桌面式启动器：自由组合功能区和组件，让实例管理、启动与日常工具融入用户自己的工作区。
+
+**当前版本：0.5.1 开发预览。** 项目原创代码按 **[GNU GPLv3（仅第 3 版）](LICENSE)** 开源，并适用第 7 条允许的[署名、修改标识与商标附加条款](ADDITIONAL_TERMS.md)。分发修改版须保留相应的源码开放义务；Wonder 品牌使用另见[品牌政策](BRANDING.md)。
+
+> NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.
+>
+> 本项目不是 Minecraft 官方产品，未获 Mojang 或 Microsoft 认可，亦与其无关联。Minecraft 相关商标和游戏内容属于各自权利人。
+
+维护者：[TouristH](https://github.com/TouristH) · 项目联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)
+
+[使用说明](Wonder.md) · [开发文档](Guides/README.md) · [隐私说明](PRIVACY.md) · [Minecraft AppID 审核说明](Guides/24-minecraft-app-review.md) · [第三方声明](THIRD-PARTY-NOTICES.md)
+
+## 已实现的功能
+
+- 桌面式工作区：功能区拖动换位、分隔边调整、四边侧栏和布局保存。
+- 通用组件与组件库：应用状态和快捷方式位置分开，支持便笺、设置和启动器状态。
+- 实例管理：读取已有游戏目录，切换列表/网格、选择实例、编辑启动设置及目录操作。
+- 独立启动组件与任务状态：当前仅支持已有本地实例的离线启动，关闭状态窗口不结束后台任务。
+- Windows x64 自包含单文件分发；设置、布局和实例登记保存在程序旁的 `WonderData/`。
+
+游戏安装/修复、微软账号登录、Minecraft 所有权校验、第三方代码插件加载及权限沙箱仍待实现。没有将 `AssemblyLoadContext` 或普通子进程描述为安全沙箱。
+
+## Minecraft Services / AppID 审核信息
+
+申请使用的应用显示名为 **Wonder Launcher**，不在注册应用名中加入 Minecraft、Mojang、Microsoft、Live、Xbox、Discord 或 Hypixel。Minecraft 只用于说明兼容的游戏。
+
+| 项目 | 当前状态 |
+| --- | --- |
+| 应用用途 | 可自定义桌面式启动器、本地实例与启动设置管理 |
+| 平台与技术 | Windows x64，.NET 10，Avalonia；核心与组件契约分层 |
+| 申请目标 | 计划通过用户主动发起的官方登录，验证游戏所有权并获取本人游戏资料和启动会话 |
+| Application / Client ID、Tenant ID | 本次发布未提供已配置且可核验的注册信息；不得把占位 ID 当成可用凭据 |
+| 微软登录、Xbox/XSTS、Minecraft API | **尚未实现**，没有冒用其他启动器的 Client ID |
+| 所有权与启动门禁 | **尚未实现**；当前离线启动路径不符合现行 AppID 审核要求，须修正后再申请 |
+| 审核状态 | **未声明提交或通过审核**；此 README 不能替代实际认证和所有权校验 |
+
+官方 [AppID Review 表单](https://aka.ms/mce-reviewappid) 要求在允许游戏前完成身份认证和所有权验证，且不因服务器配置不同而豁免。本项目会如实保留当前实现和待办，不将离线用户名或本地游戏文件的存在当作正版所有权证明。完整的计划、代码入口与提交前条件见[审核说明](Guides/24-minecraft-app-review.md)。
+
+当前版本不收集微软密码，不实现账号令牌导入或云端账号服务，不随源码分发 Minecraft 客户端、资产、Java 或用户存档。使用者应合法拥有并取得所使用的游戏内容；当前程序本身尚不能验证这一点。
+
+## For Minecraft application reviewers
+
+Wonder Launcher is an independent, Windows desktop launcher and local instance manager maintained by TouristH. Contact: **radiafidw@gmail.com**.
+
+Version 0.5.1 currently implements local instance discovery and offline launch only. Microsoft sign-in, Xbox/XSTS authentication, Minecraft Services access, and ownership checks are **not implemented**. The current offline launch path does **not** satisfy the authentication and ownership requirements in the AppID review form. We are not claiming approval or asking reviewers to treat these planned controls as implemented.
+
+The intended integration will use the project's own registered application, user-initiated Microsoft authentication, ownership verification, and an authenticated launch gate. No Microsoft passwords, another launcher's Client ID, game binaries, or account tokens are included in this repository. See the [review notes](Guides/24-minecraft-app-review.md) and [privacy statement](PRIVACY.md) for current behavior, source references, and remaining work.
+
+## 从源码构建
+
+需要 .NET 10 SDK。在本目录执行：
+
+```powershell
+dotnet build Wonder.slnx -c Release
+dotnet test Wonder.slnx -c Release
+dotnet publish src/Wonder.Desktop/Wonder.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o artifacts/Wonder-win-x64
+```
+
+发布程序为 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`，设置和布局位于同目录的 `WonderData/`。更新程序时保留此数据目录。`artifacts/`、游戏文件、用户数据和编译缓存不提交到源码仓库。编译产物需连同适用的许可及第三方声明按协议分发。
+
+最近一次本地验证：Release 构建 0 警告、0 错误；592 项测试通过，0 失败、0 跳过。该结果不代表已完成账号认证、线上游戏服务或所有系统/DPI 的验收。
+
+## 许可与转载
+
+原创代码与原创文档采用 **GPL-3.0-only**，并附有 [GPLv3 第 7 条附加条款](ADDITIONAL_TERMS.md)。[中文许可说明](LICENSE.zh-CN.md)解释适用范围，完整英文协议以 [LICENSE](LICENSE) 为准。
+
+- **允许使用、研究、修改、分发及商业使用**，无需为 GPL 已授予的权利另行申请作者批准。
+- **分发基于本项目的修改版时，须按 GPLv3 授权受覆盖的整个作品，并向接收者提供相应源码**；分发 EXE 也须按第 6 条提供对应版本源码及必要构建材料。仅公开旧版本、删去实际修改或只给一个无法构建的片段均不能替代相应源码。
+- 保留适用的版权、许可、无担保及合理署名声明；明确标注修改和日期，并让第三方修改版与官方版本明显区分。
+- **源码许可不授予商标使用权**。可以如实说明“基于 Wonder Launcher”，但不得冒充官方、暗示官方背书或把修改版包装成未修改的官方版本。名称、命名空间和署名的具体边界见 [BRANDING.md](BRANDING.md)。
+- 第三方库、运行时、游戏内容与商标保留各自权利。项目许可不改变它们的独立许可，详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+GPL 不要求公开没有向他人分发的私人修改，也不要求把修改提交给原作者。公开 Fork 和回馈上游是欢迎的社区实践。独立作品的简单聚合不会仅因放在同一个发行包中就自动改用 GPL；具体范围以协议为准。
+
+欢迎通过 [Issues](https://github.com/TouristH/Wonder-Launcher/issues) 和 Pull Request 参与，贡献规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请发至联系邮箱，避免公开令牌、个人数据或游戏路径。

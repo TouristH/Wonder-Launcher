@@ -1,0 +1,27 @@
+# Build and publication outputs
+**/bin/
+**/obj/
+/artifacts/
+**/TestResults/
+**/WonderData/
+**/node_modules/
+
+# User data and local environments
+.vs/
+.vscode/
+.idea/
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+*.log
+*.tmp
+*.bak
+*.trx
+*.pfx
+*.p12
+*.key
+*.pem
+Thumbs.db
+.DS_Store

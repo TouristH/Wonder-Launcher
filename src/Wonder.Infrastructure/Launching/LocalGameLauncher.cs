@@ -16,7 +16,10 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
 {
     public async Task<LaunchPlan> BuildPlanAsync(LaunchRequest request, CancellationToken ct = default)
     {
-        request.Instance.Validate(); InstanceCatalog.ValidateOfflineUsername(request.OfflineUsername);
+        request.Instance.Validate();
+        var session = request.Session ?? CreateOfflineSession(request.OfflineUsername);
+        AccountLaunchSecurity.ValidateSession(session);
+        request = request with { Session = session };
         var instance = request.Instance;
         var settings = instance.EffectiveSettings;
         var executable = settings.JavaPath ?? FindJava(instance.RootDirectory);
@@ -27,7 +30,12 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
     private static LaunchPlan Build(LaunchRequest request, JavaRuntime java, CancellationToken ct)
     {
         var instance = request.Instance; var settings = instance.EffectiveSettings;
+        var session = request.Session!;
+        var userType = session.Kind switch { AccountKind.Microsoft => "msa", AccountKind.Yggdrasil => "mojang", _ => "legacy" };
+        var authSession = session.Kind == AccountKind.Offline ? "0" : "token:" + session.AccessToken + ":" + session.Uuid;
         var notices = new List<string>();
+        if (session.Kind == AccountKind.Offline && session.OfflineSkinId is { } skinId)
+            notices.Add("离线默认皮肤：" + OfflineDefaultSkins.Get(skinId).Name + "。" + OfflineDefaultSkins.Get(skinId).Description + "服务器或皮肤模组可能覆盖客户端默认外观。");
         var prism = instance.Source is InstanceSource.Prism or InstanceSource.MultiMc;
         var documents = new List<JsonElement>(); var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void ReadVersion(string path)
@@ -118,11 +126,12 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var assets = ValidateAssets(instance.AssetsDirectory, assetId, ct);
         var variables = new Dictionary<string, string>
         {
-            ["auth_player_name"] = request.OfflineUsername, ["auth_uuid"] = OfflineUuid(request.OfflineUsername),
-            ["auth_access_token"] = "0", ["auth_session"] = "0", ["user_type"] = "legacy", ["user_properties"] = "{}", ["clientid"] = "", ["auth_xuid"] = "",
+            ["auth_player_name"] = session.Username, ["auth_uuid"] = session.Uuid,
+            ["auth_access_token"] = session.AccessToken, ["auth_session"] = authSession, ["user_type"] = userType,
+            ["user_properties"] = "{}", ["clientid"] = session.ClientId, ["auth_xuid"] = session.Xuid,
             ["version_name"] = instance.VersionId, ["version_type"] = "release", ["game_directory"] = settings.GameDirectory!,
             ["assets_root"] = instance.AssetsDirectory, ["assets_index_name"] = assetId ?? "", ["game_assets"] = assets,
-            ["natives_directory"] = natives, ["launcher_name"] = "Wonder", ["launcher_version"] = "0.5.1", ["classpath"] = string.Join(Path.PathSeparator, classPath.Distinct(StringComparer.OrdinalIgnoreCase)),
+            ["natives_directory"] = natives, ["launcher_name"] = "Wonder", ["launcher_version"] = "0.7.2", ["classpath"] = string.Join(Path.PathSeparator, classPath.Distinct(StringComparer.OrdinalIgnoreCase)),
             ["classpath_separator"] = Path.PathSeparator.ToString(), ["library_directory"] = instance.LibraryDirectory,
             ["resolution_width"] = settings.WindowWidth!.Value.ToString(), ["resolution_height"] = settings.WindowHeight!.Value.ToString()
         };
@@ -139,12 +148,20 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         jvm.RemoveAll(x => outputEncodings.Any(key => x.StartsWith("-D" + key + "=", StringComparison.Ordinal)));
         jvm.AddRange(outputEncodings.Select(key => "-D" + key + "=UTF-8"));
         if (LoggingConfiguration.Argument(logging, instance.AssetsDirectory, request.CacheDirectory, notices) is { } logArgument) jvm.Add(logArgument);
+        // Validate every metadata/user-controlled JVM argument, including the optional logging descriptor.
+        AccountLaunchSecurity.ValidateJvmArguments(jvm, session.Kind);
+        if (session.Kind == AccountKind.Yggdrasil)
+        {
+            AccountLaunchSecurity.VerifyAgent(session.AuthlibInjectorPath, session.AuthlibInjectorSha256);
+            jvm.Add("-javaagent:" + session.AuthlibInjectorPath + "=" + session.ServerUrl);
+        }
         if (game.Count == 0) game.AddRange(["--username", "${auth_player_name}", "--version", "${version_name}", "--gameDir", "${game_directory}", "--assetsDir", "${assets_root}", "--assetIndex", "${assets_index_name}", "--uuid", "${auth_uuid}", "--accessToken", "0", "--userType", "legacy"]);
         game = game.Select(x => LaunchArguments.Expand(x, variables)).ToList();
-        foreach (var (option, value) in new[] { ("--username", request.OfflineUsername), ("--uuid", variables["auth_uuid"]), ("--accessToken", "0"), ("--userType", "legacy"), ("--gameDir", settings.GameDirectory!) })
+        foreach (var (option, value) in new[] { ("--username", session.Username), ("--uuid", session.Uuid), ("--accessToken", session.AccessToken), ("--userType", userType), ("--gameDir", settings.GameDirectory!) })
         { RemoveOption(game, option, true); game.AddRange([option, value]); }
-        foreach (var (option, value) in new[] { ("--session", "0"), ("--clientId", ""), ("--xuid", ""), ("--userProperties", "{}") })
-            if (game.Any(x => x == option || x.StartsWith(option + "=", StringComparison.Ordinal))) { RemoveOption(game, option, true); game.AddRange([option, value]); }
+        foreach (var (option, value) in new[] { ("--session", authSession), ("--clientId", session.ClientId), ("--xuid", session.Xuid), ("--userProperties", "{}") })
+            if (game.Any(x => x.Equals(option, StringComparison.OrdinalIgnoreCase) || x.StartsWith(option + "=", StringComparison.OrdinalIgnoreCase)))
+            { RemoveOption(game, option, true); game.AddRange([option, value]); }
         foreach (var tweaker in tweakers) game.AddRange(["--tweakClass", tweaker]);
         foreach (var option in new[] { "--width", "--height", "--fullscreen" }) RemoveOption(game, option, option != "--fullscreen");
         game.AddRange(["--width", settings.WindowWidth!.Value.ToString(), "--height", settings.WindowHeight!.Value.ToString()]);
@@ -152,17 +169,19 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var extraGame = LaunchArguments.Split(settings.GameArguments);
         var reserved = new[] { "--username", "--uuid", "--accessToken", "--session", "--userType", "--userProperties", "--clientId", "--xuid", "--gameDir", "--width", "--height", "--fullscreen" };
         if (extraGame.Any(x => reserved.Any(key => x.Equals(key, StringComparison.OrdinalIgnoreCase) || x.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase))))
-            throw new InvalidDataException("额外游戏参数不能覆盖离线身份、游戏目录或窗口设置；请使用对应设置项。");
+            throw new InvalidDataException("额外游戏参数不能覆盖账户身份、游戏目录或窗口设置；请使用对应设置项。");
         game.AddRange(extraGame);
         ct.ThrowIfCancellationRequested();
-        return new(java.Executable, settings.GameDirectory!, jvm.Concat([main]).Concat(game), instance.Id, notices);
+        return new(java.Executable, settings.GameDirectory!, jvm.Concat([main]).Concat(game), instance.Id, notices,
+            session.Kind == AccountKind.Offline ? [] : [session.AccessToken], session.Kind != AccountKind.Offline,
+            session.AuthlibInjectorPath, session.AuthlibInjectorSha256);
     }
 
     private static void RemoveOption(List<string> args, string option, bool value)
     {
         for (var index = args.Count - 1; index >= 0; index--)
-            if (args[index] == option) { if (value && index + 1 < args.Count) args.RemoveAt(index + 1); args.RemoveAt(index); }
-            else if (args[index].StartsWith(option + "=", StringComparison.Ordinal)) args.RemoveAt(index);
+            if (args[index].Equals(option, StringComparison.OrdinalIgnoreCase)) { if (value && index + 1 < args.Count && !args[index + 1].StartsWith("--", StringComparison.Ordinal)) args.RemoveAt(index + 1); args.RemoveAt(index); }
+            else if (args[index].StartsWith(option + "=", StringComparison.OrdinalIgnoreCase)) args.RemoveAt(index);
     }
     private static string LibraryPath(GameInstance instance, JsonElement lib, string name)
     {
@@ -218,26 +237,37 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         bytes[6] = (byte)((bytes[6] & 0x0f) | 0x30); bytes[8] = (byte)((bytes[8] & 0x3f) | 0x80);
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+    private static GameSession CreateOfflineSession(string username)
+    {
+        InstanceCatalog.ValidateOfflineUsername(username);
+        return new(AccountKind.Offline, username, OfflineUuid(username), "0");
+    }
     public async Task<int> RunAsync(LaunchPlan plan, Action started, Action<string> output, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested(); Directory.CreateDirectory(plan.WorkingDirectory);
+        if (plan.AuthlibInjectorPath is not null) AccountLaunchSecurity.VerifyAgent(plan.AuthlibInjectorPath, plan.AuthlibInjectorSha256);
         using var process = new Process { StartInfo = JavaRuntime.StartInfo(plan.JavaPath, plan.WorkingDirectory, plan.Arguments) };
+        if (plan.HasAuthenticatedAccount)
+            foreach (var key in new[] { "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH" }) process.StartInfo.Environment.Remove(key);
         process.Start(); started();
         // Once running, view cancellation must not terminate the game or stop draining its pipes.
-        var stdout = Pump(process.StandardOutput, output); var stderr = Pump(process.StandardError, line => output("[stderr] " + line));
+        var stdout = Pump(process.StandardOutput, line => output(plan.RedactOutput(line)));
+        var stderr = Pump(process.StandardError, line => output("[stderr] " + plan.RedactOutput(line)));
         await process.WaitForExitAsync().ConfigureAwait(false); await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
         return process.ExitCode;
     }
     private static async Task Pump(StreamReader reader, Action<string> output)
     {
-        var buffer = new char[2048]; var line = new StringBuilder(); int count;
+        var buffer = new char[2048]; var line = new StringBuilder(); int count; var overflow = false;
         while ((count = await reader.ReadAsync(buffer).ConfigureAwait(false)) > 0)
             for (var i = 0; i < count; i++)
             {
                 var c = buffer[i];
-                if (c == '\n') { output(line.ToString().TrimEnd('\r')); line.Clear(); }
-                else if (line.Length < 2048) line.Append(c);
+                if (c == '\n') { output(overflow ? "[超长日志已隐藏]" : line.ToString().TrimEnd('\r')); line.Clear(); overflow = false; }
+                else if (line.Length < 65536 && !overflow) line.Append(c);
+                else { line.Clear(); overflow = true; }
             }
-        if (line.Length > 0) output(line.ToString());
+        if (overflow) output("[超长日志已隐藏]");
+        else if (line.Length > 0) output(line.ToString());
     }
 }

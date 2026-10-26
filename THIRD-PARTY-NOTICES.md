@@ -2,7 +2,7 @@
 
 本项目的 GPLv3 及适用附加条款仅适用于有权按该许可授权的项目内容，**不改变第三方组件的独立许可**。不能把下列 MIT、BSD、Apache 等许可的依赖、原始通知或第三方商标统一改标为本项目版权或品牌限制。组成受 GPL 覆盖的发行物时仍须满足各组件与 GPL 的适用要求。
 
-源码通过 NuGet 引用依赖，没有在本仓库提交依赖二进制、Minecraft 文件或用户数据。以下记录基于 0.5.1 当前依赖元数据，升级包或发布自包含程序时须重新核对实际分发内容。
+源码通过 NuGet 引用依赖，没有在本仓库提交依赖二进制、Minecraft 文件或用户数据。以下记录基于 0.7.0 当前依赖元数据及运行时可选下载，升级包或发布自包含程序时须重新核对实际分发内容。
 
 ## 运行与构建依赖
 
@@ -15,6 +15,14 @@
 | [MicroCom](https://github.com/AvaloniaUI/MicroCom) Runtime | 0.11.6 | MIT |
 | [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | 0.94.1 | MIT |
 | [.NET runtime](https://github.com/dotnet/runtime) | 当前本地自包含发布使用 10.0.13 | MIT 及其第三方声明；系统安装的 SDK 不属于本项目原创代码 |
+
+## 第三方认证运行时组件
+
+自定义 Yggdrasil 游戏启动按需从官方端点下载 [authlib-injector 1.2.8](https://github.com/yushijinhun/authlib-injector/tree/v1.2.8)（build 56），不会把它加入微软正版启动，也不在源码仓库或本次 EXE 中打包其 JAR。版权及作者信息属于上游权利人。
+
+该组件采用 **AGPL-3.0-or-later，附带 AUTHLIB-INJECTOR 例外**，不是 Wonder 的 GPL-3.0-only 加附加条款。[上游许可说明](https://github.com/yushijinhun/authlib-injector/blob/v1.2.8/COPYING.md)和[完整原文及例外](ThirdPartyLicenses/authlib-injector/1.2.8/AGPLv3-with-authlib-injector-exception.txt)均保留。例外覆盖原样二进制打包、通过其进程间接口交互和 Java Agent 加载的相应行为；若另行修改或重新分发该组件，仍须满足其原始许可要求。固定下载来源、校验值及许可原文来源见[组件来源记录](ThirdPartyLicenses/authlib-injector/1.2.8/SOURCE.md)。
+
+账户管理功能组织参考 HMCL，Minecraft 认证和外观接口互操作参考 Prism Launcher 的公开实现；Wonder 的相关代码独立编写，没有复制这些项目的代码、图标或默认皮肤资源。链接见[账户中心说明](Guides/26-account-management.md#架构与协议依据)。
 
 ## 测试依赖
 

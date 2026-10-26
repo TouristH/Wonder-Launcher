@@ -1,6 +1,6 @@
 # Wonder Launcher 开发文档
 
-当前可运行版本为 **0.5.1**，解决方案为 `Wonder.slnx`。完整操作说明见 [Wonder.md](../Wonder.md)。
+当前可运行版本为 **0.7.2**，解决方案为 `Wonder.slnx`。完整操作说明见 [Wonder.md](../Wonder.md)。
 
 ## 产品与架构
 
@@ -15,6 +15,13 @@
 
 ## 当前实现
 
+- [双层皮肤、已选披风与账户头像](30-layered-skins-capes-and-avatars.md)
+- [双层皮肤实施记录](29-layered-account-appearance-plan.md)
+- [登录诊断、离线默认皮肤与第三方选肤](28-login-diagnostics-and-default-skins.md)
+- [账户中心、登录与角色外观](26-account-management.md)
+- [账户中心完善计划](27-account-center-plan.md)
+- [账户管理设计与实施计划](25-account-management-plan.md)
+
 - [交互 UI 基础](13-wonder-ui-foundation.md)
 - [设置组件](14-settings-component.md)
 - [便携数据与动效](15-portable-data-and-motion.md)
@@ -26,4 +33,4 @@
 - [分类设置与实例卡片](21-settings-pages-and-instance-cards.md)
 - [实例选择与目录操作](22-instance-selection-and-directory-actions.md)
 
-历史版本的测试数字和截图路径仅记录当时验证，不代表当前运行结果；本次本地整理的验证以 23 号文档和当前生成的报告为准。
+历史版本的测试数字和截图路径仅记录当时验证，不代表当前运行结果；当前账户中心的验证记录见 26 号文档与本次生成的报告。

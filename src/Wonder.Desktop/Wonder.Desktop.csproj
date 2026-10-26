@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.5.1</Version>
+    <Version>0.7.2</Version>
     <AssemblyName>Wonder.Desktop</AssemblyName>
     <RootNamespace>Wonder.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>

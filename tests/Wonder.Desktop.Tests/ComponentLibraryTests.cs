@@ -25,8 +25,10 @@ public sealed class ComponentLibraryTests
         desktop.OpenLibrary();
         Assert.DoesNotContain(desktop.Library.GetVisualDescendants().OfType<Button>(),
             button => AutomationProperties.GetName(button)?.StartsWith("添加", StringComparison.Ordinal) == true);
-        Assert.Empty(desktop.Library.GetVisualDescendants().OfType<ComboBox>());
-        Assert.Equal(5, desktop.Library.GetVisualDescendants().OfType<ComponentView>().Count());
+        // Components may have their own inputs; the library still has no destination-area picker.
+        Assert.All(desktop.Library.GetVisualDescendants().OfType<ComboBox>(), box =>
+            Assert.Equal("切换游戏账户", AutomationProperties.GetName(box)));
+        Assert.Equal(6, desktop.Library.GetVisualDescendants().OfType<ComponentView>().Count());
     }
 
     [AvaloniaFact]

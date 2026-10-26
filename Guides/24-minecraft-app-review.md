@@ -7,9 +7,9 @@
 - 申请应用显示名：**Wonder Launcher**。中文短名：奇想启动器。
 - 开发者：[TouristH](https://github.com/TouristH)。联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
 - 公开源码仓库：[TouristH/Wonder-Launcher](https://github.com/TouristH/Wonder-Launcher)。
-- 当前版本：0.5.1。Windows x64 桌面程序，使用 .NET 10 与 Avalonia。
+- 当前版本：0.7.2。Windows x64 桌面程序，使用 .NET 10 与 Avalonia。
 - 许可：[GPL-3.0-only](../LICENSE) 及适用的[第 7 条附加条款](../ADDITIONAL_TERMS.md)，[品牌政策](../BRANDING.md)单独说明来源与商标边界。第三方依赖另行声明，不将代码开源等同于服务访问授权。
-- Application (Client) ID / Directory (Tenant) ID：本次发布未提供可核验的注册信息；实际申请时由维护者填写真实注册值。
+- Application (Client) ID：维护者提供 `fab70daf-af0d-423d-9468-6b42edce3c81`；Directory (Tenant) ID、注册配置和 Minecraft API 访问授权仍需维护者核实。公开 ID 不是授权成功的证据。
 
 ## 已核对的官方要求
 
@@ -26,25 +26,25 @@
 | 行为 | 事实与代码 |
 | --- | --- |
 | 本地实例发现 | [InstanceDiscovery.cs](../src/Wonder.Infrastructure/Instances/InstanceDiscovery.cs) 读取启动元数据，不导入账号登录状态 |
-| 本地离线启动 | [LocalGameLauncher.cs](../src/Wonder.Infrastructure/Launching/LocalGameLauncher.cs) 使用离线用户名/UUID、占位 token/session 和空 Client ID/XUID；不是有效线上认证 |
-| 启动入口 | [InstanceService.cs](../src/Wonder.Application/InstanceService.cs) 与桌面启动组件；下方提交条件中的门禁尚待实现 |
+| 本地离线启动 | [LocalGameLauncher.cs](../src/Wonder.Infrastructure/Launching/LocalGameLauncher.cs) 保留显式离线账户方式；不是线上认证或所有权证明 |
+| 启动入口 | [InstanceService.cs](../src/Wonder.Application/InstanceService.cs) 从 AccountService 获取选中账户会话，正版与第三方失败不会自动降级 |
 | 账号数据排除测试 | [InstanceDiscoveryTests.cs](../tests/Wonder.Game.Tests/InstanceDiscoveryTests.cs) 使用合成账号字段验证不导入 |
-| 微软 OAuth、Xbox/XSTS、Minecraft Services | 尚未实现，没有服务端请求或令牌存储实现可供审核 |
-| 所有权检查、有效会话与强制启动门禁 | 尚未实现；现有离线启动是明确的审核阻塞 |
+| 微软 OAuth、Xbox/XSTS、Minecraft Services | [MicrosoftAuthenticator.cs](../src/Wonder.Infrastructure/Accounts/MicrosoftAuthenticator.cs) 实现设备码、刷新和认证链；账户库 Windows DPAPI 加密。当前仅完成合成协议测试，尚无真实授权成功证据 |
+| 所有权检查、有效会话与强制启动门禁 | 正版路径检查 entitlement/profile，失败拒绝启动；离线和第三方模式仍独立存在，没有覆盖所有路径的正版门禁 |
 
-不将本地目录、离线用户名或离线 UUID 当作游戏所有权证明，不将“不会连接正版服务器”当作绕过验证的理由。当前源码公开是为了透明展示进展，不应以 0.5.1 声称已满足 AppID 申请条件。
+不将本地目录、离线用户名或离线 UUID 当作游戏所有权证明，不将“不会连接正版服务器”当作绕过验证的理由。当前源码公开是为了透明展示进展，不应以 0.7.2 声称已满足 AppID 申请条件。
 
 ## 申请前必须落实的认证方案
 
-以下均为计划与验收条件：
+以下区分已实现控制与尚待完成的申请条件：
 
-1. 维护者注册自己的公开客户端应用，以用户主动操作发起 Microsoft 官方身份流程；不嵌入客户端机密，不借用官方或其他启动器的 Client ID，不收集微软密码。具体授权流程和最小权限须按真实 Entra 注册配置落实。
-2. 通过官方 Microsoft / Xbox / Minecraft 服务链获取属于该用户的会话、游戏所有权和资料；所有权未知、未拥有游戏、登录失败、会话失效或 API 拒绝时，不允许进入游戏。不能降级到当前未经验证的离线启动路径。
-3. 在所有 UI、组件和服务调用入口统一执行认证与所有权门禁，并覆盖不能通过设置或额外启动参数绕过的测试。
-4. 明确实现凭据保护、退出登录、清除凭据与日志脱敏后，更新 [PRIVACY.md](../PRIVACY.md)。当前不对尚不存在的加密或令牌实现作承诺。
-5. 整理可复现的认证、无所有权拒绝、会话过期、取消登录和不同服务器配置的验收证据，然后使用真实注册信息提交一次申请。
+1. 已配置维护者提供的公开 Client ID，使用用户主动发起的官方设备码流程，不嵌入客户端机密、不收集微软密码；须核实 Entra 个人账户、公共客户端与 Xbox 权限等配置。
+2. 正版路径已实现 Microsoft / Xbox / Minecraft 服务链、entitlement/profile 验证；失败拒绝启动、不自动降级。仍需真实账户、受限账户、无所有权和 API 授权的线上验收。
+3. 要满足表单所述所有路径门禁，仍须解决独立离线/第三方模式与审核要求之间的差异；本次用户明确要求三种登录方式，不能声称现状已满足这一条件。
+4. DPAPI 当前用户加密、删除凭据、取消与日志脱敏已实现，[PRIVACY.md](../PRIVACY.md) 已描述边界；同用户进程、游戏/模组及外部游戏日志不受加密保护。
+5. 待真实注册和线上证据齐备后再准备申请。本次未提交审核，也没有批准结果。
 
-官方身份流程参考：[Microsoft identity platform device authorization grant](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)。这是方案参考，不能作为当前代码已实现该流程的证据。
+官方身份流程参考：[Microsoft identity platform device authorization grant](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)。实现及测试入口见[账户说明](26-account-management.md)。
 
 ## English reviewer summary
 
@@ -52,6 +52,6 @@
 
 The application provides a customizable desktop workspace and local Minecraft Java Edition instance management. The intended API integration is user-initiated Microsoft authentication followed by official game-ownership and profile/session checks for the user's own gameplay.
 
-**Current limitation:** version 0.5.1 only supports local offline launch. Authentication, Minecraft Services calls, ownership checks, and the mandatory authenticated launch gate are not implemented. The existing offline path must be corrected before this application can be represented as meeting the AppID review requirements. No approval, registered Client ID, or successful authenticated launch is asserted in this publication.
+**Current limitation:** version 0.7.2 implements Microsoft device authentication, Xbox/XSTS, Minecraft entitlement/profile checks, DPAPI storage and failure-closed Microsoft launch. These controls have synthetic tests, not confirmed live authentication. Independent offline and Yggdrasil modes remain; universal authenticated ownership gating is not satisfied. No AppID approval or successful live authenticated launch is asserted.
 
-The repository excludes credentials, user data, game binaries and assets. Source access does not grant any Minecraft account or game entitlement. We will provide the project's own Client ID, Tenant ID, implementation evidence and updated privacy information only when those items are available and verifiable.
+The repository excludes credentials, user data, game binaries and assets. Source access does not grant any Minecraft account or game entitlement. The public Client ID was supplied by the maintainer; its registration and service access still require verification. Privacy behavior and implementation evidence are documented separately from approval claims.

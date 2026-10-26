@@ -12,6 +12,8 @@ public sealed partial class InstanceService
     private readonly IInstanceDiscovery _discovery;
     private readonly IGameLauncher _launcher;
     private readonly string _cacheDirectory;
+    private readonly ILaunchAccountProvider? _accounts;
+    private CredentialRedactor _launchRedactor = new([]);
     private InstanceCatalog _catalog = new();
     private readonly List<string> _logs = [];
     private bool _loadFailed, _operation;
@@ -27,8 +29,8 @@ public sealed partial class InstanceService
     public GameInstance? SelectedInstance { get { lock (_gate) return _catalog.Instances.FirstOrDefault(x => x.Id == _catalog.SelectedInstanceId) is { } item ? Copy(item) with { GlobalSettings = _catalog.GlobalSettings } : null; } }
     public IReadOnlyList<string> LogLines { get { lock (_gate) return _logs.ToArray(); } }
 
-    public InstanceService(IInstanceStore store, IInstanceDiscovery discovery, IGameLauncher launcher, string cacheDirectory, IInstanceFileOperations? fileOperations = null)
-    { _store = store; _discovery = discovery; _launcher = launcher; _cacheDirectory = cacheDirectory; _files = fileOperations; Reload(); }
+    public InstanceService(IInstanceStore store, IInstanceDiscovery discovery, IGameLauncher launcher, string cacheDirectory, IInstanceFileOperations? fileOperations = null, ILaunchAccountProvider? accounts = null)
+    { _store = store; _discovery = discovery; _launcher = launcher; _cacheDirectory = cacheDirectory; _files = fileOperations; _accounts = accounts; Reload(); }
 
     public void Reload()
     {
@@ -126,25 +128,33 @@ public sealed partial class InstanceService
             if (instance is null) { Error = "请先选择一个实例。"; Notify(); return; }
             request = new(instance, _catalog.OfflineUsername, _cacheDirectory);
             preparation = _preparation = new(); _launchId = instance.Id;
-            _logs.Clear(); Error = null; LaunchPhase = LaunchPhase.Preparing;
+            _logs.Clear(); _launchRedactor = new([]); Error = null; LaunchPhase = LaunchPhase.Preparing;
             StatusMessage = "正在检查 " + instance.Name + "…";
         }
         Notify();
         try
         {
+            if (_accounts is not null)
+            {
+                var session = await _accounts.GetSelectedSessionAsync(preparation.Token);
+                _launchRedactor = new([session.AccessToken]);
+                request = request with { Session = session };
+            }
+            preparation.Token.ThrowIfCancellationRequested();
             var plan = await _launcher.BuildPlanAsync(request, preparation.Token);
             foreach (var notice in plan.Notices) AddLog(notice);
             preparation.Token.ThrowIfCancellationRequested();
             var exit = await _launcher.RunAsync(plan, () =>
             {
-                LaunchPhase = LaunchPhase.Running; StatusMessage = request.Instance.Name + " · 游戏运行中（离线）"; Notify();
+                var kind = request.Session?.Kind switch { AccountKind.Microsoft => "正版", AccountKind.Yggdrasil => "第三方", _ => "离线" };
+                LaunchPhase = LaunchPhase.Running; StatusMessage = request.Instance.Name + " · 游戏运行中（" + kind + "）"; Notify();
             }, AddLog, CancellationToken.None);
             LaunchPhase = exit == 0 ? LaunchPhase.Exited : LaunchPhase.Failed;
             StatusMessage = request.Instance.Name + $" · 已退出（代码 {exit}）";
             if (exit != 0) Error = "游戏异常退出，请查看启动日志。";
         }
         catch (OperationCanceledException) { LaunchPhase = LaunchPhase.Idle; StatusMessage = "已取消启动准备。"; }
-        catch (Exception ex) { LaunchPhase = LaunchPhase.Failed; Error = "启动失败：" + ex.Message; StatusMessage = "启动失败"; }
+        catch (Exception ex) { LaunchPhase = LaunchPhase.Failed; Error = "启动失败：" + _launchRedactor.Redact(ex.Message); StatusMessage = "启动失败"; }
         finally
         {
             lock (_gate) { _launchId = null; _preparation = null; }
@@ -159,6 +169,7 @@ public sealed partial class InstanceService
     {
         lock (_gate)
         {
+            line = _launchRedactor.Redact(line);
             _logs.Add(line.Length > 2048 ? line[..2048] : line);
             if (_logs.Count > 200) _logs.RemoveAt(0);
         }

@@ -173,7 +173,10 @@ public sealed class InstanceCatalog
 }
 
 public sealed record DiscoveryResult(IReadOnlyList<GameInstance> Instances, IReadOnlyList<string> Diagnostics);
-public sealed record LaunchRequest(GameInstance Instance, string OfflineUsername, string CacheDirectory);
+public sealed record LaunchRequest(GameInstance Instance, string OfflineUsername, string CacheDirectory)
+{
+    public GameSession? Session { get; init; }
+}
 
 public sealed class LaunchPlan
 {
@@ -182,7 +185,13 @@ public sealed class LaunchPlan
     public IReadOnlyList<string> Arguments { get; }
     public string InstanceId { get; }
     public IReadOnlyList<string> Notices { get; }
-    public LaunchPlan(string javaPath, string workingDirectory, IEnumerable<string> arguments, string instanceId, IEnumerable<string>? notices = null)
+    private readonly CredentialRedactor _redactor;
+    public bool HasAuthenticatedAccount { get; }
+    public string? AuthlibInjectorPath { get; }
+    public string? AuthlibInjectorSha256 { get; }
+    public string RedactOutput(string value) => _redactor.Redact(value);
+    public LaunchPlan(string javaPath, string workingDirectory, IEnumerable<string> arguments, string instanceId, IEnumerable<string>? notices = null,
+        IEnumerable<string>? sensitiveValues = null, bool hasAuthenticatedAccount = false, string? authlibInjectorPath = null, string? authlibInjectorSha256 = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(javaPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
@@ -193,5 +202,9 @@ public sealed class LaunchPlan
         Arguments = Array.AsReadOnly(arguments.ToArray());
         InstanceId = instanceId;
         Notices = Array.AsReadOnly((notices ?? []).ToArray());
+        _redactor = new CredentialRedactor(sensitiveValues ?? []);
+        HasAuthenticatedAccount = hasAuthenticatedAccount;
+        AuthlibInjectorPath = authlibInjectorPath;
+        AuthlibInjectorSha256 = authlibInjectorSha256;
     }
 }

@@ -36,7 +36,7 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         return Card(body);
     }
 
-    internal static ComponentContent Card(Control body, Action? refresh = null, Func<Point, bool>? canStartDrag = null)
+    internal static ComponentContent Card(Control body, Action? refresh = null, Func<Point, bool>? canStartDrag = null, Action? dispose = null)
     {
         var border = new Border
         {
@@ -47,6 +47,6 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         {
             border.BorderBrush = selected ? Palette.Emphasis : Palette.Accent;
             border.BorderThickness = new Thickness(selected ? 2.6 : 1);
-        }, canStartDrag);
+        }, canStartDrag, dispose);
     }
 }

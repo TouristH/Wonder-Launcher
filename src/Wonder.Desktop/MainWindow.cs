@@ -25,6 +25,8 @@ public sealed partial class MainWindow : Window
     private string? _error;
     private bool _loadFailed;
     private readonly InstanceService _instances;
+    private readonly AccountService _accounts;
+    private AccountManagerWindow? _accountManager;
     private InstanceManagerWindow? _instanceManager;
 
     public MainWindow(string? workspacePath = null, string? settingsPath = null)
@@ -64,9 +66,12 @@ public sealed partial class MainWindow : Window
         }
         document.EnsureLibrary();
         var dataDirectory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspacePath))!;
-        _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations());
+        _accounts = new AccountService(new WindowsAccountStore(System.IO.Path.Combine(dataDirectory, "accounts.dat")), new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
+            new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")));
+        _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
-        GameComponents.Register(registry, _instances, OpenInstanceManager);
+        GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
+        AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);
         _workspace = new WorkspaceView(document, dataDirectory, registry) { Margin = new Thickness(22, 20, 22, 22) };
         _workspace.Changed += (_, _) => Save();
         _workspace.HelpRequested += (_, _) => ShowHelp();
@@ -74,7 +79,7 @@ public sealed partial class MainWindow : Window
         _workspace.SettingsRequested += OpenSettings;
         Deactivated += (_, _) => _workspace.CancelGesture();
         Closing += (_, _) => { _workspace.CancelGesture(); Save(); };
-        Closed += (_, _) => _workspace.DisposeComponents();
+        Closed += (_, _) => { _accounts.Cancel(); _workspace.DisposeComponents(); };
         PropertyChanged += (_, e) =>
         {
             if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)
@@ -179,9 +184,22 @@ public sealed partial class MainWindow : Window
         _instanceManager.Show(this);
     }
 
+    private void OpenAccountManager()
+    {
+        _workspace.CancelGesture();
+        if (_accountManager is not null)
+        {
+            if (_accountManager.WindowState == WindowState.Minimized) _accountManager.WindowState = WindowState.Normal;
+            _accountManager.Activate(); return;
+        }
+        _accountManager = new AccountManagerWindow(_accounts, _instances.Catalog.OfflineUsername, instances: _instances) { FontFamily = FontFamily };
+        _accountManager.Closed += (_, _) => _accountManager = null;
+        _accountManager.Show(this);
+    }
+
     private void UpdateStorageStatus()
     {
-        _saveStatus.Content = _settingsError != null ? "设置存储异常 · 点击查看" : _error != null ? "工作区未保存 · 点击查看" : "WONDER  /  0.5.1";
+        _saveStatus.Content = _settingsError != null ? "设置存储异常 · 点击查看" : _error != null ? "工作区未保存 · 点击查看" : "WONDER  /  0.7.2";
         _saveStatus.Foreground = _error == null && _settingsError == null ? Palette.Muted : Palette.Error;
     }
 

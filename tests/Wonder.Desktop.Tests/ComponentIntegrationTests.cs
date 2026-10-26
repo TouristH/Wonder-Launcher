@@ -130,15 +130,15 @@ public sealed class ComponentIntegrationTests
     }
 
     [AvaloniaFact]
-    public void Five_registered_components_render_in_library_and_data_path_is_real()
+    public void Six_registered_components_render_in_library_and_data_path_is_real()
     {
         using var desktop = new Desktop();
         desktop.OpenLibrary();
-        // Give the catalogue enough height to inspect all five natural-sized views.
+        // Give the catalogue enough height to inspect all six natural-sized views.
         desktop.Library.Height = 1500;
         Dispatcher.UIThread.RunJobs();
         var components = desktop.Library.GetVisualDescendants().OfType<ComponentView>().ToArray();
-        Assert.Equal(new[] { ComponentIds.Settings, ComponentIds.Notes, ComponentIds.LauncherStatus, ComponentIds.Instances, ComponentIds.Launch },
+        Assert.Equal(new[] { ComponentIds.Settings, ComponentIds.Notes, ComponentIds.LauncherStatus, ComponentIds.Instances, ComponentIds.Launch, ComponentIds.Accounts },
             components.Select(view => view.Item.DefinitionId));
         var status = components.Single(view => view.Item.DefinitionId == ComponentIds.LauncherStatus);
         Assert.Contains(status.GetVisualDescendants().OfType<TextBlock>(),

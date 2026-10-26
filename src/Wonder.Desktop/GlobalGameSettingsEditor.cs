@@ -38,7 +38,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         var body = new StackPanel { Spacing = 16 };
         body.Children.Add(PageStyles.Card(PageStyles.Hint("留空表示继承导入的原配置或内置默认值。全局设置覆盖原配置，实例的独立设置优先于全局设置。游戏目录由各实例单独管理。")));
         body.Children.Add(_form);
-        var identity = Section("离线身份", "离线用户名用于启动游戏，不提供正版服务器认证。与下方游戏参数分别保存。");
+        var identity = Section("离线玩家名预设", "此名字作为账户管理中新增离线账户的预填值。实际启动使用账户管理所选账户；修改预设不会更换当前身份。");
         AutomationProperties.SetName(_username, "离线用户名");
         AutomationProperties.SetName(_saveUsername, "保存离线用户名");
         AutomationProperties.SetName(_usernameStatus, "离线用户名保存状态");

@@ -15,6 +15,8 @@
 
 ## 当前实现
 
+- [第二阶段修复与验收](34-second-repair-results.md)：账户边界、版本来源、矩形头像与存储错误诊断；[实施计划](33-second-repair-plan.md)。
+- [第一阶段修复与验收](32-first-repair-results.md)：M1 数据目录单写者、M2 凭据轮换提交、M3 官方 profile 稳定匹配；[实施计划](31-first-repair-plan.md)。
 - [双层皮肤、已选披风与账户头像](30-layered-skins-capes-and-avatars.md)
 - [双层皮肤实施记录](29-layered-account-appearance-plan.md)
 - [登录诊断、离线默认皮肤与第三方选肤](28-login-diagnostics-and-default-skins.md)

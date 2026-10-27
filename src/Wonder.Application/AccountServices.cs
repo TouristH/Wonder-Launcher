@@ -21,8 +21,15 @@ public interface IYggdrasilAuthenticator
 {
     Task<ThirdPartyLogin> SignInAsync(string serverUrl, string username, string password, CancellationToken ct = default);
     Task<AuthenticatedAccount> SelectProfileAsync(ThirdPartyLogin login, string profileId, CancellationToken ct = default);
+    // A validated rotation must reach the caller even if cancellation arrives after the response.
+    // The caller commits these credentials before starting cancellable, optional appearance work.
     Task<AuthenticatedAccount> RefreshAsync(AccountProfile profile, AccountCredentials credentials, CancellationToken ct = default);
     Task InvalidateAsync(AccountProfile profile, AccountCredentials credentials, CancellationToken ct = default);
+}
+
+public interface IYggdrasilAccountAppearance
+{
+    Task<AccountProfile> ReadAppearanceAsync(AccountProfile profile, CancellationToken ct = default);
 }
 
 public interface ILaunchAccountProvider

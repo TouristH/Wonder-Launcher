@@ -10,7 +10,7 @@ using Wonder.Core;
 
 namespace Wonder.Infrastructure;
 
-public sealed partial class YggdrasilAuthenticator : IYggdrasilAuthenticator
+public sealed partial class YggdrasilAuthenticator : IYggdrasilAuthenticator, IYggdrasilAccountAppearance
 {
     private const int MaximumResponseBytes = 1024 * 1024;
     private static readonly HttpClient DefaultClient = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
@@ -88,8 +88,9 @@ public sealed partial class YggdrasilAuthenticator : IYggdrasilAuthenticator
             accessToken = credentials.AccessToken, clientToken = credentials.ClientToken, requestUser = true
         }, false, ct).ConfigureAwait(false);
         var result = ReadBound(json!.RootElement, profile.Uuid, credentials.ClientToken);
-        ct.ThrowIfCancellationRequested();
-        return await ReadAccountAppearanceAsync(new(profile with { Username = result.Profile.Name }, result.Credentials), ct).ConfigureAwait(false);
+        // The old token may already be revoked. Return the validated rotation without another
+        // cancellation point so AccountService can persist it before optional appearance reads.
+        return new(profile with { Username = result.Profile.Name }, result.Credentials);
     }
 
     public async Task InvalidateAsync(AccountProfile profile, AccountCredentials credentials, CancellationToken ct = default)

@@ -92,13 +92,26 @@ public sealed partial class MicrosoftAuthenticator
 
 public static class MinecraftSkinImage
 {
-    public static void Validate(byte[] png)
+    internal const int MaximumStandardBytes = 1024 * 1024;
+    internal const int MaximumHighDefinitionBytes = 16 * 1024 * 1024;
+    private const int MaximumHighDefinitionWidth = 4096;
+
+    public static void Validate(byte[] png) => ValidatePreview(png, cape: false, allowHighDefinition: false);
+
+    public static void ValidatePreview(byte[] png, bool cape, bool allowHighDefinition)
     {
-        if (png is null || png.Length is < 45 or > 1024 * 1024 || !png.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) ||
-            BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(8, 4)) != 13 || !png.AsSpan(12, 4).SequenceEqual("IHDR"u8) || BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4)) != 64 ||
-            BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4)) is not (32 or 64))
+        var maximumBytes = allowHighDefinition ? MaximumHighDefinitionBytes : MaximumStandardBytes;
+        if (png is null || png.Length < 45 || png.Length > maximumBytes ||
+            !png.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) ||
+            BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(8, 4)) != 13 || !png.AsSpan(12, 4).SequenceEqual("IHDR"u8))
             throw InvalidSkin();
-        // Validate the container before any upload. The desktop also decodes it for the local preview.
+        var width = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4));
+        var height = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4));
+        if (width < 64 || width > (allowHighDefinition ? MaximumHighDefinitionWidth : 64) || width % 64 != 0 ||
+            (height != width / 2 && (cape || height != width)))
+            throw InvalidSkin();
+        // Bound the decoded pixel dimensions before the desktop decoder sees remote data.
+        // HD textures retain the standard atlas proportions and scale each UV by width / 64.
         var offset = 8; var sawData = false;
         while (offset <= png.Length - 12)
         {
@@ -120,18 +133,22 @@ public static class MinecraftSkinImage
             { if (length != 0 || !sawData || offset != png.Length) throw InvalidSkin(); return; }
         }
         throw InvalidSkin();
+
+        AccountAuthenticationException InvalidSkin() => new(allowHighDefinition
+            ? "请选择完整的 PNG 纹理，宽度为 64 的整数倍且不超过 4096，皮肤比例为 1:1 或 2:1、披风比例为 2:1，文件不超过 16 MiB。"
+            : cape ? "请选择完整的 64×32 PNG 披风，文件不超过 1 MiB。"
+            : "请选择完整的 64×64 或 64×32 PNG 皮肤，文件不超过 1 MiB。");
     }
-    private static AccountAuthenticationException InvalidSkin() => new("请选择完整的 64×64 或 64×32 PNG 皮肤，文件不超过 1 MiB。");
 }
 
 public sealed class AccountTextureClient(HttpClient? httpClient = null)
 {
     private static readonly HttpClient DefaultHttp = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(15) };
     public Task<byte[]> DownloadAsync(string url, CancellationToken ct = default) =>
-        DownloadTextureAsync(MicrosoftAuthenticator.OfficialTextureUrl(url)!, ct);
+        DownloadTextureAsync(MicrosoftAuthenticator.OfficialTextureUrl(url)!, MinecraftSkinImage.MaximumStandardBytes, ct);
 
     public Task<byte[]> DownloadThirdPartyAsync(string url, CancellationToken ct = default) =>
-        DownloadTextureAsync(ThirdPartyTextureUrl(url)!, ct);
+        DownloadTextureAsync(ThirdPartyTextureUrl(url)!, MinecraftSkinImage.MaximumHighDefinitionBytes, ct);
 
     public static string? ThirdPartyTextureUrl(string? value)
     {
@@ -143,7 +160,7 @@ public sealed class AccountTextureClient(HttpClient? httpClient = null)
         return uri.AbsoluteUri;
     }
 
-    private async Task<byte[]> DownloadTextureAsync(string url, CancellationToken ct)
+    private async Task<byte[]> DownloadTextureAsync(string url, int maximumBytes, CancellationToken ct)
     {
         try
         {
@@ -151,7 +168,7 @@ public sealed class AccountTextureClient(HttpClient? httpClient = null)
             using var request = new HttpRequestMessage(HttpMethod.Get, url); // Never attach an account token to texture requests.
             using var response = await (httpClient ?? DefaultHttp).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.OK) throw new AccountAuthenticationException("纹理暂时无法加载。");
-            return await AccountHttp.ReadBoundedAsync(response.Content, 1024 * 1024, timeout.Token).ConfigureAwait(false);
+            return await AccountHttp.ReadBoundedAsync(response.Content, maximumBytes, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new AccountAuthenticationException("纹理读取超时，请重试。"); }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException)

@@ -2,6 +2,8 @@
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
 using System.Security.Cryptography;
+using System.Net;
+using System.Text.Json;
 using Wonder.Application;
 using Wonder.Core;
 using Wonder.Infrastructure;
@@ -107,6 +109,37 @@ public sealed class AccountLaunchTests
     }
 
     [Fact]
+    public async Task Cancel_preparation_during_third_party_appearance_keeps_rotation_without_starting_game()
+    {
+        var store = new AccountServiceTests.Store { Vault = new()
+        {
+            SelectedAccountId = "saved-ygg",
+            Accounts = [new(new("saved-ygg", AccountKind.Yggdrasil, "SkinPlayer", Uuid, "https://skin.example.test/"),
+                new() { AccessToken = "synthetic-old", ClientToken = "synthetic-client", ExpiresAt = DateTimeOffset.MaxValue })]
+        } };
+        var appearanceEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var http = new HttpClient(new AuthenticationHandler(async (request, ct) =>
+        {
+            if (request.Method == HttpMethod.Post)
+                return new(HttpStatusCode.OK) { Content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(new
+                {
+                    accessToken = "synthetic-rotated", clientToken = "synthetic-client", selectedProfile = new { id = Uuid, name = "SkinPlayer" }
+                })) };
+            appearanceEntered.SetResult(); await Task.Delay(Timeout.Infinite, ct);
+            return new(HttpStatusCode.NoContent);
+        }));
+        var accounts = new AccountService(store, new AccountServiceTests.Microsoft(), new YggdrasilAuthenticator(http));
+        var launcher = new RecordingLauncher(); var service = Service(launcher, accounts);
+        var launch = service.LaunchSelectedAsync();
+        await appearanceEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        service.CancelPreparation(); await launch;
+
+        Assert.Equal(LaunchPhase.Idle, service.LaunchPhase); Assert.Equal(0, launcher.Builds);
+        Assert.Equal("synthetic-rotated", Assert.Single(store.Vault.Accounts).Credentials.AccessToken);
+        Assert.Null(service.Error); Assert.False(accounts.IsBusy);
+    }
+
+    [Fact]
     public async Task Service_redacts_game_output_and_failure_even_when_launcher_does_not()
     {
         var launcher = new RecordingLauncher();
@@ -135,6 +168,10 @@ public sealed class AccountLaunchTests
     { public Task<DiscoveryResult> DiscoverAsync(string path, CancellationToken ct = default) => Task.FromResult(new DiscoveryResult([], [])); }
     private sealed class Provider(Func<CancellationToken, Task<GameSession>> get) : ILaunchAccountProvider
     { public Task<GameSession> GetSelectedSessionAsync(CancellationToken ct = default) => get(ct); }
+    private sealed class AuthenticationHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken);
+    }
     private sealed class RecordingLauncher : IGameLauncher
     {
         public int Builds; public LaunchRequest? Request; public GameSession? Session;

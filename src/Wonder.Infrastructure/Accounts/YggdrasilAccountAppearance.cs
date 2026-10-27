@@ -12,6 +12,12 @@ namespace Wonder.Infrastructure;
 
 public sealed partial class YggdrasilAuthenticator
 {
+    public async Task<AccountProfile> ReadAppearanceAsync(AccountProfile profile, CancellationToken ct = default)
+    {
+        var account = await ReadAccountAppearanceAsync(new(profile, new()), ct).ConfigureAwait(false);
+        return account.Profile;
+    }
+
     // Profile properties are public appearance metadata, independent of a successful authentication.
     private async Task<AuthenticatedAccount> ReadAccountAppearanceAsync(AuthenticatedAccount account, CancellationToken ct)
     {

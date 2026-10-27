@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Wonder.Game.Tests" />
     <ProjectReference Include="../Wonder.Core/Wonder.Core.csproj" />
     <ProjectReference Include="../Wonder.Application/Wonder.Application.csproj" />
   </ItemGroup>

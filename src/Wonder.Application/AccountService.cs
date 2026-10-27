@@ -20,6 +20,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
     private bool _operationIsLogin;
     private ThirdPartyLogin? _pendingLogin;
     private string? _pendingReauthenticateId;
+    private AuthenticatedAccount? _pendingCredentialSave;
     public event EventHandler? Changed;
     public string? Error { get; private set; }
     public string Status { get; private set; } = "添加账户后即可选择启动身份。";
@@ -42,7 +43,9 @@ public sealed partial class AccountService : ILaunchAccountProvider
         lock (_gate)
         {
             if (IsBusy) return;
-            try { var vault = _store.Load(); Validate(vault); _vault = Copy(vault); ImportAccountServers(_vault); IsReadBlocked = false; Error = null; }
+            try { RetryPendingCredentialSave(); var vault = _store.Load(); Validate(vault); _vault = Copy(vault); ImportAccountServers(_vault); IsReadBlocked = false; Error = null; }
+            catch (AccountAuthenticationException ex) when (_pendingCredentialSave is not null) { Error = ex.Message; }
+            catch (AccountLimitException ex) { IsReadBlocked = true; Error = ex.Message + "原账户库已保留，请修复后重新读取。"; }
             catch { IsReadBlocked = true; Error = "账户库读取或解密失败，原文件已保留。请使用原 Windows 用户登录，或修复文件后重新读取。"; }
         }
         Notify();
@@ -50,7 +53,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
 
     public void AddOffline(string username) => Mutate(vault =>
     {
-        username = username.Trim(); InstanceCatalog.ValidateOfflineUsername(username);
+        username = username.Trim(); AccountLimits.ValidateUsernameLength(username); InstanceCatalog.ValidateOfflineUsername(username);
         var uuid = OfflineUuid(username);
         var existing = vault.Accounts.FirstOrDefault(x => x.Profile.Kind == AccountKind.Offline && x.Profile.Username == username);
         var account = existing ?? new AuthenticatedAccount(new(Guid.NewGuid().ToString("N"), AccountKind.Offline, username, uuid), new());
@@ -221,6 +224,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
         {
             if (IsReadBlocked) throw new AccountAuthenticationException("账户库不可读取，已阻止修改与启动。");
             if (_operation is not null) throw new AccountAuthenticationException("账户操作正在进行，请稍后重试。");
+            RetryPendingCredentialSave();
             Error = null; _operationIsLogin = login; return _operation = CancellationTokenSource.CreateLinkedTokenSource(ct);
         }
     }
@@ -230,7 +234,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
         operation.Dispose(); Notify();
     }
     private void ClearPending() { lock (_gate) { _pendingLogin = null; _pendingReauthenticateId = null; DevicePrompt = null; } }
-    private void SaveAccount(AuthenticatedAccount account, CancellationToken ct, bool select = true)
+    private void SaveAccount(AuthenticatedAccount account, CancellationToken ct, bool select = true, bool preserveCredentialsOnFailure = false)
     {
         lock (_gate)
         {
@@ -244,7 +248,8 @@ public sealed partial class AccountService : ILaunchAccountProvider
             else next.Accounts.Add(account);
             if (select) next.SelectedAccountId = account.Profile.Id;
             ImportAccountServers(next);
-            Persist(next); Status = (select ? "已选择 " : "已更新 ") + account.Profile.Username + " · " + KindLabel(account.Profile.Kind);
+            Persist(next, preserveCredentialsOnFailure ? account : null);
+            Status = (select ? "已选择 " : "已更新 ") + account.Profile.Username + " · " + KindLabel(account.Profile.Kind);
         }
     }
     private void Mutate(Action<AccountVault> change)
@@ -252,13 +257,29 @@ public sealed partial class AccountService : ILaunchAccountProvider
         lock (_gate)
         {
             if (IsReadBlocked || IsBusy) return;
-            try { var next = Copy(_vault); change(next); Persist(next); Error = null; Status = "账户设置已保存。"; }
+            try { RetryPendingCredentialSave(); var next = Copy(_vault); change(next); Persist(next); Error = null; Status = "账户设置已保存。"; }
             catch (Exception ex) { Error = SafeError(ex); }
         }
         Notify();
     }
-    private void Persist(AccountVault vault) { Validate(vault); _store.Save(Copy(vault)); _vault = vault; }
-    private static string SafeError(Exception ex) => ex is AccountAuthenticationException ? ex.Message :
+    private void RetryPendingCredentialSave()
+    {
+        if (_pendingCredentialSave is { } account)
+            SaveAccount(account, CancellationToken.None, select: false, preserveCredentialsOnFailure: true);
+    }
+    private void Persist(AccountVault vault, AuthenticatedAccount? rotatedAccount = null)
+    {
+        Validate(vault);
+        try { _store.Save(Copy(vault)); }
+        catch when (rotatedAccount is not null)
+        {
+            _pendingCredentialSave = rotatedAccount;
+            throw new AccountAuthenticationException("新账户凭据已在服务器生效，但本机保存失败。请不要退出启动器，修复数据目录权限或磁盘空间后刷新账户或重试启动；将先重试保存。若已退出，请重新登录。");
+        }
+        _vault = vault;
+        if (rotatedAccount is not null) _pendingCredentialSave = null;
+    }
+    private static string SafeError(Exception ex) => ex is AccountAuthenticationException or AccountLimitException ? ex.Message :
         ex is ArgumentException ? "输入无效，请检查用户名或服务器地址。" :
         "账户操作未完成，请检查网络、数据目录权限或重新登录。如已提交外观修改，请刷新账户核对。";
     private static AccountVault Copy(AccountVault value) => new()
@@ -269,8 +290,9 @@ public sealed partial class AccountService : ILaunchAccountProvider
     };
     private static void Validate(AccountVault value)
     {
-        if (value.Version != 1 || value.Accounts is null || value.Accounts.Count > 256 || !Guid.TryParse(value.MicrosoftClientId, out var appId) || appId == Guid.Empty)
+        if (value.Version != 1 || value.Accounts is null || !Guid.TryParse(value.MicrosoftClientId, out var appId) || appId == Guid.Empty)
             throw new InvalidDataException();
+        AccountLimits.ValidateAccountCount(value.Accounts.Count);
         ValidateServers(value.Servers);
         if ((value.AuthlibInjectorPath is null) != (value.AuthlibInjectorSha256 is null) ||
             (value.AuthlibInjectorPath is { } path && (!Path.IsPathFullyQualified(path) || !path.EndsWith(".jar", StringComparison.OrdinalIgnoreCase))) ||
@@ -279,9 +301,12 @@ public sealed partial class AccountService : ILaunchAccountProvider
         foreach (var account in value.Accounts)
         {
             var p = account.Profile;
-            if (p is null || account.Credentials is null || string.IsNullOrWhiteSpace(p.Id) || p.Id.Length > 128 || !ids.Add(p.Id) ||
+            if (p is null || account.Credentials is null) throw new InvalidDataException();
+            AccountLimits.ValidateProfileIdLength(p.Id);
+            AccountLimits.ValidateUsernameLength(p.Username);
+            if (string.IsNullOrWhiteSpace(p.Id) || !ids.Add(p.Id) ||
                 !Enum.IsDefined(p.Kind) || p.Uuid.Length != 32 || !p.Uuid.All(char.IsAsciiHexDigit) ||
-                string.IsNullOrWhiteSpace(p.Username) || p.Username.Length > 64 || p.Username.Any(char.IsControl)) throw new InvalidDataException();
+                string.IsNullOrWhiteSpace(p.Username) || p.Username.Any(char.IsControl)) throw new InvalidDataException();
             if (p.Kind == AccountKind.Offline) { InstanceCatalog.ValidateOfflineUsername(p.Username); if (!OfflineDefaultSkins.IsValid(p.Username, p.Uuid, p.OfflineSkinId)) throw new InvalidDataException(); }
             else if (p.OfflineSkinId is not null) throw new InvalidDataException();
             if (p.Kind == AccountKind.Microsoft && (!Guid.TryParse(p.ClientId, out _) || p.ServerUrl is not null)) throw new InvalidDataException();

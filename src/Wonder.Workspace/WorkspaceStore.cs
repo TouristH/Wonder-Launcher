@@ -11,6 +11,7 @@ public sealed class WorkspaceStore
 {
     private const int MaximumFileBytes = 2 * 1024 * 1024;
     private readonly string path;
+    private readonly FileOperations files;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -19,10 +20,13 @@ public sealed class WorkspaceStore
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
-    public WorkspaceStore(string path)
+    public WorkspaceStore(string path) : this(path, new FileOperations()) { }
+
+    internal WorkspaceStore(string path, FileOperations files)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         this.path = Path.GetFullPath(path);
+        this.files = files;
     }
 
     public WorkspaceDocument Load()
@@ -66,26 +70,58 @@ public sealed class WorkspaceStore
         var directory = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(directory);
         var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        var ownsTemporary = false;
+        Exception? saveError = null;
         try
         {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            var stream = files.CreateTemporary(temporaryPath);
+            ownsTemporary = true;
+            try
             {
                 JsonSerializer.Serialize(stream, savedDocument, JsonOptions);
                 if (stream.Length > MaximumFileBytes)
                     throw Invalid("文件超过 2 MiB 限制。");
                 stream.Flush(flushToDisk: true);
             }
-            if (File.Exists(path))
-                File.Replace(temporaryPath, path, destinationBackupFileName: null);
-            else
-                File.Move(temporaryPath, path);
+            catch (Exception error) { saveError = error; throw; }
+            finally
+            {
+                // Disposal can flush buffered data again after a failed write or flush.
+                try { stream.Dispose(); }
+                catch (Exception disposeError) when (saveError is not null)
+                {
+                    saveError.Data["Wonder.Storage.DisposeException"] = disposeError;
+                }
+            }
+            files.Commit(temporaryPath, path);
             document.Version = 3;
         }
+        catch (Exception error) { saveError = error; throw; }
         finally
         {
-            if (File.Exists(temporaryPath))
-                File.Delete(temporaryPath);
+            if (ownsTemporary && File.Exists(temporaryPath))
+            {
+                try { files.DeleteTemporary(temporaryPath); }
+                catch (Exception cleanupError) when (saveError is not null)
+                {
+                    saveError.Data["Wonder.Storage.CleanupException"] = cleanupError;
+                    saveError.Data["Wonder.Storage.TemporaryPath"] = temporaryPath;
+                }
+            }
         }
+    }
+
+    internal class FileOperations
+    {
+        public virtual FileStream CreateTemporary(string path) => new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        public virtual void Commit(string temporaryPath, string targetPath)
+        {
+            if (File.Exists(targetPath))
+                File.Replace(temporaryPath, targetPath, destinationBackupFileName: null);
+            else
+                File.Move(temporaryPath, targetPath);
+        }
+        public virtual void DeleteTemporary(string path) => File.Delete(path);
     }
 
     private static void Validate(WorkspaceDocument document)

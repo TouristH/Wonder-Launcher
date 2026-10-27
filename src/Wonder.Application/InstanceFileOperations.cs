@@ -165,8 +165,13 @@ public sealed partial class InstanceService
             if (new[] { other.SourcePath, other.DefaultGameDirectory, other.LibraryDirectory, other.AssetsDirectory, other.VersionsDirectory, other.LocalLibraryDirectory, other.ResolveSettings(_catalog.GlobalSettings).GameDirectory, other.ResolveSettings(_catalog.GlobalSettings).JavaPath }.Concat(other.MetadataPaths).Any(p => p is not null && Path.IsPathFullyQualified(p) && Within(p, path)))
                 throw new InvalidOperationException("此目录仍被其他实例引用，不能删除：" + other.Name);
     }
-    private static bool SameSource(GameInstance left, GameInstance right) => Same(left.SourcePath, right.SourcePath) &&
-        (left.Source is InstanceSource.Prism or InstanceSource.MultiMc || left.VersionId == right.VersionId) && Profile(left) == Profile(right);
+    private static bool SameSource(GameInstance left, GameInstance right)
+    {
+        if (!Same(left.SourcePath, right.SourcePath)) return false;
+        var profile = Profile(left);
+        return profile == Profile(right) &&
+            (profile is not null || left.Source is InstanceSource.Prism or InstanceSource.MultiMc || left.VersionId == right.VersionId);
+    }
     private static string? Profile(GameInstance item)
     {
         if (item.SourceProfileId is not null) return item.SourceProfileId;

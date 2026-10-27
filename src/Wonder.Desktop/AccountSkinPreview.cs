@@ -67,7 +67,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
                     : profile.Kind == AccountKind.Yggdrasil ? _textures.DownloadThirdPartyAsync(url, _lifetime.Token)
                     : _textures.DownloadAsync(url, _lifetime.Token));
                 if (_disposed || (cape ? capeRevision != _capeRevision : revision != _revision)) return;
-                var bitmap = Decode(bytes, cape);
+                var bitmap = Decode(bytes, cape, allowHighDefinition: profile.Kind == AccountKind.Yggdrasil);
                 if (cape) { _cape?.Dispose(); _cape = bitmap; }
                 else { _skin?.Dispose(); _skin = bitmap; }
                 InvalidateVisual();
@@ -96,17 +96,25 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         catch { if (!_disposed && revision == _revision) Description = textureName + " · 纹理不可用，显示模型示意"; }
         if (!_disposed && revision == _revision) { InvalidateVisual(); LoadedTexture?.Invoke(); }
     }
-    private static Bitmap Decode(byte[] png, bool cape)
+    private static Bitmap Decode(byte[] png, bool cape, bool allowHighDefinition = false)
     {
         // Validate bounded dimensions, container and CRC before the decoder sees remote pixels.
-        MinecraftSkinImage.Validate(png);
-        if (cape && System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4)) != 32)
-            throw new InvalidDataException("披风应为 64×32 PNG。");
+        MinecraftSkinImage.ValidatePreview(png, cape, allowHighDefinition);
+        var width = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4));
+        var height = System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4));
         using var stream = new MemoryStream(png);
         var bitmap = new Bitmap(stream);
-        if (bitmap.PixelSize.Width != 64 || bitmap.PixelSize.Height is not (32 or 64) || (cape && bitmap.PixelSize.Height != 32))
+        if (bitmap.PixelSize.Width != width || bitmap.PixelSize.Height != height)
         { bitmap.Dispose(); throw new InvalidDataException(); }
         return bitmap;
+    }
+    private static void DrawTexture(DrawingContext context, Bitmap texture, Rect uv, Rect destination)
+    {
+        // Model UVs use a 64-pixel-wide atlas. Keep all HD pixels and scale the source
+        // rectangle in image units, independently of the PNG's resolution or DPI metadata.
+        var atlasHeight = texture.PixelSize.Height == texture.PixelSize.Width ? 64 : 32;
+        var scaleX = texture.Size.Width / 64; var scaleY = texture.Size.Height / atlasHeight;
+        context.DrawImage(texture, new Rect(uv.X * scaleX, uv.Y * scaleY, uv.Width * scaleX, uv.Height * scaleY), destination);
     }
     private void ClearTextures()
     {
@@ -121,7 +129,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         {
             var capeScale = Math.Min(Bounds.Width / 12, Bounds.Height / 18);
             var capeRect = new Rect((Bounds.Width - 10 * capeScale) / 2, (Bounds.Height - 16 * capeScale) / 2, 10 * capeScale, 16 * capeScale);
-            if (_cape is not null) context.DrawImage(_cape, new Rect(1, 1, 10, 16), capeRect);
+            if (_cape is not null) DrawTexture(context, _cape, new Rect(1, 1, 10, 16), capeRect);
             else context.DrawRectangle(Palette.Hover, null, capeRect);
             return;
         }
@@ -131,16 +139,16 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             var rect = new Rect((Bounds.Width - size) / 2, (Bounds.Height - size) / 2, size, size);
             if (_skin is not null)
             {
-                context.DrawImage(_skin, new Rect(_back ? 24 : 8, 8, 8, 8), rect.Deflate(size / 18));
-                context.DrawImage(_skin, new Rect(_back ? 56 : 40, 8, 8, 8), rect);
+                DrawTexture(context, _skin, new Rect(_back ? 24 : 8, 8, 8, 8), rect.Deflate(size / 18));
+                DrawTexture(context, _skin, new Rect(_back ? 56 : 40, 8, 8, 8), rect);
             }
             else
             {
                 context.DrawRectangle(Palette.Active, null, rect);
-                var unit = Bounds.Width / 8;
-                context.DrawRectangle(Palette.Accent, null, new Rect(2 * unit, 3 * unit, unit, unit));
-                context.DrawRectangle(Palette.Accent, null, new Rect(5 * unit, 3 * unit, unit, unit));
-                context.DrawRectangle(Palette.Muted, null, new Rect(3 * unit, 5 * unit, 2 * unit, unit));
+                var unit = size / 8;
+                context.DrawRectangle(Palette.Accent, null, new Rect(rect.X + 2 * unit, rect.Y + 3 * unit, unit, unit));
+                context.DrawRectangle(Palette.Accent, null, new Rect(rect.X + 5 * unit, rect.Y + 3 * unit, unit, unit));
+                context.DrawRectangle(Palette.Muted, null, new Rect(rect.X + 3 * unit, rect.Y + 5 * unit, 2 * unit, unit));
             }
             return;
         }
@@ -148,7 +156,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         var x = (Bounds.Width - 16 * scale) / 2; var y = (Bounds.Height - 32 * scale) / 2;
         Rect Dest(double px, double py, double w, double h) => new(x + px * scale, y + py * scale, w * scale, h * scale);
         context.DrawEllipse(Palette.Line, null, new Point(Bounds.Width / 2, y + 33 * scale), 8 * scale, scale);
-        var modern = _skin?.PixelSize.Height != 32;
+        var modern = _skin is null || _skin.PixelSize.Height == _skin.PixelSize.Width;
         var arm = _slim && modern ? 3 : 4;
         if (_skin is null)
         {
@@ -158,7 +166,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             context.DrawRectangle(Palette.Active, null, Dest(12, 8, arm, 12));
             context.DrawRectangle(Palette.Line, null, Dest(4, 20, 4, 12));
             context.DrawRectangle(Palette.Line, null, Dest(8, 20, 4, 12));
-            if (_back && _cape is not null) context.DrawImage(_cape, new Rect(1, 1, 10, 16), Dest(3, 8, 10, 16));
+            if (_back && _cape is not null) DrawTexture(context, _cape, new Rect(1, 1, 10, 16), Dest(3, 8, 10, 16));
             return;
         }
         void Part(int u, int v, int w, int h, double dx, double dy, double expansion = 0, bool mirror = false)
@@ -167,9 +175,9 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             if (mirror)
             {
                 using var transform = context.PushTransform(new Matrix(-1, 0, 0, 1, destination.X * 2 + destination.Width, 0));
-                context.DrawImage(_skin, new Rect(u, v, w, h), destination);
+                DrawTexture(context, _skin, new Rect(u, v, w, h), destination);
             }
-            else context.DrawImage(_skin, new Rect(u, v, w, h), destination);
+            else DrawTexture(context, _skin, new Rect(u, v, w, h), destination);
         }
         // UVs are anatomical: a back view reverses where left/right limbs appear on screen.
         var rightArmX = _back ? 12 : 4 - arm; var leftArmX = _back ? 4 - arm : 12;
@@ -189,7 +197,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             Part(_back ? 32 : 20, 36, 8, 12, 4, 8, .25);
         }
         Part(_back ? 56 : 40, 8, 8, 8, 4, 0, .5);
-        if (_back && _cape is not null) context.DrawImage(_cape, new Rect(1, 1, 10, 16), Dest(3, 8, 10, 16));
+        if (_back && _cape is not null) DrawTexture(context, _cape, new Rect(1, 1, 10, 16), Dest(3, 8, 10, 16));
     }
     public void Dispose()
     {

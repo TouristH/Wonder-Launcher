@@ -68,7 +68,7 @@ public sealed partial class AccountService
     {
         var index = vault.Accounts.FindIndex(x => x.Profile.Id == id && x.Profile.Kind == AccountKind.Offline);
         if (index < 0) throw new AccountAuthenticationException("只能修改离线账户的玩家名。");
-        username = username.Trim(); InstanceCatalog.ValidateOfflineUsername(username);
+        username = username.Trim(); AccountLimits.ValidateUsernameLength(username); InstanceCatalog.ValidateOfflineUsername(username);
         var current = vault.Accounts[index];
         var uuid = OfflineDefaultSkins.CreateUuid(username, current.Profile.OfflineSkinId);
         if (vault.Accounts.Any(x => x.Profile.Id != id && x.Profile.Kind == AccountKind.Offline && x.Profile.Username == username))
@@ -132,7 +132,21 @@ public sealed partial class AccountService
         if (string.IsNullOrEmpty(refreshed.Credentials.AccessToken) || refreshed.Credentials.ExpiresAt <= DateTimeOffset.UtcNow)
             throw new AccountAuthenticationException("账户会话已过期，请重新登录。");
         var result = new AuthenticatedAccount(refreshed.Profile with { Id = current.Profile.Id, LastValidatedAt = DateTimeOffset.UtcNow }, refreshed.Credentials);
-        SaveAccount(result, ct, select: false);
+        // A successful rotation may revoke the previous token. Commit only after identity and
+        // session validation, but finish this commit even when the caller cancels preparation.
+        SaveAccount(result, CancellationToken.None, select: false, preserveCredentialsOnFailure: true);
+        ct.ThrowIfCancellationRequested();
+        if (current.Profile.Kind == AccountKind.Yggdrasil && _yggdrasil is IYggdrasilAccountAppearance appearance)
+        {
+            var profile = await appearance.ReadAppearanceAsync(result.Profile, ct).ConfigureAwait(false);
+            VerifyIdentity(result.Profile, profile);
+            if (profile != result.Profile)
+            {
+                result = new(profile with { Id = current.Profile.Id }, result.Credentials);
+                SaveAccount(result, ct, select: false);
+            }
+            ct.ThrowIfCancellationRequested();
+        }
         return result;
     }
 

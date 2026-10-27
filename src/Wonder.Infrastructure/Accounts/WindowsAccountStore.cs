@@ -71,8 +71,9 @@ public sealed class WindowsAccountStore(string path) : IAccountStore
 
     private static void Validate(AccountVault vault)
     {
-        if (vault is null || vault.Version != 1 || vault.Accounts is null || vault.Accounts.Count > 1024 ||
+        if (vault is null || vault.Version != 1 || vault.Accounts is null ||
             !Guid.TryParse(vault.MicrosoftClientId, out _) || vault.Servers is null || vault.Servers.Count > 256) throw InvalidVault();
+        AccountLimits.ValidateAccountCount(vault.Accounts.Count);
         var serverIds = new HashSet<string>(StringComparer.Ordinal);
         var serverUrls = new HashSet<string>(StringComparer.Ordinal);
         foreach (var server in vault.Servers)
@@ -89,9 +90,11 @@ public sealed class WindowsAccountStore(string path) : IAccountStore
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in vault.Accounts)
         {
-            if (entry?.Profile is not { } profile || entry.Credentials is not { } credentials ||
-                !SafeText(profile.Id, 256) || !ids.Add(profile.Id) || !Enum.IsDefined(profile.Kind) ||
-                !SafeText(profile.Username, 16) || !ValidUuid(profile.Uuid)) throw InvalidVault();
+            if (entry?.Profile is not { } profile || entry.Credentials is not { } credentials) throw InvalidVault();
+            AccountLimits.ValidateProfileIdLength(profile.Id);
+            AccountLimits.ValidateUsernameLength(profile.Username);
+            if (!SafeText(profile.Id, AccountLimits.MaximumProfileIdLength) || !ids.Add(profile.Id) || !Enum.IsDefined(profile.Kind) ||
+                !SafeText(profile.Username, AccountLimits.MaximumUsernameLength) || !ValidUuid(profile.Uuid)) throw InvalidVault();
             if (profile.Kind == AccountKind.Microsoft && (!Guid.TryParse(profile.ClientId, out _) || profile.ServerUrl is not null)) throw InvalidVault();
             if (profile.Kind == AccountKind.Yggdrasil)
             {

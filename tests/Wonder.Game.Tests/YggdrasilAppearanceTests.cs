@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Wonder.Application;
 using Wonder.Core;
 using Wonder.Infrastructure;
 
@@ -38,7 +39,7 @@ public sealed class YggdrasilAppearanceTests
     public async Task Refresh_updates_saved_appearance_preserving_account_identity_and_rotated_credentials()
     {
         using var http = new HttpClient(new Handler(request => Task.FromResult(request.Method == HttpMethod.Post ? Refreshed() : Appearance())));
-        var refreshed = await new YggdrasilAuthenticator(http).RefreshAsync(SavedProfile(), Credentials());
+        var refreshed = await RefreshWithAppearanceAsync(http);
         Assert.Equal("saved-id", refreshed.Profile.Id); Assert.Equal(Uuid, refreshed.Profile.Uuid);
         Assert.Equal("RenamedTest", refreshed.Profile.Username); Assert.Equal("synthetic-rotated", refreshed.Credentials.AccessToken);
         Assert.Equal(Skin, refreshed.Profile.SkinUrl); Assert.Equal("slim", refreshed.Profile.SkinVariant);
@@ -52,7 +53,7 @@ public sealed class YggdrasilAppearanceTests
     {
         using var http = new HttpClient(new Handler(request => Task.FromResult(request.Method == HttpMethod.Post ? Refreshed() :
             emptyProperty ? WithTextures(new { profileId = Uuid, profileName = "RenamedTest", textures = new { } }) : Json(new { id = Uuid, name = "RenamedTest" }))));
-        var result = await new YggdrasilAuthenticator(http).RefreshAsync(SavedProfile(), Credentials());
+        var result = await RefreshWithAppearanceAsync(http);
         Assert.Null(result.Profile.SkinUrl); Assert.Equal("classic", result.Profile.SkinVariant);
         Assert.Empty(result.Profile.Capes); Assert.Null(result.Profile.ActiveCapeId);
     }
@@ -72,7 +73,7 @@ public sealed class YggdrasilAppearanceTests
             var response = new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent("synthetic-secret-never-display") };
             response.Headers.Location = new("https://elsewhere.example.test/private"); return Task.FromResult(response);
         }));
-        var result = await new YggdrasilAuthenticator(http).RefreshAsync(SavedProfile(), Credentials());
+        var result = await RefreshWithAppearanceAsync(http);
         Assert.Equal(1, reads); Assert.Equal("synthetic-rotated", result.Credentials.AccessToken);
         Assert.Equal(SavedProfile().SkinUrl, result.Profile.SkinUrl); Assert.Equal(SavedProfile().ActiveCapeId, result.Profile.ActiveCapeId);
     }
@@ -107,7 +108,7 @@ public sealed class YggdrasilAppearanceTests
                 _ => throw new InvalidOperationException()
             });
         }));
-        var result = await new YggdrasilAuthenticator(http).RefreshAsync(SavedProfile(), Credentials());
+        var result = await RefreshWithAppearanceAsync(http);
         Assert.Equal(1, reads); Assert.Equal(Uuid, result.Profile.Uuid); Assert.Equal("synthetic-rotated", result.Credentials.AccessToken);
         Assert.Equal(SavedProfile().SkinUrl, result.Profile.SkinUrl); Assert.Equal(SavedProfile().Capes, result.Profile.Capes);
     }
@@ -136,6 +137,14 @@ public sealed class YggdrasilAppearanceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new YggdrasilAuthenticator(http).SelectProfileAsync(Login(), Uuid, cts.Token));
     }
 
+    private static async Task<AuthenticatedAccount> RefreshWithAppearanceAsync(HttpClient http)
+    {
+        var store = new AccountServiceTests.Store { Vault = new() { Accounts = [new(SavedProfile(), Credentials())], SelectedAccountId = "saved-id" } };
+        var service = new AccountService(store, new AccountServiceTests.Microsoft(), new YggdrasilAuthenticator(http));
+        await service.RefreshAsync("saved-id");
+        Assert.Null(service.Error);
+        return Assert.Single(store.Vault.Accounts);
+    }
     private static ThirdPartyLogin Login() => new(Server, [new(Uuid, "WonderTest")], Uuid, Credentials());
     private static AccountCredentials Credentials() => new() { AccessToken = "synthetic-access", ClientToken = "synthetic-client" };
     private static AccountProfile SavedProfile() => new("saved-id", AccountKind.Yggdrasil, "WonderTest", Uuid, Server)

@@ -10,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Wonder.Workspace;
 using Wonder.Application;
+using Wonder.Core;
 using Wonder.Infrastructure;
 using Wonder.Desktop.Components;
 
@@ -68,7 +69,7 @@ public sealed partial class MainWindow : Window
         var dataDirectory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspacePath))!;
         _accounts = new AccountService(new WindowsAccountStore(System.IO.Path.Combine(dataDirectory, "accounts.dat")), new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
             new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")));
-        _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
+        _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
         GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
         AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);
@@ -199,7 +200,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStorageStatus()
     {
-        _saveStatus.Content = _settingsError != null ? "设置存储异常 · 点击查看" : _error != null ? "工作区未保存 · 点击查看" : "WONDER  /  0.7.2";
+        _saveStatus.Content = _settingsError != null ? "设置存储异常 · 点击查看" : _error != null ? "工作区未保存 · 点击查看" : "WONDER  /  " + LauncherBuildInfo.Version;
         _saveStatus.Foreground = _error == null && _settingsError == null ? Palette.Muted : Palette.Error;
     }
 

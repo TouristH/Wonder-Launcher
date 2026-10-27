@@ -7,14 +7,25 @@ using Wonder.Core;
 
 namespace Wonder.Infrastructure;
 
-public sealed class InstanceStore(string path) : IInstanceStore
+public sealed class InstanceStore : IInstanceStore
 {
+    private readonly string path;
+    private readonly FileOperations files;
     private const int MaximumBytes = 8 * 1024 * 1024;
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true,
         IgnoreReadOnlyProperties = true, AllowDuplicateProperties = false, MaxDepth = 32
     };
+
+    public InstanceStore(string path) : this(path, new FileOperations()) { }
+
+    internal InstanceStore(string path, FileOperations files)
+    {
+        this.path = path;
+        this.files = files;
+    }
+
     public InstanceCatalog Load()
     {
         if (!File.Exists(path)) return new();
@@ -45,7 +56,54 @@ public sealed class InstanceStore(string path) : IInstanceStore
         var target = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { File.WriteAllBytes(temporary, bytes); File.Move(temporary, target, true); }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        var ownsTemporary = false;
+        Exception? saveError = null;
+        try
+        {
+            var stream = files.CreateTemporary(temporary);
+            ownsTemporary = true;
+            try
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+            catch (Exception error) { saveError = error; throw; }
+            finally
+            {
+                // Disposal can flush buffered data again after a failed write or flush.
+                try { stream.Dispose(); }
+                catch (Exception disposeError) when (saveError is not null)
+                {
+                    saveError.Data["Wonder.Storage.DisposeException"] = disposeError;
+                }
+            }
+            files.Commit(temporary, target);
+        }
+        catch (Exception error) { saveError = error; throw; }
+        finally
+        {
+            if (ownsTemporary && File.Exists(temporary))
+            {
+                try { files.DeleteTemporary(temporary); }
+                catch (Exception cleanupError) when (saveError is not null)
+                {
+                    saveError.Data["Wonder.Storage.CleanupException"] = cleanupError;
+                    saveError.Data["Wonder.Storage.TemporaryPath"] = temporary;
+                }
+            }
+        }
+    }
+
+    internal class FileOperations
+    {
+        public virtual FileStream CreateTemporary(string path) => new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        public virtual void Commit(string temporaryPath, string targetPath)
+        {
+            if (File.Exists(targetPath))
+                File.Replace(temporaryPath, targetPath, destinationBackupFileName: null);
+            else
+                File.Move(temporaryPath, targetPath);
+        }
+        public virtual void DeleteTemporary(string path) => File.Delete(path);
     }
 }

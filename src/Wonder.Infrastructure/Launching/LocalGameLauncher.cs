@@ -12,7 +12,7 @@ using static Wonder.Infrastructure.LocalFiles;
 
 namespace Wonder.Infrastructure;
 
-public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaRuntime>>? javaProbe = null) : IGameLauncher
+public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaRuntime>>? javaProbe = null, string? launcherVersion = null) : IGameLauncher
 {
     public async Task<LaunchPlan> BuildPlanAsync(LaunchRequest request, CancellationToken ct = default)
     {
@@ -24,10 +24,10 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var settings = instance.EffectiveSettings;
         var executable = settings.JavaPath ?? FindJava(instance.RootDirectory);
         var java = await (javaProbe ?? JavaRuntime.Probe)(executable, ct).ConfigureAwait(false);
-        return await Task.Run(() => Build(request, java, ct), ct).ConfigureAwait(false);
+        return await Task.Run(() => Build(request, java, launcherVersion ?? LauncherBuildInfo.Version, ct), ct).ConfigureAwait(false);
     }
 
-    private static LaunchPlan Build(LaunchRequest request, JavaRuntime java, CancellationToken ct)
+    private static LaunchPlan Build(LaunchRequest request, JavaRuntime java, string launcherVersion, CancellationToken ct)
     {
         var instance = request.Instance; var settings = instance.EffectiveSettings;
         var session = request.Session!;
@@ -131,7 +131,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             ["user_properties"] = "{}", ["clientid"] = session.ClientId, ["auth_xuid"] = session.Xuid,
             ["version_name"] = instance.VersionId, ["version_type"] = "release", ["game_directory"] = settings.GameDirectory!,
             ["assets_root"] = instance.AssetsDirectory, ["assets_index_name"] = assetId ?? "", ["game_assets"] = assets,
-            ["natives_directory"] = natives, ["launcher_name"] = "Wonder", ["launcher_version"] = "0.7.2", ["classpath"] = string.Join(Path.PathSeparator, classPath.Distinct(StringComparer.OrdinalIgnoreCase)),
+            ["natives_directory"] = natives, ["launcher_name"] = "Wonder", ["launcher_version"] = launcherVersion, ["classpath"] = string.Join(Path.PathSeparator, classPath.Distinct(StringComparer.OrdinalIgnoreCase)),
             ["classpath_separator"] = Path.PathSeparator.ToString(), ["library_directory"] = instance.LibraryDirectory,
             ["resolution_width"] = settings.WindowWidth!.Value.ToString(), ["resolution_height"] = settings.WindowHeight!.Value.ToString()
         };

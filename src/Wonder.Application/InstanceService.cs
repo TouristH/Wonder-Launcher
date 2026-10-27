@@ -69,7 +69,13 @@ public sealed partial class InstanceService
                 foreach (var candidate in candidates)
                 {
                     if (!catalog.GameDirectories.Any(path => Same(path, candidate.RootDirectory))) catalog.GameDirectories.Add(Full(candidate.RootDirectory));
-                    var index = catalog.Instances.FindIndex(x => x.Id == candidate.Id || SameSource(x, candidate));
+                    var index = catalog.Instances.FindIndex(x => x.Id == (onlyId ?? candidate.Id));
+                    if (index < 0)
+                    {
+                        index = catalog.Instances.FindIndex(x => SameSource(x, candidate));
+                        if (index >= 0 && catalog.Instances.FindLastIndex(x => SameSource(x, candidate)) != index)
+                            throw new InvalidDataException("此来源已有多个实例登记，无法确定要更新的记录；请分别刷新，或保留需要的设置后移除多余登记。");
+                    }
                     if (index < 0) catalog.Instances.Add(Copy(candidate));
                     else
                     {

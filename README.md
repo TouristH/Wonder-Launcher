@@ -19,9 +19,10 @@
 - 实例管理：读取已有游戏目录，切换列表/网格、选择实例、编辑启动设置及目录操作。
 - 账户中心与桌面组件：微软正版、自定义 Yggdrasil 和离线账户，支持搜索、账户详情、切换、刷新、重新登录、离线改名和删除；Windows 当前用户加密保存账户库。
 - 角色外观与认证服务器：正版皮肤预览、上传、恢复和披风切换；离线默认皮肤选择（确认 UUID 变化后应用）；第三方选肤自动打开认证网站。自定义服务器发现与确认、重命名和移除，启动时自动准备经过校验的 authlib-injector。
-- 双层皮肤与头像：正背面预览叠加头部、上衣、袖子和裤腿外层；正版和第三方均显示已选披风。原有账户组件左侧显示当前皮肤头像，第三方网站改肤后刷新资料即可更新。详见[外观预览说明](Guides/30-layered-skins-capes-and-avatars.md)。
+- 双层皮肤与头像：正背面预览叠加头部、上衣、袖子和裤腿外层；正版和第三方均显示已选披风。第三方支持 HD 皮肤、披风及头像预览，按原图分辨率取样。原有账户组件左侧显示当前皮肤头像，第三方网站改肤后刷新资料即可更新。尺寸范围见[外观预览说明](Guides/30-layered-skins-capes-and-avatars.md)。
 - 独立启动组件与任务状态：使用选中账户启动已有本地实例，正版和第三方账户启动前重新认证，失败不自动降级；关闭状态窗口不结束后台任务。
 - Windows x64 自包含单文件分发；设置、布局和实例登记保存在程序旁的 `WonderData/`。
+- 同一数据目录只允许一个启动器进程写入；再次打开会尝试激活已有窗口。不同便携目录可独立运行。
 
 游戏安装/修复、第三方代码插件加载及权限沙箱仍待实现。没有将 `AssemblyLoadContext` 或普通子进程描述为安全沙箱。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
 
@@ -55,6 +56,8 @@ The integration uses the maintainer-supplied public application ID and user-init
 
 需要 .NET 10 SDK。在本目录执行：
 
+构建版本统一在根目录 `Directory.Build.props` 的 `Version` 中维护；窗口显示和游戏启动参数使用同一构建元数据。当前版本仍为 0.7.2。
+
 ```powershell
 dotnet build Wonder.slnx -c Release
 dotnet test Wonder.slnx -c Release
@@ -63,7 +66,13 @@ dotnet publish src/Wonder.Desktop/Wonder.Desktop.csproj -c Release -r win-x64 --
 
 发布程序为 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`，设置和布局位于同目录的 `WonderData/`。更新程序时保留此数据目录。`artifacts/`、游戏文件、用户数据和编译缓存不提交到源码仓库。编译产物需连同适用的许可及第三方声明按协议分发。
 
-0.7.2 完整测试 **803 项通过、0 失败、0 跳过**（Workspace 210、Game 294、Desktop 299），包含双层皮肤像素、披风和账户头像交互验证。详细范围见[外观预览](Guides/30-layered-skins-capes-and-avatars.md)，登录排障见[登录诊断与默认皮肤](Guides/28-login-diagnostics-and-default-skins.md)。测试不能代表真实账户认证或 AppID 已获批。
+第一阶段修复针对多开覆盖、第三方凭据轮换后取消和官方 profile 换版本的登记问题，见[修复验收记录](Guides/32-first-repair-results.md)。第三方认证已返回并验证的新凭据会先保存，取消仍会停止后续启动；保存失败时应保持启动器打开，修复数据目录权限后重试账户刷新或启动。更新前请关闭旧版启动器进程。
+
+2026-10-28 第二阶段修复统一账户上限与版本来源、修正矩形占位头像，并加强实例索引刷盘及保存多重故障诊断。最新完整测试 **954 项通过、0 失败、0 跳过**（Workspace 225、Game 374、Desktop 355）；Release 构建 0 警告、0 错误，发布 EXE 双进程冒烟通过，发布前后 33 个 WonderData 文件哈希一致。范围与剩余问题见[第二阶段验收记录](Guides/34-second-repair-results.md)。
+
+此前 0.7.2 HD 外观兼容更新完整测试为 **898 项通过、0 失败、0 跳过**（Workspace 210、Game 341、Desktop 347），包含 HD 纹理校验与下载、双层皮肤像素、披风和账户头像交互验证，以上用例继续包含在最新回归中。详细范围见[外观预览](Guides/30-layered-skins-capes-and-avatars.md)，登录排障见[登录诊断与默认皮肤](Guides/28-login-diagnostics-and-default-skins.md)。测试不能代表真实账户认证或 AppID 已获批。
+
+2026-10-27 第一阶段修复后的完整测试为 **833 项通过、0 失败、0 跳过**（Workspace 210、Game 314、Desktop 309）；Release 构建 0 警告、0 错误，发布 EXE 双进程冒烟通过。原有 WonderData 的 32 个文件哈希保持一致，证据及限制见[本轮验收记录](Guides/32-first-repair-results.md)。
 
 ## 许可与转载
 

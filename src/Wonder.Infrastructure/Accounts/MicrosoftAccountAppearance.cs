@@ -143,12 +143,31 @@ public static class MinecraftSkinImage
 
 public sealed class AccountTextureClient(HttpClient? httpClient = null)
 {
+    // Injected clients are trusted transports for controlled hosts/tests; normal callers use the policy below.
+    private readonly TextureConnectionPolicy? _connections;
+    internal AccountTextureClient(TextureConnectionPolicy connections) : this((HttpClient?)null) => _connections = connections;
     private static readonly HttpClient DefaultHttp = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly TextureConnectionPolicy ThirdPartyConnections = new();
+    private static readonly HttpClient PublicThirdPartyHttp = new(ThirdPartyConnections.CreateHandler(allowPrivateNetwork: false)) { Timeout = TimeSpan.FromSeconds(15) };
     public Task<byte[]> DownloadAsync(string url, CancellationToken ct = default) =>
-        DownloadTextureAsync(MicrosoftAuthenticator.OfficialTextureUrl(url)!, MinecraftSkinImage.MaximumStandardBytes, ct);
+        DownloadTextureAsync(MicrosoftAuthenticator.OfficialTextureUrl(url)!, MinecraftSkinImage.MaximumStandardBytes, httpClient ?? DefaultHttp, ct);
 
     public Task<byte[]> DownloadThirdPartyAsync(string url, CancellationToken ct = default) =>
-        DownloadTextureAsync(ThirdPartyTextureUrl(url)!, MinecraftSkinImage.MaximumHighDefinitionBytes, ct);
+        DownloadThirdPartyAsync(url, [], ct);
+
+    public async Task<byte[]> DownloadThirdPartyAsync(string url, IReadOnlyList<string> allowedPrivateTextureOrigins, CancellationToken ct = default)
+    {
+        var normalized = ThirdPartyTextureUrl(url)!;
+        var origin = TextureOrigin.FromUrl(normalized);
+        var allowPrivate = allowedPrivateTextureOrigins.Contains(origin, StringComparer.Ordinal);
+        TextureConnectionPolicy.CheckLiteralTarget(new Uri(normalized), allowPrivate);
+        // A private connection must never enter a pool later used by an unconsenting account.
+        using var consentedHttp = httpClient is null && (allowPrivate || _connections is not null)
+            ? new HttpClient((_connections ?? ThirdPartyConnections).CreateHandler(allowPrivate)) { Timeout = TimeSpan.FromSeconds(15) }
+            : null;
+        return await DownloadTextureAsync(normalized, MinecraftSkinImage.MaximumHighDefinitionBytes,
+            httpClient ?? consentedHttp ?? PublicThirdPartyHttp, ct).ConfigureAwait(false);
+    }
 
     public static string? ThirdPartyTextureUrl(string? value)
     {
@@ -160,17 +179,19 @@ public sealed class AccountTextureClient(HttpClient? httpClient = null)
         return uri.AbsoluteUri;
     }
 
-    private async Task<byte[]> DownloadTextureAsync(string url, int maximumBytes, CancellationToken ct)
+    private static async Task<byte[]> DownloadTextureAsync(string url, int maximumBytes, HttpClient client, CancellationToken ct)
     {
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromSeconds(15));
             using var request = new HttpRequestMessage(HttpMethod.Get, url); // Never attach an account token to texture requests.
-            using var response = await (httpClient ?? DefaultHttp).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.OK) throw new AccountAuthenticationException("纹理暂时无法加载。");
             return await AccountHttp.ReadBoundedAsync(response.Content, maximumBytes, timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new AccountAuthenticationException("纹理读取超时，请重试。"); }
+        catch (HttpRequestException ex) when (ex.InnerException is AccountAuthenticationException)
+        { throw TextureConnectionPolicy.Blocked(); }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException)
         { throw new AccountAuthenticationException("纹理暂时无法加载。"); }
     }

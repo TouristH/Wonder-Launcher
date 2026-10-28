@@ -30,7 +30,9 @@ public sealed partial class MainWindow : Window
     private AccountManagerWindow? _accountManager;
     private InstanceManagerWindow? _instanceManager;
 
-    public MainWindow(string? workspacePath = null, string? settingsPath = null)
+    public MainWindow(string? workspacePath = null, string? settingsPath = null) : this(workspacePath, settingsPath, null) { }
+
+    internal MainWindow(string? workspacePath, string? settingsPath, Action<WorkspaceDocument>? saveWorkspace)
     {
         Title = "奇想我的世界启动器 · Wonder Minecraft Launcher";
         Width = 1180;
@@ -74,13 +76,14 @@ public sealed partial class MainWindow : Window
         GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
         AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);
         _workspace = new WorkspaceView(document, dataDirectory, registry) { Margin = new Thickness(22, 20, 22, 22) };
-        _workspace.Changed += (_, _) => Save();
+        InitializeWorkspaceStorage(saveWorkspace ?? _store.Save);
+        _workspace.Changed += WorkspaceChanged;
         _workspace.HelpRequested += (_, _) => ShowHelp();
         _workspace.ComponentLibraryRequested += OpenComponentLibrary;
         _workspace.SettingsRequested += OpenSettings;
         Deactivated += (_, _) => _workspace.CancelGesture();
-        Closing += (_, _) => { _workspace.CancelGesture(); Save(); };
-        Closed += (_, _) => { _accounts.Cancel(); _workspace.DisposeComponents(); };
+        Closing += CloseWorkspace;
+        Closed += (_, _) => { DisposeWorkspaceStorage(); _accounts.Cancel(); _workspace.DisposeComponents(); };
         PropertyChanged += (_, e) =>
         {
             if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)
@@ -162,15 +165,6 @@ public sealed partial class MainWindow : Window
         _library.Position = position;
     }
 
-    private void Save()
-    {
-        if (_loadFailed) return;
-        try { _store.Save(_workspace.Document); _error = null; }
-        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or ArgumentException)
-        { _error = $"布局尚未保存。\n{ex.Message}"; }
-        UpdateStorageStatus();
-    }
-
     private void OpenInstanceManager()
     {
         _workspace.CancelGesture();
@@ -227,15 +221,21 @@ public sealed partial class MainWindow : Window
 
     private async void ShowStorageError()
     {
-        await ShowMessage("布局存储", (_error ?? "布局已保存。") + "\n\n" + _workspacePath + (_loadFailed ? "\n\n当前会话允许体验，但不会写回原文件。请备份并移走该文件后重启，重新创建布局。" : "\n\n检查目录写入权限后再次操作即可重试保存。"));
+        await ShowMessage("布局存储", (_error ?? "布局已保存。") + "\n\n" + _workspacePath + (_loadFailed ? "\n\n当前会话允许体验，但不会写回原文件。请备份并移走该文件后重启，重新创建布局。" : "\n\n检查目录写入权限后点击重试保存，或继续编辑后自动重试。"), _loadFailed ? null : RetryWorkspaceSave);
     }
 
-    private async Task ShowMessage(string title, string message)
+    private async Task ShowMessage(string title, string message, Action? retry = null)
     {
         var dialog = new Window { Title = title, Width = 570, Height = 470, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Palette.Background, Foreground = Palette.Text, FontFamily = FontFamily };
         var stack = new StackPanel { Margin = new Thickness(28), Spacing = 18 };
         stack.Children.Add(new TextBlock { Text = title, FontSize = 21, FontWeight = FontWeight.SemiBold });
         stack.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = 13, LineHeight = 23, Foreground = Palette.Muted });
+        if (retry is not null)
+        {
+            var retryButton = new Button { Content = "重试保存", HorizontalAlignment = HorizontalAlignment.Right };
+            retryButton.Click += (_, _) => { retry(); dialog.Close(); };
+            stack.Children.Add(retryButton);
+        }
         var close = new Button { Content = "知道了", HorizontalAlignment = HorizontalAlignment.Right };
         close.Click += (_, _) => dialog.Close();
         stack.Children.Add(close);

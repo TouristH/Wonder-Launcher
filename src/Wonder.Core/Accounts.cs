@@ -18,6 +18,7 @@ public sealed record AccountProfile(string Id, AccountKind Kind, string Username
     public string? ActiveCapeId { get; init; }
     public DateTimeOffset? LastValidatedAt { get; init; }
     public string? OfflineSkinId { get; init; }
+    public IReadOnlyList<string> AllowedPrivateTextureOrigins { get; init; } = [];
 }
 public sealed record AccountCape(string Id, string Name, string Url);
 public sealed record AuthenticationServer(string Id, string Name, string ApiUrl, string? Homepage = null, string? RegistrationUrl = null);

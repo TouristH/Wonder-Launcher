@@ -6,7 +6,4 @@
   <Project Path="src/Wonder.Extensibility.Contracts/Wonder.Extensibility.Contracts.csproj" />
   <Project Path="src/Wonder.Workspace/Wonder.Workspace.csproj" />
   <Project Path="src/Wonder.Desktop/Wonder.Desktop.csproj" />
-  <Project Path="tests/Wonder.Workspace.Tests/Wonder.Workspace.Tests.csproj" />
-  <Project Path="tests/Wonder.Desktop.Tests/Wonder.Desktop.Tests.csproj" />
-  <Project Path="tests/Wonder.Game.Tests/Wonder.Game.Tests.csproj" />
 </Solution>

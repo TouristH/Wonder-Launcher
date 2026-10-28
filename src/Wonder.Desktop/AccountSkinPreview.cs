@@ -52,9 +52,10 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         // Independent downloads let a valid selected cape remain visible when its skin is unavailable.
         await Task.WhenAll(LoadTexture(profile.SkinUrl, cape: false), LoadTexture(selectedCape?.Url, cape: true));
         if (_disposed || revision != _revision) return;
+        var retryHint = profile.Kind == AccountKind.Yggdrasil ? " · 可刷新账户或检查纹理来源许可" : " · 可刷新账户重试";
         Description = CapeOnly
-            ? selectedCape is null ? "未选择披风" : capeFailed ? "披风暂不可用 · 可刷新账户重试" : selectedCape.Name + " · 已选披风"
-            : skinFailed || capeFailed ? (skinFailed ? "皮肤暂不可用" : "已保存的角色外观") + (capeFailed ? " · 披风暂不可用" : _cape is not null ? " · 已选披风" : "") + " · 可刷新账户重试"
+            ? selectedCape is null ? "未选择披风" : capeFailed ? "披风暂不可用" + retryHint : selectedCape.Name + " · 已选披风"
+            : skinFailed || capeFailed ? (skinFailed ? "皮肤暂不可用" : "已保存的角色外观") + (capeFailed ? " · 披风暂不可用" : _cape is not null ? " · 已选披风" : "") + retryHint
             : _skin is null ? (profile.Kind == AccountKind.Yggdrasil ? "未取得皮肤资料 · 请刷新账户" : "默认角色示意") + (_cape is not null ? " · 已选披风" : "") : "已保存的角色外观";
         InvalidateVisual(); LoadedTexture?.Invoke();
 
@@ -64,7 +65,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             try
             {
                 var bytes = await (_download is not null ? _download(url, _lifetime.Token)
-                    : profile.Kind == AccountKind.Yggdrasil ? _textures.DownloadThirdPartyAsync(url, _lifetime.Token)
+                    : profile.Kind == AccountKind.Yggdrasil ? _textures.DownloadThirdPartyAsync(url, profile.AllowedPrivateTextureOrigins, _lifetime.Token)
                     : _textures.DownloadAsync(url, _lifetime.Token));
                 if (_disposed || (cape ? capeRevision != _capeRevision : revision != _revision)) return;
                 var bitmap = Decode(bytes, cape, allowHighDefinition: profile.Kind == AccountKind.Yggdrasil);

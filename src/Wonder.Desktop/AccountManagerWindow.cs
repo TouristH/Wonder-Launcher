@@ -152,6 +152,7 @@ internal sealed partial class AccountManagerWindow : Window
             body.Children.Add(PageStyles.Hint("皮肤、披风和角色资料由认证服务器管理。添加账户可选择该账号拥有的其他角色。"));
             body.Children.Add(BuildCharacterPreview(profile));
             BuildActiveCape(body, profile);
+            BuildTextureOrigins(body, profile);
             body.Children.Add(PageStyles.Hint("网站修改外观后点击“刷新资料”，同步当前皮肤和已选披风。"));
             if (_service.GetSkinManagementWebsite(profile.Id) is { } home)
             {

@@ -111,6 +111,43 @@ public sealed class WorkspaceStore
         }
     }
 
+    /// <summary>Copies the UI-owned model before a background writer can observe it.</summary>
+    public static WorkspaceDocument CaptureSnapshot(WorkspaceDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        // Validate before copying so invalid local shortcut state cannot disappear in the copy.
+        Validate(document);
+        var snapshot = new WorkspaceDocument
+        {
+            Version = document.Version,
+            Root = CopyNode(document.Root),
+            Library = document.Library.Select(item => new ComponentItem
+            {
+                Id = item.Id, DefinitionId = item.DefinitionId, X = item.X, Y = item.Y,
+                State = new Dictionary<string, string>(item.State, StringComparer.Ordinal)
+            }).ToList()
+        };
+        snapshot.EnsureLibrary();
+        Validate(snapshot);
+        return snapshot;
+
+        static LayoutNode? CopyNode(LayoutNode? node) => node is null ? null : new LayoutNode
+        {
+            Id = node.Id, Axis = node.Axis, Ratio = node.Ratio,
+            First = CopyNode(node.First), Second = CopyNode(node.Second),
+            Area = node.Area is null ? null : new Area
+            {
+                Id = node.Area.Id, Title = node.Area.Title,
+                SidebarEdge = node.Area.SidebarEdge, SidebarExtent = node.Area.SidebarExtent,
+                Components = node.Area.Components.Select(item => new ComponentItem
+                {
+                    Id = item.Id, DefinitionId = item.DefinitionId, ApplicationId = item.ApplicationId,
+                    X = item.X, Y = item.Y
+                }).ToList()
+            }
+        };
+    }
+
     internal class FileOperations
     {
         public virtual FileStream CreateTemporary(string path) => new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);

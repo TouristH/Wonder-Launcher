@@ -24,7 +24,9 @@
 
 账户管理功能组织参考 HMCL，Minecraft 认证和外观接口互操作参考 Prism Launcher 的公开实现；Wonder 的相关代码独立编写，没有复制这些项目的代码、图标或默认皮肤资源。链接见[账户中心说明](Guides/26-account-management.md#架构与协议依据)。
 
-## 测试依赖
+## 本地验证使用的依赖
+
+以下依赖用于维护者本地测试，不属于公开源码树中的测试工程或发布 EXE 的运行依赖。保留其既有元数据和原始通知以维持来源记录，不随本次公开范围整理删除或改写第三方原文。
 
 - Microsoft.NET.Test.Sdk 17.12.0 与相关测试平台包：按包内 MIT 及第三方声明授权。
 - Avalonia.Headless.XUnit 12.1.1：MIT。

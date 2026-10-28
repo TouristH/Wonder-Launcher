@@ -244,8 +244,18 @@ public sealed partial class AccountService : ILaunchAccountProvider
             var next = Copy(_vault);
             var index = next.Accounts.FindIndex(x => x.Profile.Kind == account.Profile.Kind &&
                 string.Equals(x.Profile.Uuid, account.Profile.Uuid, StringComparison.OrdinalIgnoreCase) && ServersEqual(x.Profile.ServerUrl, account.Profile.ServerUrl));
-            if (index >= 0) { account = new(account.Profile with { Id = next.Accounts[index].Profile.Id }, account.Credentials); next.Accounts[index] = account; }
-            else next.Accounts.Add(account);
+            // Permissions belong to this local identity; authentication and appearance results cannot grant them.
+            if (index >= 0)
+            {
+                var local = next.Accounts[index].Profile;
+                account = new(account.Profile with { Id = local.Id, AllowedPrivateTextureOrigins = local.AllowedPrivateTextureOrigins }, account.Credentials);
+                next.Accounts[index] = account;
+            }
+            else
+            {
+                account = new(account.Profile with { AllowedPrivateTextureOrigins = Array.AsReadOnly(Array.Empty<string>()) }, account.Credentials);
+                next.Accounts.Add(account);
+            }
             if (select) next.SelectedAccountId = account.Profile.Id;
             ImportAccountServers(next);
             Persist(next, preserveCredentialsOnFailure ? account : null);
@@ -276,7 +286,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
             _pendingCredentialSave = rotatedAccount;
             throw new AccountAuthenticationException("新账户凭据已在服务器生效，但本机保存失败。请不要退出启动器，修复数据目录权限或磁盘空间后刷新账户或重试启动；将先重试保存。若已退出，请重新登录。");
         }
-        _vault = vault;
+        _vault = Copy(vault);
         if (rotatedAccount is not null) _pendingCredentialSave = null;
     }
     private static string SafeError(Exception ex) => ex is AccountAuthenticationException or AccountLimitException ? ex.Message :
@@ -284,7 +294,11 @@ public sealed partial class AccountService : ILaunchAccountProvider
         "账户操作未完成，请检查网络、数据目录权限或重新登录。如已提交外观修改，请刷新账户核对。";
     private static AccountVault Copy(AccountVault value) => new()
     {
-        Version = value.Version, Accounts = [.. value.Accounts], SelectedAccountId = value.SelectedAccountId,
+        Version = value.Version, Accounts = value.Accounts.Select(x => new AuthenticatedAccount(x.Profile with
+        {
+            AllowedPrivateTextureOrigins = Array.AsReadOnly(x.Profile.AllowedPrivateTextureOrigins.ToArray()),
+            Capes = Array.AsReadOnly(x.Profile.Capes.ToArray())
+        }, x.Credentials)).ToList(), SelectedAccountId = value.SelectedAccountId,
         MicrosoftClientId = WonderMicrosoftApplication.ClientId, Servers = [.. value.Servers],
         AuthlibInjectorPath = value.AuthlibInjectorPath, AuthlibInjectorSha256 = value.AuthlibInjectorSha256
     };
@@ -312,6 +326,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
             if (p.Kind == AccountKind.Microsoft && (!Guid.TryParse(p.ClientId, out _) || p.ServerUrl is not null)) throw new InvalidDataException();
             if (p.Kind == AccountKind.Yggdrasil && (!Uri.TryCreate(p.ServerUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)) throw new InvalidDataException();
             ValidateAppearance(p);
+            TextureOrigin.Validate(p);
         }
         if (value.SelectedAccountId is not null && !ids.Contains(value.SelectedAccountId)) throw new InvalidDataException();
     }

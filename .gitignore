@@ -25,3 +25,24 @@
 *.pem
 Thumbs.db
 .DS_Store
+
+# Local development and validation material (kept on disk, not published)
+/tests/
+/tools/
+/AGENTS.md
+/.workbuddy/
+/Wonder.Development.slnx
+
+# Publish user-facing help only; internal plans and review records stay local
+/Guides/*
+!/Guides/README.md
+!/Guides/13-wonder-ui-foundation.md
+!/Guides/14-settings-component.md
+!/Guides/15-portable-data-and-motion.md
+!/Guides/16-component-system.md
+!/Guides/18-instance-management-and-launch.md
+!/Guides/21-settings-pages-and-instance-cards.md
+!/Guides/22-instance-selection-and-directory-actions.md
+!/Guides/26-account-management.md
+!/Guides/28-login-diagnostics-and-default-skins.md
+!/Guides/30-layered-skins-capes-and-avatars.md

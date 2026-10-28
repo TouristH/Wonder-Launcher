@@ -25,6 +25,8 @@ public sealed partial class WorkspaceView : Panel
     public event Action? SettingsRequested;
     public void OpenSettings() { CancelGesture(); SettingsRequested?.Invoke(); }
     internal ComponentHost Components { get; }
+    // Divider resizing temporarily changes the model until release or cancellation.
+    internal bool HasPendingGesture => _gesture is not null;
     private bool _runtimeVisible = true;
     internal Control? ComponentLibraryDropTarget { get; set; }
     private readonly Dictionary<string, AreaView> _areas = new();

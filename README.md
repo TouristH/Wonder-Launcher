@@ -10,7 +10,7 @@
 
 维护者：[TouristH](https://github.com/TouristH) · 项目联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)
 
-[使用说明](Wonder.md) · [开发文档](Guides/README.md) · [隐私说明](PRIVACY.md) · [Minecraft AppID 审核说明](Guides/24-minecraft-app-review.md) · [第三方声明](THIRD-PARTY-NOTICES.md)
+[使用说明](Wonder.md) · [帮助目录](Guides/README.md) · [隐私说明](PRIVACY.md) · [第三方声明](THIRD-PARTY-NOTICES.md)
 
 ## 已实现的功能
 
@@ -26,53 +26,27 @@
 
 游戏安装/修复、第三方代码插件加载及权限沙箱仍待实现。没有将 `AssemblyLoadContext` 或普通子进程描述为安全沙箱。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
 
-## Minecraft Services / AppID 审核信息
+## 认证与隐私
 
-申请使用的应用显示名为 **Wonder Launcher**，不在注册应用名中加入 Minecraft、Mojang、Microsoft、Live、Xbox、Discord 或 Hypixel。Minecraft 只用于说明兼容的游戏。
+微软正版账户使用 Wonder 内置的公开应用 ID，由用户在微软官方网页主动授权；启动器不收集微软密码。正版启动路径验证游戏权限和角色，认证失败不会自动切换离线身份。当前尚未完成真实账户的线上全链路验收，也未声明通过 Minecraft AppID 审核。离线和自定义 Yggdrasil 模式不能证明微软游戏所有权。
 
-| 项目 | 当前状态 |
-| --- | --- |
-| 应用用途 | 可自定义桌面式启动器、本地实例与启动设置管理 |
-| 平台与技术 | Windows x64，.NET 10，Avalonia；核心与组件契约分层 |
-| 申请目标 | 计划通过用户主动发起的官方登录，验证游戏所有权并获取本人游戏资料和启动会话 |
-| Application / Client ID、Tenant ID | 启动器内置维护者的公开 Client ID `fab70daf-af0d-423d-9468-6b42edce3c81`，玩家无需填写；注册配置、Tenant ID 与服务授权仍需维护者核实 |
-| 微软登录、Xbox/XSTS、Minecraft API | 已实现设备码、刷新、服务认证链及角色查询；尚未通过真实账户完成线上验收 |
-| 所有权与启动门禁 | 正版路径校验游戏 entitlement 与角色，失败拒绝启动；独立离线和第三方模式仍存在，不能声称满足所有路径的审核要求 |
-| 审核状态 | **未声明提交或通过审核**；此 README 不能替代实际认证和所有权校验 |
-
-官方 [AppID Review 表单](https://aka.ms/mce-reviewappid) 要求在允许游戏前完成身份认证和所有权验证，且不因服务器配置不同而豁免。本项目会如实保留当前实现和待办，不将离线用户名或本地游戏文件的存在当作正版所有权证明。完整的计划、代码入口与提交前条件见[审核说明](Guides/24-minecraft-app-review.md)。
-
-当前版本不收集微软密码，不实现账号令牌导入或云端账号服务。第三方密码只发送到用户指定的 HTTPS 服务且不保存；账户库由 Windows DPAPI CurrentUser 加密。不随源码分发 Minecraft 客户端、资产、Java 或用户存档。离线和第三方身份不能证明微软正版所有权。
-
-## For Minecraft application reviewers
-
-Wonder Launcher is an independent, Windows desktop launcher and local instance manager maintained by TouristH. Contact: **radiafidw@gmail.com**.
-
-Version 0.7.2 provides an account center with Microsoft device-code sign-in, Xbox/XSTS authentication, Minecraft Services entitlement/profile checks, encrypted credential storage and account-aware launching. It adds account refresh and reauthentication, skin and owned-cape management, and saved authentication servers. The public Wonder application ID is built in; players do not configure an application registration. Synthetic protocol and UI tests do not establish successful live authentication or API authorization. Offline and custom Yggdrasil modes remain separate and do **not** satisfy the universal authentication/ownership requirement in the AppID review form. No approval is claimed.
-
-The integration uses the maintainer-supplied public application ID and user-initiated authentication. No Microsoft passwords, another launcher's Client ID, game binaries, or account tokens are included in this repository. See the [review notes](Guides/24-minecraft-app-review.md) and [privacy statement](PRIVACY.md) for behavior, security boundaries, and remaining live verification.
+第三方密码只发送到用户选择的 HTTPS 认证服务且不保存；账户库使用 Windows 当前用户 DPAPI 加密。第三方纹理默认阻止内网、回环和其他受限目标，可在单个账户详情中明确允许准确的 HTTPS 来源；仍执行证书验证，纹理不经过系统 HTTP 代理。配置与撤销方式见[账户帮助](Guides/26-account-management.md)。不随源码分发游戏文件、Java、存档或账户数据，详细说明见[隐私政策](PRIVACY.md)。
 
 ## 从源码构建
 
-需要 .NET 10 SDK。在本目录执行：
-
-构建版本统一在根目录 `Directory.Build.props` 的 `Version` 中维护；窗口显示和游戏启动参数使用同一构建元数据。当前版本仍为 0.7.2。
+需要 .NET 10 SDK。在源码根目录执行：
 
 ```powershell
 dotnet build Wonder.slnx -c Release
-dotnet test Wonder.slnx -c Release
+dotnet run --project src/Wonder.Desktop/Wonder.Desktop.csproj
 dotnet publish src/Wonder.Desktop/Wonder.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o artifacts/Wonder-win-x64
 ```
 
-发布程序为 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`，设置和布局位于同目录的 `WonderData/`。更新程序时保留此数据目录。`artifacts/`、游戏文件、用户数据和编译缓存不提交到源码仓库。编译产物需连同适用的许可及第三方声明按协议分发。
+`Wonder.slnx` 包含六个生产工程，版本统一在 `Directory.Build.props` 中维护。发布程序为 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`，设置、布局、账户和实例登记位于程序旁的 `WonderData/`。更新前关闭启动器，保留数据目录；移动到其他电脑后，绑定原 Windows 用户的账户需要重新登录。
 
-第一阶段修复针对多开覆盖、第三方凭据轮换后取消和官方 profile 换版本的登记问题，见[修复验收记录](Guides/32-first-repair-results.md)。第三方认证已返回并验证的新凭据会先保存，取消仍会停止后续启动；保存失败时应保持启动器打开，修复数据目录权限后重试账户刷新或启动。更新前请关闭旧版启动器进程。
+公开仓库保留 `src/`、解决方案与构建配置、README、Wonder 使用说明、用户 Guides，以及许可、隐私和第三方原始通知。测试工程、探针、AI 开发约定、实施计划、内部验收记录和本地工具配置不纳入公开提交；游戏文件、用户数据、编译缓存及发布产物也不提交。
 
-2026-10-28 第二阶段修复统一账户上限与版本来源、修正矩形占位头像，并加强实例索引刷盘及保存多重故障诊断。最新完整测试 **954 项通过、0 失败、0 跳过**（Workspace 225、Game 374、Desktop 355）；Release 构建 0 警告、0 错误，发布 EXE 双进程冒烟通过，发布前后 33 个 WonderData 文件哈希一致。范围与剩余问题见[第二阶段验收记录](Guides/34-second-repair-results.md)。
-
-此前 0.7.2 HD 外观兼容更新完整测试为 **898 项通过、0 失败、0 跳过**（Workspace 210、Game 341、Desktop 347），包含 HD 纹理校验与下载、双层皮肤像素、披风和账户头像交互验证，以上用例继续包含在最新回归中。详细范围见[外观预览](Guides/30-layered-skins-capes-and-avatars.md)，登录排障见[登录诊断与默认皮肤](Guides/28-login-diagnostics-and-default-skins.md)。测试不能代表真实账户认证或 AppID 已获批。
-
-2026-10-27 第一阶段修复后的完整测试为 **833 项通过、0 失败、0 跳过**（Workspace 210、Game 314、Desktop 309）；Release 构建 0 警告、0 错误，发布 EXE 双进程冒烟通过。原有 WonderData 的 32 个文件哈希保持一致，证据及限制见[本轮验收记录](Guides/32-first-repair-results.md)。
+分发程序时，请同步提供 README、Wonder.md、公开 Guides、PRIVACY.md、LICENSE、LICENSE.zh-CN.md、ADDITIONAL_TERMS.md、BRANDING.md、NOTICE、THIRD-PARTY-NOTICES.md 和 ThirdPartyLicenses，并按许可要求提供对应源码和必要构建材料。
 
 ## 许可与转载
 

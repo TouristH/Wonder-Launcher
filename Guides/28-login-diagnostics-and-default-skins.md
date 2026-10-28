@@ -1,14 +1,12 @@
 # 登录诊断、离线默认皮肤与第三方选肤
 
-适用版本：0.7.1。更新日期：2026-10-26。
+适用版本：0.7.2。
 
-## 微软公共客户端配置与 Minecraft AppID 审批是两个阶段
+## 微软登录失败时
 
 登录顺序为 Microsoft 设备授权 → Microsoft 会话 → Xbox 登录 → XSTS 授权 → Minecraft Services 登录 → 游戏许可 → 玩家资料。新版错误提示保留阶段和 HTTP 状态；Microsoft OAuth 错误只显示白名单协议标识与已知 AADSTS 数字。可以点击“复制诊断”分享这些安全信息，不必分享令牌、密码或账户库。上游自由文本、响应正文和追踪标识不会直接回显。
 
-本轮最初复现的错误是 **HTTP 401 / invalid_client / AADSTS70002**，Microsoft 返回该应用必须标记为移动客户端。这发生在取得设备码以前，等待 Minecraft AppID 审批不能修复这一错误。维护者应在 [Microsoft Entra 管理中心](https://entra.microsoft.com/) 的应用注册中选择 Wonder，打开“身份验证 / Authentication”，在高级设置中将 **Allow public client flows / 允许公共客户端流**设为 Yes 并保存，同时确认支持个人 Microsoft 账户。设备码流程不需要给桌面程序添加 Client Secret。依据：[桌面应用配置](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-configuration#enable-public-client-flow)、[设备授权协议](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)。
-
-用户启用该配置后已推进到 **Minecraft 登录失败**。按当前代码路径，这说明 Microsoft 会话及 Xbox/XSTS 请求已成功，失败发生在固定的 Minecraft Services 登录接口。**尚未获准的 AppID 服务访问权限是主要排查方向，但通用错误截图不能证明只差审批。**
+**HTTP 401 / invalid_client / AADSTS70002** 出现在设备授权阶段时，应由维护者检查应用的公共客户端配置。普通玩家无需填写 Client ID 或 Client Secret，可使用“复制诊断”提供错误阶段与状态码。Minecraft 服务访问授权与设备授权配置是不同环节，仅凭错误截图不能判断审核状态。
 
 - **Minecraft 登录 HTTP 403**：核对 AppID 的服务访问审批、获准权限及实际 Client ID；403 是拒绝访问的证据，不是审核状态查询结果。
 - **Minecraft 登录 HTTP 401**：会话未被接受，先重新登录；持续失败时检查认证链和应用权限。
@@ -37,14 +35,4 @@ Wonder 内置公开应用 ID，普通玩家不填写开发配置。没有替换�
 
 第三方账户详情中的“选择皮肤 · 打开认证网站”会自动在系统默认浏览器打开该服务器保存的网站地址。先采用服务公开元数据声明的主页；没有主页时使用认证 API 所在域名的 HTTPS 首页。用户在网站中登录并选择皮肤，Wonder 不把密码或令牌加入 URL 或交给浏览器。
 
-如果皮肤站有专门的管理页，在“认证服务器”中填写“皮肤管理网站”并点击“保存网站”。只接受不含用户凭据的 HTTPS URL；留空恢复域名首页。不同 Yggdrasil 服务没有统一皮肤上传接口，所以不猜测管理 API、不假装已经提交皮肤。
-
-## 验证
-
-合成测试覆盖安全登录诊断、全部预设 UUID 与现代/旧版规则、身份保存/重命名/恢复、加密库校验、启动参数和网站 URL 校验。桌面点击验证确认前不改 UUID、恢复原 UUID，以及第三方选肤按钮只在点击时打开指定网站。真实 Java 子进程检查传入的 UUID，并用 Java 自身的 `UUID.hashCode()` / `Math.floorMod` 验证默认皮肤索引。
-
-Release 构建 0 警告、0 错误。完整测试 **759 项通过、0 失败、0 跳过**（Workspace 210、Game 268、Desktop 281）。13 项账户桌面测试均通过并检查渲染；真实合成 Java 进程对默认皮肤 UUID 的 Java 哈希验证通过，报告位于 `artifacts/account-skins-java-smoke/java-smoke.json`。
-
-发布到 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`，主目录和发布目录的 4 个顶层 WonderData 文件在发布前后 SHA-256 相同。没有把真实实例、账户或设置复制进测试夹具。
-
-本轮没有使用真实用户令牌执行 Minecraft 请求，也没有验证真实游戏画面或云端皮肤变更。
+如果皮肤站有专门的管理页，在“认证服务器”中填写“皮肤管理网站”并点击“保存网站”。只接受不含用户凭据的 HTTPS URL；留空恢复域名首页。不同 Yggdrasil 服务没有统一皮肤上传接口，因此需要在对应网站内完成外观修改；返回 Wonder 后点击“刷新资料”。

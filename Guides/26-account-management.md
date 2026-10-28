@@ -1,6 +1,6 @@
 # 账户中心、登录与角色外观
 
-适用版本：0.7.2。更新日期：2026-10-26。登录错误定位见[补充说明](28-login-diagnostics-and-default-skins.md)，新版第三方预览、双层皮肤、已选披风和组件头像见[外观说明](30-layered-skins-capes-and-avatars.md)。
+适用版本：0.7.2。登录错误定位见[补充说明](28-login-diagnostics-and-default-skins.md)，新版第三方预览、双层皮肤、已选披风和组件头像见[外观说明](30-layered-skins-capes-and-avatars.md)。
 
 ## 使用
 
@@ -15,7 +15,7 @@
 3. Wonder 完成 Xbox/XSTS、Minecraft 会话、entitlement 和 profile 检查后保存账户。没有游戏权限、没有角色、账号受限、网络错误或 API 拒绝时不能完成正版启动，不自动改用离线身份。
 4. “取消登录”或关闭账户窗口取消等待。启动前重新刷新并验证所选账户；Microsoft 密码/多因素验证始终由官方网页处理。
 
-应用注册须支持个人 Microsoft 账户、公共客户端/设备授权以及 Xbox 所需权限；Minecraft API 还可能需要 AppID 审核。提供 Client ID 不代表这些配置已经验证。代码和合成测试已经实现认证流程，但尚无本项目真实账户全链路授权成功的证据。
+应用注册须支持个人 Microsoft 账户、公共客户端/设备授权以及 Xbox 所需权限；Minecraft API 还可能需要 AppID 审核。提供 Client ID 不代表这些配置已经验证。当前尚未完成真实账户全链路的线上验收，不能将能够显示登录界面视为服务权限已获准。
 
 ### 正版皮肤与披风
 
@@ -43,6 +43,16 @@
 
 认证适配器从 `authlib-injector.yushi.moe` 下载，不向下载端点发送账户凭据，JAR 会在第三方游戏进程中执行。其原始许可、版权和来源独立于 Wonder，见[第三方声明](../THIRD-PARTY-NOTICES.md)。普通账户流程使用自动准备；底层仍兼容既有手动路径与哈希字段，便于读取本项目旧账户库。
 
+### 第三方纹理来源许可
+
+第三方皮肤、披风和头像默认只连接允许的公共网络地址。认证服务器提供内网地址时，账户仍可读取，预览会显示加载失败；不会因为旧库保存了内网 URL 而拒绝整个账户库。
+
+确实使用内网皮肤服务时，打开该第三方账户详情，在“纹理来源许可”中输入可信来源，点击“允许当前账户使用此来源连接内网”。只填写 HTTPS 协议、主机和端口，例如 `https://skin.home.arpa:8443`；不能填写图片路径、通配符、用户名密码、查询参数或片段。默认 HTTPS 端口统一显示为 `:443`，每个账户最多保存 32 个来源。已允许的每项旁都有“移除许可”。
+
+许可只属于当前账户和准确的主机、端口，不会自动扩展到同服务器的其他账户、子域或其他端口。重新登录和刷新保留原本的本地许可，远端返回资料不能新增许可。移除来源后预览会重新加载，后续连接恢复默认限制；保存失败时原许可保持。
+
+放行来源仍要求有效的 HTTPS 证书，不会关闭证书验证；未指定地址、多播与广播目标继续拒绝。第三方纹理不使用系统 HTTP 代理；仅能经代理访问的皮肤站可能无法预览。此设置不改变主动配置的认证 API 地址，也不改变官方纹理的访问路径。
+
 ### 离线
 
 输入 3–16 位字母、数字或下划线的玩家名，添加后自动使用。详情中可修改离线玩家名，点击“确认修改名字与 UUID”保存；同名账户已存在时会拒绝改名，改用已有条目即可。离线 UUID 使用 Minecraft 的 `OfflinePlayer:<name>` 规则，名字区分大小写，**改名会改变 UUID 和游戏身份**，可能导致服务器或存档按另一玩家处理。此模式不联网认证，也不验证微软游戏所有权。
@@ -61,20 +71,4 @@
 
 ## 架构与协议依据
 
-`Wonder.Core/Accounts.cs` 定义不带 UI 的身份、外观与服务器资料；`AccountService` 统一账户管理、服务器确认、取消、持久化回滚及会话取得。Infrastructure 包含 `WindowsAccountStore`、`MicrosoftAuthenticator`、`YggdrasilAuthenticator`、认证服务器发现、适配器下载及官方纹理读取；Desktop 使用 `AccountComponents` 和分离登录/外观页面的 `AccountManagerWindow`。现有 `InstanceService` 在构建游戏计划前请求已选账户，`LocalGameLauncher` 固定身份并在输出端脱敏。
-
 协议参考：[Microsoft 设备授权](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)、[Windows DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata)、[Yggdrasil 服务规范](https://yushijinhun.github.io/authlib-injector/en/yggdrasil-server-technical-specification.html)、[authlib-injector 启动器规范](https://yushijinhun.github.io/authlib-injector/en/launcher-technical-specification.html)。Minecraft 请求路径使用 [PrismLauncher 认证实现](https://github.com/PrismLauncher/PrismLauncher/tree/develop/launcher/minecraft/auth/steps) 作为互操作参考；账户列表、外观操作和服务器确认参考了 [HMCL 账户界面](https://github.com/HMCL-dev/HMCL/tree/main/HMCL/src/main/java/org/jackhuang/hmcl/ui/account) 的功能组织。Wonder 实现独立编写，未复制这些项目的代码或资源；本轮范围不代表复刻 HMCL 的全部功能。
-
-## 验证记录
-
-0.7.1 的历史验证为 **759 项全部通过**（Workspace 210、Game 268、Desktop 281），包含新增登录诊断、离线默认皮肤及网站选肤用例；真实 Java 自身 UUID 哈希验证通过。0.7.2 验证结果见[外观说明](30-layered-skins-capes-and-avatars.md)。以下保留 0.7.0 的历史验证范围。
-
-0.7.0 Release 构建 **0 警告、0 错误**；完整测试 **712 项通过、0 失败、0 跳过**（Workspace 210、Game 224、Desktop 278）。本次新增服务测试覆盖内置应用 ID、刷新与重新登录不改变选择、身份连续性、改名、服务器发现确认与删除保护、自动适配器，以及外观失败时保存已旋转凭据、取消后不覆盖本地资料。
-
-DPAPI、认证协议、取消竞争、启动身份固定及日志脱敏的回归覆盖继续通过。10 项账户桌面测试检查实际点击、浏览与启动选择分离、设备码取消、服务器确认、披风与恢复默认的明确操作、外部切换同步、登录回调不打断新页面，以及本地皮肤预览优先于迟到下载、默认皮肤的披风显示。已查看账户详情、登录、服务器、紧凑尺寸、桌面组件及角色正反面的 Headless 渲染。
-
-`Wonder.JavaSmoke` 真实合成 Java 子进程验证通过，覆盖离线/模拟在线身份、中文和空格路径、stdout/stderr、长令牌脱敏和清除继承的 `JAVA_TOOL_OPTIONS`，不连接认证服务。实际下载的官方 authlib-injector 1.2.8 为 349681 字节，SHA-256 与内置固定值相符，下载验收没有执行该 JAR。报告路径为 `artifacts/accounts-java-smoke/java-smoke.json`，界面截图路径为 `artifacts/accounts-preview/`，均不提交到仓库。
-
-发布程序位于 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`。发布前后已核对主目录及发布目录下的 4 个顶层 WonderData 文件，SHA-256 均未改变；没有读取真实凭据或将用户数据用作测试夹具。发布包同步包含帮助文档与第三方原始许可。
-
-仍需人工完成：真实 Microsoft 账户授权、实际 AppID 服务访问、本人皮肤/披风修改、自选第三方服务登录及真实游戏多人认证。合成测试与 Headless 渲染不能替代这些线上验收，也不代表已提交或通过 AppID 审核；独立离线和第三方模式仍不能证明微软游戏所有权。

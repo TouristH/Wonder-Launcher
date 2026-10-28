@@ -93,6 +93,7 @@ public sealed class WindowsAccountStore(string path) : IAccountStore
             if (entry?.Profile is not { } profile || entry.Credentials is not { } credentials) throw InvalidVault();
             AccountLimits.ValidateProfileIdLength(profile.Id);
             AccountLimits.ValidateUsernameLength(profile.Username);
+            TextureOrigin.Validate(profile);
             if (!SafeText(profile.Id, AccountLimits.MaximumProfileIdLength) || !ids.Add(profile.Id) || !Enum.IsDefined(profile.Kind) ||
                 !SafeText(profile.Username, AccountLimits.MaximumUsernameLength) || !ValidUuid(profile.Uuid)) throw InvalidVault();
             if (profile.Kind == AccountKind.Microsoft && (!Guid.TryParse(profile.ClientId, out _) || profile.ServerUrl is not null)) throw InvalidVault();

@@ -36,6 +36,10 @@
 
 ## 原始许可与声明
 
+三端同源发行另附 macOS x64/arm64 `.NET runtime 10.0.13`、`SkiaSharp.NativeAssets.macOS 3.119.4`、`HarfBuzzSharp.NativeAssets.macOS 8.3.1.3` 的包内原始许可与第三方通知。源码组织方式参考 HMCL 的平台检测/分发思路，没有复制其实现；Wonder 使用自己的 .NET/Avalonia 工程与平台接口。
+
+Linux x64 0.7.2 试发行包另附 `.NET runtime linux-x64 10.0.13`、`SkiaSharp.NativeAssets.Linux 3.119.4` 与 `HarfBuzzSharp.NativeAssets.Linux 8.3.1.3` 的包内原始许可和第三方通知，保存在 `ThirdPartyLicenses/` 的同名目录中。系统提供的 X11、字体、GIO 与 Secret Service 工具需由用户按发行版安装，不打包进应用。
+
 本仓库在 [ThirdPartyLicenses/](ThirdPartyLicenses/) 保留从当前 NuGet 包中复制的 SkiaSharp、HarfBuzzSharp、ANGLE、.NET runtime、Newtonsoft.Json 和 Microsoft 测试平台许可/第三方通知原文。对应版权归各原文中的权利人，不能删除、改写或覆盖为本项目版权。上游没有随包提供完整许可文件的依赖，记录其元数据中的许可表达式或许可链接。
 
 这些通知不是所有未来二进制包的永久许可清单。发布程序时需将完整通知随实际依赖一起分发；无需把 NuGet 缓存或整个运行时源码提交进本仓库。

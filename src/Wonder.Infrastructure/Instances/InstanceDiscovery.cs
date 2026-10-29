@@ -37,7 +37,7 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         {
             var root = Directory.Exists(Path.Combine(selected, "versions")) ? selected : Directory.Exists(Path.Combine(selected, ".minecraft", "versions")) ? Path.Combine(selected, ".minecraft") : Path.GetFileName(selected) == "versions" ? Path.GetDirectoryName(selected)! : selected;
             var versions = Path.Combine(root, "versions");
-            var profiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var profiles = new HashSet<string>(WonderPath.Comparer);
             var profilePath = Path.Combine(root, "launcher_profiles.json");
             if (File.Exists(profilePath))
             {
@@ -179,7 +179,7 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         catch (ArgumentException ex) { warnings.Add("来源设置无效，使用 Wonder 默认值；请细调后再启动。" + ex.Message); return new(); }
     }
     internal static string? ResolveDirectory(string? path, string root) => NonEmpty(path) is null ? null : Path.GetFullPath(path!, root);
-    private static string Identity(string path) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path.ToUpperInvariant())))[..32].ToLowerInvariant();
+    private static string Identity(string path) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path)))[..32].ToLowerInvariant();
     internal static int? MemoryArgument(string? arguments, string kind)
     {
         var match = System.Text.RegularExpressions.Regex.Matches(arguments ?? "", @"(?:^|\s)-X" + kind + @"(\d+)([mMgG])(?=\s|$)").LastOrDefault();

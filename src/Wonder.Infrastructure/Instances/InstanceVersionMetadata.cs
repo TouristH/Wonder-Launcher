@@ -32,7 +32,7 @@ internal static partial class InstanceVersionMetadata
                 AddLoader(loaders, name, entry.Get("version").Text());
             }
         });
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var visited = new HashSet<string>(WonderPath.Comparer);
         foreach (var path in metadataPaths.Take(128)) ReadLoaderMetadata(path, versionsDirectory, loaders, visited, 0);
         // NeoForge can retain Forge bootstrap/support libraries. They are not another installed loader.
         if (loaders.ContainsKey("NeoForge")) loaders.Remove("Forge");
@@ -97,7 +97,7 @@ internal static partial class InstanceVersionMetadata
 
     public static string ReadStandard(string metadataPath, string versionsDirectory)
     {
-        var version = TryRead(() => ReadInherited(metadataPath, versionsDirectory, new(StringComparer.OrdinalIgnoreCase), 0));
+        var version = TryRead(() => ReadInherited(metadataPath, versionsDirectory, new(WonderPath.Comparer), 0));
         if (version.Length > 0) return version;
         return TryRead(() => ExplicitVersion(Ini(Path.Combine(Path.GetDirectoryName(metadataPath)!, "PCL", "Setup.ini"), ':')
             .GetValueOrDefault("VersionVanillaName")));

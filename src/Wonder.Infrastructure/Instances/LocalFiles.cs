@@ -2,6 +2,7 @@
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
 using System.Text.Json;
+using Wonder.Core;
 
 namespace Wonder.Infrastructure;
 
@@ -35,7 +36,7 @@ internal static class LocalFiles
     public static string Under(string root, string relative)
     {
         var path = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
-        if (!path.StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (!path.StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, WonderPath.Comparison))
             throw new InvalidDataException("配置路径越出所属目录：" + relative);
         return path;
     }

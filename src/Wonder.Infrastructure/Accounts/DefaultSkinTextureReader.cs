@@ -23,7 +23,7 @@ public static class DefaultSkinTextureReader
         }
         var modern = "assets/minecraft/textures/entity/player/" + (variant == "slim" ? "slim" : "wide") + "/" + textureName + ".png";
         var old = "assets/minecraft/textures/entity/" + textureName + ".png";
-        foreach (var path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var path in candidates.Distinct(WonderPath.Comparer))
         {
             try
             {

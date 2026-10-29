@@ -23,11 +23,14 @@ internal sealed class LauncherInstanceGuard : IDisposable
         FileStream stream;
         try
         {
-            // A live file handle also covers case, relative paths and directory junction aliases.
-            // Denying write/delete sharing prevents another writer or replacement of the lock file.
-            stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+            // Unix maps any sharing permission to a shared flock; only None excludes writers.
+            // Windows keeps read sharing so the second process can read the activation hint.
+            stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                OperatingSystem.IsWindows() ? FileShare.Read : FileShare.None);
         }
-        catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33)
+        catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33 ||
+            OperatingSystem.IsLinux() && (error.HResult & 0xffff) == 11 ||
+            OperatingSystem.IsMacOS() && (error.HResult & 0xffff) == 35) // EWOULDBLOCK / EAGAIN
         {
             owner = ReadOwner(lockPath);
             return false;

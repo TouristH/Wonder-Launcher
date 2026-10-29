@@ -10,6 +10,19 @@ namespace Wonder.Infrastructure;
 
 internal static class LaunchArguments
 {
+    public static void ApplyMacFirstThread(List<string> arguments, bool macOS, bool declaredTrait, IEnumerable<JsonElement> activeLibraries)
+    {
+        if (!macOS) return;
+        const string option = "-XstartOnFirstThread";
+        var lwjgl3 = activeLibraries.Any(library => library.Get("name").Text()?.Split(':') is { Length: >= 3 } parts &&
+            parts[0] == "org.lwjgl" && (parts[1] == "lwjgl" || parts[1].StartsWith("lwjgl-", StringComparison.Ordinal)) &&
+            int.TryParse(parts[2].Split('.')[0], out var major) && major >= 3);
+        // GLFW requires the first AppKit thread. Legacy LWJGL2/AWT games do not.
+        if (!declaredTrait && !lwjgl3 && !arguments.Contains(option, StringComparer.Ordinal)) return;
+        arguments.RemoveAll(value => value == option);
+        arguments.Add(option);
+    }
+
     // Parse a list of arguments, never a shell command. Preserve Windows backslashes.
     public static List<string> Split(string? text)
     {

@@ -50,7 +50,7 @@ internal static class LauncherSettings
                 foreach (var property in profiles.EnumerateObject())
                 {
                     var directory = InstanceDiscovery.ResolveDirectory(property.Value.Get("gameDir").Text(), Path.GetDirectoryName(path)!);
-                    if (string.Equals(Path.TrimEndingDirectorySeparator(directory ?? ""), Path.TrimEndingDirectorySeparator(root), StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(Path.TrimEndingDirectorySeparator(directory ?? ""), Path.TrimEndingDirectorySeparator(root), WonderPath.Comparison))
                         inherited = property.Value.Get("global");
                 }
             }

@@ -28,7 +28,7 @@ internal sealed partial class AccountManagerWindow : Window
     private readonly TextBlock _count = PageStyles.Hint("");
     private readonly TextBlock _status = PageStyles.Hint("");
     private readonly List<Control> _idle = [];
-    private readonly List<AccountSkinPreview> _cardPreviews = [];
+    private readonly Dictionary<string, AccountCard> _accountCards = new(StringComparer.Ordinal);
     private AccountProfile[] _cardProfiles = [];
     private string? _cardKey;
     private string? _instancePreviewKey;
@@ -84,7 +84,7 @@ internal sealed partial class AccountManagerWindow : Window
         {
             _closed = true; service.Changed -= OnChanged; service.CancelLogin(); service.CancelServerDiscovery(); DisposeAppearance();
             if (_instances is not null) _instances.Changed -= OnInstanceChanged;
-            foreach (var avatar in _cardPreviews) avatar.Dispose();
+            foreach (var card in _accountCards.Values) card.Dispose();
             if (_password is not null) _password.Text = ""; if (_deviceCode is not null) _deviceCode.Text = "";
         };
         _viewId = service.SelectedAccount?.Id; Navigate(service.Accounts.Count == 0 ? "add" : "details");
@@ -175,37 +175,6 @@ internal sealed partial class AccountManagerWindow : Window
         Border? card = null;
         content.Children.Add(Button("保留账户", "取消删除账户", () => body.Children.Remove(card!)));
         card = PageStyles.Card(content); card.Name = "DeleteConfirmation"; body.Children.Insert(3, card);
-    }
-    private void RefreshAccounts()
-    {
-        _count.Text = "我的账户  /  " + _service.Accounts.Count;
-        var query = _search.Text?.Trim() ?? ""; var profiles = _service.Accounts.ToArray();
-        var key = query + "|" + _mode + "|" + _viewId + "|" + _service.SelectedAccount?.Id + "|" + _service.IsReadBlocked;
-        if (_cardKey == key && profiles.SequenceEqual(_cardProfiles)) return;
-        _cardKey = key; _cardProfiles = profiles;
-        foreach (var avatar in _cardPreviews) avatar.Dispose(); _cardPreviews.Clear(); _accounts.Children.Clear();
-        foreach (var account in profiles.Where(x => (x.Username + " " + x.ServerUrl + " " + AccountService.KindLabel(x.Kind)).Contains(query, StringComparison.OrdinalIgnoreCase)))
-        {
-            var current = account.Id == _service.SelectedAccount?.Id;
-            var avatar = new AccountSkinPreview(_textureDownload) { Width = 40, Height = 40, HeadOnly = true, VerticalAlignment = VerticalAlignment.Center };
-            _cardPreviews.Add(avatar);
-            avatar.LoadedTexture += () => ToolTip.SetTip(avatar, avatar.Description);
-            _ = AccountAvatarLoader.LoadAsync(avatar, account, _selectedInstance?.Invoke());
-            var content = new Grid { ColumnDefinitions = new ColumnDefinitions("40,12,*") }; content.Children.Add(avatar);
-            var labels = new StackPanel { Spacing = 6 };
-            labels.Children.Add(new TextBlock { Text = account.Username, FontWeight = FontWeight.SemiBold, FontSize = 15, TextTrimming = TextTrimming.CharacterEllipsis });
-            labels.Children.Add(PageStyles.Hint(AccountService.KindLabel(account.Kind) + (current ? " · 当前使用" : "")));
-            if (account.ServerUrl is { } url) { var site = PageStyles.Hint(ServerName(url)); site.MaxLines = 1; site.TextTrimming = TextTrimming.CharacterEllipsis; labels.Children.Add(site); }
-            Grid.SetColumn(labels, 2); content.Children.Add(labels);
-            var surface = PageStyles.Card(content, new Thickness(12));
-            if (account.Id == _viewId && _mode == "details") { surface.Background = Palette.Active; surface.BorderBrush = Palette.Accent; }
-            var card = Button("", "查看账户 " + account.Username, () => { _viewId = account.Id; Navigate("details"); });
-            card.Content = surface; card.HorizontalAlignment = HorizontalAlignment.Stretch; card.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            card.Padding = new Thickness(0); card.BorderThickness = new Thickness(0); card.Background = Palette.Surface;
-            _accounts.Children.Add(card);
-        }
-        if (_accounts.Children.Count == 0) _accounts.Children.Add(PageStyles.Hint(_service.IsReadBlocked ? "账户库暂不可用。" : _service.Accounts.Count == 0 ? "还没有账户，先添加一个吧。" : "没有匹配的账户。"));
-        if (_service.IsReadBlocked) _accounts.Children.Add(Button("重新读取账户库", "重新读取账户库", _service.Reload));
     }
     private void Refresh()
     {

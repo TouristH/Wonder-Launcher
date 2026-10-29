@@ -158,7 +158,7 @@ internal sealed class InstanceManagerWindow : Window
                 var fullPath = CanonicalRoot(path);
                 var imported = _service.Catalog.Instances.FirstOrDefault(x =>
                     SameRoot(x.RootDirectory, fullPath) || SameRoot(x.SourcePath, fullPath) || SameRoot(x.DefaultGameDirectory, fullPath) ||
-                    x.SourcePath.StartsWith(fullPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+                    x.SourcePath.StartsWith(fullPath + Path.DirectorySeparatorChar, WonderPath.Comparison));
                 if (imported is not null) _rootPath = CanonicalRoot(imported.RootDirectory);
             }
         }
@@ -300,7 +300,7 @@ internal sealed class InstanceManagerWindow : Window
     private static TextBlock Text(string text = "") => new() { Text = text, FontSize = 12, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap };
     private static string SourceName(InstanceSource source) => source switch { InstanceSource.Hmcl => "HMCL", InstanceSource.Pcl => "PCL", InstanceSource.Prism => "Prism", InstanceSource.MultiMc => "MultiMC", _ => "官方目录" };
     private static string CanonicalRoot(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-    private static bool SameRoot(string path, string? other) => other is not null && string.Equals(CanonicalRoot(path), CanonicalRoot(other), StringComparison.OrdinalIgnoreCase);
+    private static bool SameRoot(string path, string? other) => other is not null && string.Equals(CanonicalRoot(path), CanonicalRoot(other), WonderPath.Comparison);
     private void OpenInstance(string id)
     {
         var instance = _service.Catalog.Instances.FirstOrDefault(x => x.Id == id);
@@ -346,8 +346,8 @@ internal sealed class InstanceManagerWindow : Window
                     foreach (var key in new[] { "java", "directory", "jvm", "game" })
                     {
                         var text = draft.Text[key];
-                        if (string.Equals(text, path, StringComparison.OrdinalIgnoreCase)) draft.Text[key] = target;
-                        else draft.Text[key] = text.Replace(path + Path.DirectorySeparatorChar, target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+                        if (string.Equals(text, path, WonderPath.Comparison)) draft.Text[key] = target;
+                        else draft.Text[key] = text.Replace(path + Path.DirectorySeparatorChar, target + Path.DirectorySeparatorChar, WonderPath.Comparison);
                     }
                 return null;
             }) { FontFamily = FontFamily };

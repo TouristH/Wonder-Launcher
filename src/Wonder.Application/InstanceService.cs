@@ -194,7 +194,7 @@ public sealed partial class InstanceService
     private static InstanceCatalog Copy(InstanceCatalog c) => new()
     {
         Version = c.Version, Instances = c.Instances.Select(Copy).ToList(),
-        GameDirectories = c.GameDirectories.Concat(c.Instances.Select(x => x.RootDirectory)).Select(Full).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+        GameDirectories = c.GameDirectories.Concat(c.Instances.Select(x => x.RootDirectory)).Select(Full).Distinct(WonderPath.Comparer).ToList(),
         SelectedInstanceId = c.SelectedInstanceId, OfflineUsername = c.OfflineUsername, GlobalSettings = c.GlobalSettings
     };
 }

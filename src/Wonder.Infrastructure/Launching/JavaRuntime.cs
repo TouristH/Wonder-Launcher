@@ -31,11 +31,11 @@ public sealed record JavaRuntime(string Executable, int MajorVersion, string Arc
             if (process.ExitCode != 0) throw new InvalidDataException("Java 检查失败：" + text[..Math.Min(text.Length, 1000)]);
             var version = Regex.Match(text, @"java\.version\s*=\s*(?:1\.)?(\d+)");
             var arch = Regex.Match(text, @"os\.arch\s*=\s*(\S+)");
-            if (!version.Success || !arch.Success) throw new InvalidDataException("无法读取 Java 版本和架构。请指定有效的 java.exe。");
+            if (!version.Success || !arch.Success) throw new InvalidDataException("无法读取 Java 版本和架构。请指定有效的 Java 可执行文件。");
             return new(executable, int.Parse(version.Groups[1].Value), arch.Groups[1].Value);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new InvalidDataException("Java 检查超时，请检查 Java 路径。"); }
-        catch (System.ComponentModel.Win32Exception ex) { throw new InvalidDataException("无法运行 Java，请在实例设置中指定 java.exe。" + ex.Message, ex); }
+        catch (System.ComponentModel.Win32Exception ex) { throw new InvalidDataException("无法运行 Java，请在实例设置中指定 Java 可执行文件。" + ex.Message, ex); }
     }
     internal static ProcessStartInfo StartInfo(string executable, string? directory, IEnumerable<string> arguments)
     {

@@ -27,7 +27,11 @@ internal sealed partial class AccountManagerWindow
         var header = new StackPanel { Spacing = 8, Margin = new Thickness(0, 0, 0, 14) };
         var target = _service.Accounts.FirstOrDefault(x => x.Id == _reauthenticateId);
         header.Children.Add(Heading(target is null ? "添加游戏账户" : "重新登录 · " + target.Username));
-        header.Children.Add(PageStyles.Hint(target is null ? "选择一种登录方式，凭据由 Windows 当前用户加密保存。" : "请登录原账户。只有身份验证一致后才会更新本机凭据。"));
+        var protectionHint = OperatingSystem.IsLinux()
+            ? "选择一种登录方式。Linux 账户加密保存，需要 secret-tool 和已解锁的桌面 Secret Service 钥匙环。"
+            : OperatingSystem.IsMacOS() ? "选择一种登录方式，凭据加密保存，密钥由当前用户的 macOS 钥匙串保护。"
+            : "选择一种登录方式，凭据由 Windows 当前用户加密保存。";
+        header.Children.Add(PageStyles.Hint(target is null ? protectionHint : "请登录原账户。只有身份验证一致后才会更新本机凭据。"));
         body.Children.Add(header);
         _loginTabs = new TabControl { ItemsSource = new[]
         {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -43,14 +45,14 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
         if (instance.Source is InstanceSource.Prism or InstanceSource.MultiMc || !Directory.Exists(instance.VersionsDirectory)) return;
         foreach (var sibling in Directory.EnumerateDirectories(instance.VersionsDirectory))
         {
-            if (string.Equals(Path.GetFullPath(sibling), Path.GetFullPath(directory), StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(Path.GetFullPath(sibling), Path.GetFullPath(directory), WonderPath.Comparison)) continue;
             if ((File.GetAttributes(sibling) & FileAttributes.ReparsePoint) != 0) throw new IOException("版本目录包含链接，无法确认依赖关系。");
             var name = Path.GetFileName(sibling); var metadata = Path.Combine(sibling, name + ".json");
             if (!File.Exists(metadata)) continue;
             if (new FileInfo(metadata).Length > 8 * 1024 * 1024) throw new IOException("版本元数据过大，无法确认依赖关系：" + metadata);
             using var json = JsonDocument.Parse(File.ReadAllBytes(metadata));
             foreach (var property in new[] { "inheritsFrom", "jar" })
-                if (json.RootElement.TryGetProperty(property, out var reference) && reference.ValueKind == JsonValueKind.String && string.Equals(reference.GetString(), instance.VersionId, StringComparison.OrdinalIgnoreCase))
+                if (json.RootElement.TryGetProperty(property, out var reference) && reference.ValueKind == JsonValueKind.String && string.Equals(reference.GetString(), instance.VersionId, WonderPath.Comparison))
                     throw new InvalidOperationException("此版本仍被其他实例继承或引用，不能删除：" + name);
         }
     }
@@ -63,14 +65,15 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
         if (Directory.Exists(destination) || File.Exists(destination)) throw new IOException("目标已存在，请选择其他目录昵称或路径。");
         var parent = Path.GetDirectoryName(destination)!;
         if (!Directory.Exists(parent)) throw new DirectoryNotFoundException("目标父目录不存在，请先创建或选择已有目录。");
-        if (!string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(destination), StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Path.GetPathRoot(path), Path.GetPathRoot(destination), WonderPath.Comparison))
             throw new IOException("当前支持同一磁盘内移动或重命名。跨磁盘请先通过资源管理器移动，再重新导入。");
         Directory.Move(path, destination);
     });
 
     public Task RecycleDirectoryAsync(string path, string expectedIdentity)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("系统回收站操作当前仅支持 Windows。");
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) return RecycleUnixAsync(path, expectedIdentity);
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("此平台暂未实现系统回收站操作。");
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
@@ -86,19 +89,62 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); return completion.Task;
     }
 
+    private async Task RecycleUnixAsync(string path, string expectedIdentity)
+    {
+        await Task.Run(() =>
+        {
+            if (InspectDirectory(path) != expectedIdentity) throw new IOException("目录发生变化，请重新确认删除。");
+            EnsureNoLinks(path);
+        }).ConfigureAwait(false);
+        // GIO uses the desktop's trash service. Never substitute rm or a permanent-delete fallback.
+        var macOS = OperatingSystem.IsMacOS();
+        var start = new ProcessStartInfo(macOS ? "/usr/bin/osascript" : "gio") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        if (macOS)
+        {
+            // Pass the path as data, never interpolate it into AppleScript or a shell command.
+            start.ArgumentList.Add("-e");
+            start.ArgumentList.Add("on run argv\n tell application \"Finder\"\n delete (POSIX file (item 1 of argv) as alias)\n end tell\nend run");
+        }
+        else { start.ArgumentList.Add("trash"); start.ArgumentList.Add("--"); }
+        start.ArgumentList.Add(path);
+        using var process = new Process { StartInfo = start };
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try { process.Start(); }
+        catch (Win32Exception error)
+        {
+            throw new IOException(macOS ? "无法调用 macOS Finder 废纸篓。请检查自动化权限后重试。" : "无法运行 gio，未修改目录。请安装发行版提供的 GLib/GIO 工具后重试。", error);
+        }
+        var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var standardError = process.StandardError.ReadToEndAsync(timeout.Token);
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            await output.ConfigureAwait(false);
+            var detail = (await standardError.ConfigureAwait(false)).Trim();
+            if (process.ExitCode != 0 || Directory.Exists(path))
+                throw new IOException("系统未完成回收，未尝试永久删除。请检查回收站与目录权限。" + (detail.Length == 0 ? "" : "\n" + detail[..Math.Min(detail.Length, 1000)]));
+        }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (Exception error) when (error is Win32Exception or InvalidOperationException) { }
+            throw new IOException("系统回收站操作超时，登记已保留。请先在文件管理器和回收站核对目录位置后重试。");
+        }
+    }
+
     private static void ValidatePath(string path)
     {
         if (!Path.IsPathFullyQualified(path)) throw new ArgumentException("必须使用完整目录路径。");
         var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        if (full.StartsWith(@"\\", StringComparison.Ordinal) || string.Equals(full, Path.GetPathRoot(full), StringComparison.OrdinalIgnoreCase)) throw new IOException("不能对磁盘根目录或网络目录执行此操作。");
+        if (full.StartsWith(@"\\", StringComparison.Ordinal) || string.Equals(full, Path.GetPathRoot(full), WonderPath.Comparison)) throw new IOException("不能对磁盘根目录或网络目录执行此操作。");
         foreach (var folder in new[] { Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.DesktopDirectory, Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.ApplicationData })
-            if (string.Equals(full, Environment.GetFolderPath(folder), StringComparison.OrdinalIgnoreCase)) throw new IOException("不能修改个人文件或应用数据根目录：" + full);
+            if (string.Equals(full, Environment.GetFolderPath(folder), WonderPath.Comparison)) throw new IOException("不能修改个人文件或应用数据根目录：" + full);
         foreach (var special in new[] { Environment.SpecialFolder.UserProfile, Environment.SpecialFolder.Windows, Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.CommonApplicationData })
         {
             var protectedPath = Environment.GetFolderPath(special);
             if (string.IsNullOrEmpty(protectedPath)) continue;
-            if (string.Equals(full, protectedPath, StringComparison.OrdinalIgnoreCase) || protectedPath.StartsWith(full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                special != Environment.SpecialFolder.UserProfile && full.StartsWith(protectedPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(full, protectedPath, WonderPath.Comparison) || protectedPath.StartsWith(full + Path.DirectorySeparatorChar, WonderPath.Comparison) ||
+                special != Environment.SpecialFolder.UserProfile && full.StartsWith(protectedPath + Path.DirectorySeparatorChar, WonderPath.Comparison))
                 throw new IOException("不能修改系统或用户主目录：" + full);
         }
         for (var current = new DirectoryInfo(full); current is not null; current = current.Parent)

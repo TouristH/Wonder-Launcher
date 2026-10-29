@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
-using System.Security.Cryptography;
-using System.Text;
 using Wonder.Core;
 
 namespace Wonder.Application;
@@ -45,8 +43,9 @@ public sealed partial class AccountService : ILaunchAccountProvider
             if (IsBusy) return;
             try { RetryPendingCredentialSave(); var vault = _store.Load(); Validate(vault); _vault = Copy(vault); ImportAccountServers(_vault); IsReadBlocked = false; Error = null; }
             catch (AccountAuthenticationException ex) when (_pendingCredentialSave is not null) { Error = ex.Message; }
+            catch (AccountAuthenticationException ex) { IsReadBlocked = true; Error = ex.Message; }
             catch (AccountLimitException ex) { IsReadBlocked = true; Error = ex.Message + "原账户库已保留，请修复后重新读取。"; }
-            catch { IsReadBlocked = true; Error = "账户库读取或解密失败，原文件已保留。请使用原 Windows 用户登录，或修复文件后重新读取。"; }
+            catch { IsReadBlocked = true; Error = "账户库读取或解密失败，原文件已保留。请使用原系统用户，并检查系统凭据保护、桌面密钥环或 macOS 钥匙串，或修复文件后重新读取。"; }
         }
         Notify();
     }
@@ -331,12 +330,7 @@ public sealed partial class AccountService : ILaunchAccountProvider
         if (value.SelectedAccountId is not null && !ids.Contains(value.SelectedAccountId)) throw new InvalidDataException();
     }
     public static string KindLabel(AccountKind kind) => kind switch { AccountKind.Microsoft => "微软正版", AccountKind.Yggdrasil => "第三方", _ => "离线" };
-    public static string OfflineUuid(string username)
-    {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes("OfflinePlayer:" + username));
-        bytes[6] = (byte)((bytes[6] & 0x0f) | 0x30); bytes[8] = (byte)((bytes[8] & 0x3f) | 0x80);
-        return Convert.ToHexStringLower(bytes);
-    }
+    public static string OfflineUuid(string username) => OfflineIdentity.CreateUuid(username);
     private void Notify()
     {
         if (Changed is not { } handlers) return;

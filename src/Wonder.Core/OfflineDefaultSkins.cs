@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 using System.Buffers.Binary;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace Wonder.Core;
 
@@ -40,11 +38,11 @@ public static class OfflineDefaultSkins
     public static string CreateUuid(string username, string? skinId)
     {
         if (username.Length is < 3 or > 16 || !username.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')) throw new ArgumentException("离线玩家名无效。");
-        if (skinId is null) return NameUuid("OfflinePlayer:" + username);
+        if (skinId is null) return OfflineIdentity.CreateUuid(username);
         var skin = Get(skinId);
         for (var attempt = 0; attempt < 65536; attempt++)
         {
-            var candidate = NameUuid("WonderOfflineSkin:" + username + ":" + skinId + ":" + attempt.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var candidate = OfflineIdentity.NameUuid("WonderOfflineSkin:" + username + ":" + skinId + ":" + attempt.ToString(System.Globalization.CultureInfo.InvariantCulture));
             var hash = JavaHash(candidate);
             if (skin.IsLegacy ? (hash & 1) == skin.Index : ((hash % 18) + 18) % 18 == skin.Index) return candidate;
         }
@@ -53,11 +51,5 @@ public static class OfflineDefaultSkins
     public static bool IsValid(string username, string uuid, string? skinId)
     {
         try { return uuid == CreateUuid(username, skinId); } catch (ArgumentException) { return false; }
-    }
-    private static string NameUuid(string value)
-    {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes(value));
-        bytes[6] = (byte)((bytes[6] & 15) | 48); bytes[8] = (byte)((bytes[8] & 63) | 128);
-        return Convert.ToHexStringLower(bytes);
     }
 }

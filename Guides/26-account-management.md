@@ -1,6 +1,6 @@
 # 账户中心、登录与角色外观
 
-适用版本：0.7.2。登录错误定位见[补充说明](28-login-diagnostics-and-default-skins.md)，新版第三方预览、双层皮肤、已选披风和组件头像见[外观说明](30-layered-skins-capes-and-avatars.md)。
+适用版本：0.7.2。登录错误定位见[补充说明](28-login-diagnostics-and-default-skins.md)，新版第三方预览、双层皮肤、已选披风和组件头像见[外观说明](30-layered-skins-capes-and-avatars.md)。Linux 的依赖与密钥环准备见 [Linux 试发行说明](31-linux-trial.md)，macOS 的钥匙串、本地签名和迁移边界见[三端发行说明](32-native-cross-platform.md)。
 
 ## 使用
 
@@ -62,12 +62,14 @@
 ## 保护边界
 
 - 账户业务上限统一为 256 个账户、128 字符的内部账户 ID 和 16 字符的角色名；服务层与加密存储使用相同边界，超限提示具体原因。第三方登录邮箱/用户名属于登录标识，不受角色名长度限制替代。离线玩家名仍遵循 3–16 位字母、数字或下划线规则。
-- 账户库：`WonderData/accounts.dat`，整个文件经 Windows DPAPI CurrentUser 加密，写入临时文件也只有密文。解密失败保留原文件并阻止写入；先备份再修复，不能靠重试覆盖损坏库。
+- Windows 账户库：`WonderData/accounts.dat`，整个文件经 DPAPI CurrentUser 加密；Linux 的 `accounts.linux.dat` 与 macOS 的 `accounts.macos.dat` 共用 AES-GCM 库格式，随机密钥分别保存在 Secret Service 和系统钥匙串。macOS 的 `WonderData/` 位于 `.app` 同级。写入临时文件也只有密文。解密失败保留原文件并阻止写入；先备份再修复，不能靠重试覆盖损坏库。
+- Linux 账户保存（含离线账户）需要 `secret-tool` 和已解锁的桌面密钥环，例如 GNOME Keyring。缺少组件、服务不可用或密钥丢失时会提示，不能保存或更新账户，不会回退为明文。请以普通桌面用户运行，并在解锁后重新读取账户或重试保存。
+- macOS 通过原生系统 API 访问钥匙串，不依赖 `secret-tool`。首次访问可能要求解锁或允许 Wonder 读取对应条目；取消授权、钥匙串不可用或密钥丢失时保留原文件并提示，不保存明文。临时签名或更新应用后可能需要重新授权，具体试用步骤见[三端发行说明](32-native-cross-platform.md)。
 - 凭据不进入 `workspace.json`、组件持久状态、UI错误详情或测试夹具；测试使用合成账号与合成响应。第三方服务器不能接收 Microsoft 令牌。
 - 正版启动会拒绝认证路由覆盖、Java agent 及身份参数覆盖。只有游戏 access token 被送给游戏进程，刷新令牌不进入启动参数。
-- Wonder 的输出日志过滤本次游戏令牌的原值及 URL 编码值。未登记的其他秘密、自定义编码、外部游戏日志以及不可信模组不在过滤保证范围内；Windows 同用户恶意程序、管理员和进程内存仍可能泄露游戏令牌。
+- Wonder 的输出日志过滤本次游戏令牌的原值及 URL 编码值。未登记的其他秘密、自定义编码、外部游戏日志以及不可信模组不在过滤保证范围内；同用户恶意程序、管理员和进程内存仍可能泄露游戏令牌。
 - 删除本机 Microsoft 账户不撤销云端授权，可到 [Microsoft 应用权限页](https://account.live.com/consent/Manage) 撤销；Yggdrasil 删除会尝试使服务器令牌失效，失败时提示。
-- 便携布局和实例仍可移动，但加密账户库绑定原 Windows 用户/系统，换电脑后需重新登录。不要将账号库、备份或游戏日志发布到仓库。
+- 便携布局和实例使用同一数据格式，但 Windows 账户解密依赖原用户/系统，Linux/macOS 账户解密依赖原用户的系统密钥服务。复制目录不会复制密钥，也不会自动转换平台账户文件，换电脑后需重新登录。Linux/macOS 删除账户或数据目录不会自动删除系统保存的账户库密钥，清理方式见[隐私说明](../PRIVACY.md#数据移除)。不要将账号库、备份或游戏日志发布到仓库。
 
 ## 架构与协议依据
 

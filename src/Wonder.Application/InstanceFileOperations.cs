@@ -176,11 +176,11 @@ public sealed partial class InstanceService
     {
         if (item.SourceProfileId is not null) return item.SourceProfileId;
         var prefix = Path.Combine(item.RootDirectory, "launcher_profiles.json") + " · ";
-        return item.ConfigSource.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? item.ConfigSource[prefix.Length..] : null;
+        return item.ConfigSource.StartsWith(prefix, WonderPath.Comparison) ? item.ConfigSource[prefix.Length..] : null;
     }
     private static string Full(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-    private static bool Same(string left, string right) => string.Equals(Full(left), Full(right), StringComparison.OrdinalIgnoreCase);
-    private static bool Within(string path, string root) => Same(path, root) || Full(path).StartsWith(Full(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    private static bool Same(string left, string right) => string.Equals(Full(left), Full(right), WonderPath.Comparison);
+    private static bool Within(string path, string root) => Same(path, root) || Full(path).StartsWith(Full(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, WonderPath.Comparison);
     private static string MapPath(string path, string from, string to) => Path.IsPathFullyQualified(path) && Within(path, from) ? Same(path, from) ? Full(to) : Path.Combine(to, Path.GetRelativePath(from, path)) : path;
     private static string? MapText(string? text, string from, string to)
     {
@@ -191,7 +191,7 @@ public sealed partial class InstanceService
             var oldPath = forwardSlashes ? source.Replace('\\', '/') : source;
             var newPath = forwardSlashes ? target.Replace('\\', '/') : target;
             var pattern = System.Text.RegularExpressions.Regex.Escape(oldPath) + "(?=$|[\\\\/\\s\"'])";
-            text = System.Text.RegularExpressions.Regex.Replace(text, pattern, _ => newPath, System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            text = System.Text.RegularExpressions.Regex.Replace(text, pattern, _ => newPath, (OperatingSystem.IsWindows() ? System.Text.RegularExpressions.RegexOptions.IgnoreCase : System.Text.RegularExpressions.RegexOptions.None) | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         }
         return text;
     }
@@ -210,6 +210,6 @@ public sealed partial class InstanceService
         VersionsDirectory = MapPath(item.VersionsDirectory, from, to), LocalLibraryDirectory = item.LocalLibraryDirectory is { } local ? MapPath(local, from, to) : null,
         MetadataPaths = item.MetadataPaths.Select(p => MapPath(p, from, to)).ToList(), ConfigSource = MapText(item.ConfigSource, from, to)!,
         Overrides = RebaseSettings(item.Overrides, from, to),
-        PreviousRootDirectories = Same(item.RootDirectory, from) ? item.PreviousRootDirectories.Append(from).Distinct(StringComparer.OrdinalIgnoreCase).ToList() : [.. item.PreviousRootDirectories]
+        PreviousRootDirectories = Same(item.RootDirectory, from) ? item.PreviousRootDirectories.Append(from).Distinct(WonderPath.Comparer).ToList() : [.. item.PreviousRootDirectories]
     };
 }

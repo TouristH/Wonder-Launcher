@@ -37,7 +37,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         if (session.Kind == AccountKind.Offline && session.OfflineSkinId is { } skinId)
             notices.Add("离线默认皮肤：" + OfflineDefaultSkins.Get(skinId).Name + "。" + OfflineDefaultSkins.Get(skinId).Description + "服务器或皮肤模组可能覆盖客户端默认外观。");
         var prism = instance.Source is InstanceSource.Prism or InstanceSource.MultiMc;
-        var documents = new List<JsonElement>(); var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var documents = new List<JsonElement>(); var seen = new HashSet<string>(WonderPath.Comparer);
         void ReadVersion(string path)
         {
             ct.ThrowIfCancellationRequested();
@@ -71,14 +71,17 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var features = new Dictionary<string, bool> { ["has_custom_resolution"] = true, ["is_demo_user"] = false };
         var libraries = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var jvm = new List<string>(); var game = new List<string>(); var tweakers = new List<string>();
+        var firstThreadOnMacOS = false;
         string? main = null, client = null, assetId = null; JsonElement logging = default; var requiredJava = 0;
         foreach (var document in documents)
         {
             ct.ThrowIfCancellationRequested();
             foreach (var unsupported in new[] { "jarMods", "+jarMods", "agents", "+agents" })
                 if (document.Get(unsupported).Items().Any()) throw new InvalidDataException("此实例需要尚未支持的 " + unsupported + "；请使用原启动器。");
-            var traits = document.Get("+traits").Items().Concat(document.Get("traits").Items()).Select(x => x.Text()).Where(x => x is not null && x != "FirstThreadOnMacOS").ToArray();
-            if (traits.Length > 0) throw new InvalidDataException("此实例需要尚未支持的启动特性：" + string.Join(", ", traits));
+            var traits = document.Get("+traits").Items().Concat(document.Get("traits").Items()).Select(x => x.Text()).Where(x => x is not null).ToArray();
+            firstThreadOnMacOS |= traits.Contains("FirstThreadOnMacOS", StringComparer.Ordinal);
+            var unsupportedTraits = traits.Where(trait => trait != "FirstThreadOnMacOS").ToArray();
+            if (unsupportedTraits.Length > 0) throw new InvalidDataException("此实例需要尚未支持的启动特性：" + string.Join(", ", unsupportedTraits));
             main = document.Get("mainClass").Text() ?? main;
             assetId = document.Get("assetIndex").Get("id").Text() ?? document.Get("assets").Text() ?? assetId;
             requiredJava = Math.Max(requiredJava, document.Get("javaVersion").Get("majorVersion").Number() ?? 0);
@@ -101,10 +104,10 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var classPath = new List<string>();
         var nativeArchives = new List<(string Path, string[] Exclude)>();
         var os = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux";
-        foreach (var lib in libraries.Values)
+        var activeLibraries = libraries.Values.Where(lib => LaunchArguments.Allowed(lib, java.Architecture, features)).ToArray();
+        foreach (var lib in activeLibraries)
         {
             ct.ThrowIfCancellationRequested();
-            if (!LaunchArguments.Allowed(lib, java.Architecture, features)) continue;
             var name = lib.Get("name").Text()!;
             var downloads = lib.Get("downloads");
             var native = lib.Get("natives").Get(os).Text();
@@ -131,7 +134,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             ["user_properties"] = "{}", ["clientid"] = session.ClientId, ["auth_xuid"] = session.Xuid,
             ["version_name"] = instance.VersionId, ["version_type"] = "release", ["game_directory"] = settings.GameDirectory!,
             ["assets_root"] = instance.AssetsDirectory, ["assets_index_name"] = assetId ?? "", ["game_assets"] = assets,
-            ["natives_directory"] = natives, ["launcher_name"] = "Wonder", ["launcher_version"] = launcherVersion, ["classpath"] = string.Join(Path.PathSeparator, classPath.Distinct(StringComparer.OrdinalIgnoreCase)),
+            ["natives_directory"] = natives, ["launcher_name"] = "Wonder", ["launcher_version"] = launcherVersion, ["classpath"] = string.Join(Path.PathSeparator, classPath.Distinct(WonderPath.Comparer)),
             ["classpath_separator"] = Path.PathSeparator.ToString(), ["library_directory"] = instance.LibraryDirectory,
             ["resolution_width"] = settings.WindowWidth!.Value.ToString(), ["resolution_height"] = settings.WindowHeight!.Value.ToString()
         };
@@ -141,6 +144,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var extraJvm = LaunchArguments.Split(settings.JvmArguments);
         if (extraJvm.Any(x => x is "-cp" or "-classpath" or "--class-path" or "-jar" || x.StartsWith('@'))) throw new InvalidDataException("额外 JVM 参数不能替换主类、类路径或使用参数文件。");
         jvm.AddRange(extraJvm);
+        LaunchArguments.ApplyMacFirstThread(jvm, OperatingSystem.IsMacOS(), firstThreadOnMacOS, activeLibraries);
         jvm.RemoveAll(x => x.StartsWith("-Xms", StringComparison.Ordinal) || x.StartsWith("-Xmx", StringComparison.Ordinal));
         jvm.AddRange([$"-Xms{settings.MinimumMemoryMb}M", $"-Xmx{settings.MaximumMemoryMb}M"]);
         // Java's stdout/stderr charset can differ from file.encoding on Windows.
@@ -231,16 +235,10 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             if (File.Exists(candidate)) return candidate;
         return name;
     }
-    private static string OfflineUuid(string username)
-    {
-        var bytes = MD5.HashData(Encoding.UTF8.GetBytes("OfflinePlayer:" + username));
-        bytes[6] = (byte)((bytes[6] & 0x0f) | 0x30); bytes[8] = (byte)((bytes[8] & 0x3f) | 0x80);
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
     private static GameSession CreateOfflineSession(string username)
     {
         InstanceCatalog.ValidateOfflineUsername(username);
-        return new(AccountKind.Offline, username, OfflineUuid(username), "0");
+        return new(AccountKind.Offline, username, OfflineIdentity.CreateUuid(username), "0");
     }
     public async Task<int> RunAsync(LaunchPlan plan, Action started, Action<string> output, CancellationToken ct = default)
     {

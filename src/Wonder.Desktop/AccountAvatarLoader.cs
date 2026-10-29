@@ -16,7 +16,7 @@ internal static class AccountAvatarLoader
 
     public static string Key(AccountProfile? profile, GameInstance? instance) => JsonSerializer.Serialize(new object?[]
     {
-        profile?.Id, profile?.Kind, profile?.Uuid, profile?.SkinUrl, profile?.SkinVariant, profile?.OfflineSkinId, profile?.LastValidatedAt,
+        profile?.Id, profile?.Kind, profile?.ServerUrl, profile?.Uuid, profile?.SkinUrl, profile?.SkinVariant, profile?.OfflineSkinId, profile?.LastValidatedAt,
         profile?.Kind == AccountKind.Offline ? InstanceKey(instance) : null,
         profile?.AllowedPrivateTextureOrigins
     });

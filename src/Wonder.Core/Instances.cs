@@ -145,7 +145,7 @@ public sealed class InstanceCatalog
     {
         if (Version != 1 || Instances is null || Instances.Count > 1024) throw new ArgumentException("实例索引版本或内容无效。");
         if (GameDirectories is null || GameDirectories.Count > 1024) throw new ArgumentException("游戏目录列表无效。");
-        var directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var directories = new HashSet<string>(WonderPath.Comparer);
         foreach (var directory in GameDirectories)
         {
             InstanceSettings.ValidatePath(directory, "游戏目录");

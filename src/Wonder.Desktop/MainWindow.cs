@@ -43,7 +43,9 @@ public sealed partial class MainWindow : Window
         WindowDecorations = WindowDecorations.BorderOnly;
         Background = Palette.Background;
         Foreground = Palette.Text;
-        FontFamily = new FontFamily("Microsoft YaHei UI,Microsoft YaHei,Segoe UI,sans-serif");
+        FontFamily = new FontFamily(OperatingSystem.IsLinux()
+            ? "Noto Sans CJK SC,Noto Sans CJK TC,WenQuanYi Micro Hei,DejaVu Sans,sans-serif"
+            : "Microsoft YaHei UI,Microsoft YaHei,Segoe UI,sans-serif");
         _workspacePath = workspacePath ?? LauncherDataPaths.WorkspacePath;
         _store = new WorkspaceStore(_workspacePath);
         _settingsPath = settingsPath ?? (workspacePath is null ? LauncherDataPaths.SettingsPath : System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspacePath))!, "settings.json"));
@@ -69,7 +71,8 @@ public sealed partial class MainWindow : Window
         }
         document.EnsureLibrary();
         var dataDirectory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspacePath))!;
-        _accounts = new AccountService(new WindowsAccountStore(System.IO.Path.Combine(dataDirectory, "accounts.dat")), new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
+        var accountStore = AccountStoreFactory.Create(dataDirectory);
+        _accounts = new AccountService(accountStore, new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
             new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")));
         _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);

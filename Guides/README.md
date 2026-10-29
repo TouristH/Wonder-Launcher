@@ -2,6 +2,11 @@
 
 适用版本：**0.7.2**。完整操作概览见 [Wonder.md](../Wonder.md)，安装与源码构建见 [README](../README.md)。
 
+## 安装与平台
+
+- [Windows、Linux、macOS 同源原生发行与 macOS 试用](32-native-cross-platform.md)
+- [Linux x64 试发行：依赖、运行、更新与验收](31-linux-trial.md)
+
 ## 工作区与组件
 
 - [功能区、侧边栏与组件操作](13-wonder-ui-foundation.md)

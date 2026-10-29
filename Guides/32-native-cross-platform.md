@@ -6,18 +6,20 @@
 
 ## 应用与源码
 
-| 目标 | 应用包 | 启动入口 |
+| 目标 | 应用产物 | 启动入口 |
 | --- | --- | --- |
-| Windows x64 | `Wonder-0.7.2-win-x64.tar.gz` | `Wonder.Desktop.exe` |
-| Linux x64 | `Wonder-0.7.2-linux-x64-preview.tar.gz` | `start-Wonder.sh` / `Wonder.Desktop` |
+| Windows x64 | `Wonder-0.7.2-win-x64.exe` | 双击该 EXE |
+| Linux x64 | `Wonder-0.7.2-linux-x64` | `chmod +x Wonder-0.7.2-linux-x64` 后执行 `./Wonder-0.7.2-linux-x64` |
 | macOS Intel | `Wonder-0.7.2-osx-x64-preview.tar.gz` | `Wonder Launcher.app` |
 | macOS Apple Silicon | `Wonder-0.7.2-osx-arm64-preview.tar.gz` | `Wonder Launcher.app` |
 
-四个应用包共用 **`Wonder-0.7.2-source.tar.gz`**，统一校验文件为 **`Wonder-0.7.2-SHA256SUMS`**。一次发布从同一份源码快照生成全部目标。源码包包含构建与发布材料；分发应用时应同时提供它及原始第三方许可。
+本次 Release 只上传 Windows 与 Linux 的单文件应用，下载后无需解压，也无需相邻文档或启动脚本。macOS 两种架构的 `.app` 与原命名的试发行压缩包保留本地构建，本次不上传。
+
+各目标共用 **`Wonder-0.7.2-source.tar.gz`**，其中包含对应源码、构建与发布材料、公开文档及全部适用的项目与原始第三方许可、版权和通知；运行应用无需下载该源码包。统一校验文件为 **`Wonder-0.7.2-SHA256SUMS`**，按本次实际生成或上传的产物列出 SHA-256。一次发布从同一份源码快照生成所选目标；分发时仍须履行项目与第三方许可的源码和通知义务。
 
 各平台使用本机格式的入口程序和对应 .NET/图形原生库：Windows PE、Linux ELF、macOS Mach-O。应用自带 .NET，不要求 Wine 或运行 Windows EXE；托管业务仍由 .NET 执行，这不是 Native AOT 声明。Linux 当前采用 X11/XWayland，这是 Linux 的显示服务，详见[Linux 安装说明](31-linux-trial.md)。
 
-## macOS 试发行
+## macOS 本地试发行
 
 试发行目标为 macOS 14 或更新系统；请使用仍受 Apple 和 .NET 支持的版本。Intel Mac 选 `osx-x64`，M 系列 Mac 选 `osx-arm64`，并选择相同架构的游戏 Java 和原生依赖。包内没有游戏或 Java。
 
@@ -31,11 +33,11 @@ cd Wonder-osx-arm64
 open "Wonder Launcher.app"
 ```
 
-统一校验文件列出全部五个包；只下载部分包时，请只核对所下载文件对应的 SHA-256。macOS 解压包保留可执行权限。
+这里使用本地构建生成、包含对应 macOS 产物的校验清单；本次 Release 的清单不含未上传的 macOS 包。只取得部分产物时，请只核对所取得文件对应的 SHA-256。macOS 解压包保留可执行权限。
 
 当前 Windows 构建机不能完成 Mac 上的签名验收。`sign-Wonder-macos.sh` 在本机调用 Apple `codesign` 为试用应用添加临时签名及 .NET JIT 权限，并验证签名结构；需要系统具备该工具。它不使用 Developer ID 证书，也不提交 Apple 公证。**本次 macOS 包尚未进行 Developer ID 签名、公证或 Mac 实机验收**；本地签名不能替代这些步骤。可信来源的应用若被 Gatekeeper 阻止，可按 [Apple 官方说明](https://support.apple.com/zh-cn/102445)在“系统设置 → 隐私与安全性”查看并决定是否仍要打开。不要关闭系统整体安全检查。
 
-保持 `.app` 与同目录文档、`WonderData/` 一起管理。数据放在 `.app` 旁边，避免修改应用包内部；只把 `.app` 拖到 `/Applications` 会改变数据位置，并可能缺少写入权限。应用无法打开时可从终端执行 `"Wonder Launcher.app/Contents/MacOS/Wonder.Desktop"` 查看启动错误。下载应用可能受到 macOS App Translocation 限制；请在 Finder 中把整个解压目录移到确定的可写位置后再打开。
+保持 `.app` 与 `WonderData/` 一起管理。数据放在 `.app` 旁边，避免修改应用包内部；只把 `.app` 拖到 `/Applications` 会改变数据位置，并可能缺少写入权限。应用无法打开时可从终端执行 `"Wonder Launcher.app/Contents/MacOS/Wonder.Desktop"` 查看启动错误。下载应用可能受到 macOS App Translocation 限制；请在 Finder 中把整个解压目录移到确定的可写位置后再打开。
 
 macOS 账户文件为 `WonderData/accounts.macos.dat`，随机加密密钥存入当前用户的系统钥匙串。系统可能要求解锁或允许应用访问。取消授权或密钥丢失时保留账户文件，不保存明文。临时签名或应用更新可能需要重新授权钥匙串访问。删除数据目录不会自动清理钥匙串条目。
 
@@ -58,6 +60,6 @@ pwsh -File packaging/Wonder.Publish.ps1
 pwsh -File packaging/Wonder.Publish.ps1 -Runtime osx-arm64
 ```
 
-默认 `all` 发布四个目标、一个源码包和统一校验文件到 `artifacts/`。macOS 包结构参考 [Avalonia 官方发布说明](https://docs.avaloniaui.net/docs/deployment/macos)，运行时与签名要求见 [.NET macOS 发布说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos)。
+默认 `all` 在 `artifacts/` 生成 `Wonder-0.7.2-win-x64.exe`、`Wonder-0.7.2-linux-x64`、两个 macOS 架构的本地 `.app` 试发行压缩包、统一源码包和校验文件。Windows/Linux 的发布工作目录分别为 `artifacts/Wonder-win-x64/` 与 `artifacts/Wonder-linux-x64/`；面向用户的应用是 `artifacts/` 根目录内的单文件。单目标发布的校验文件只列出该次应用产物和源码包；本次 Release 仅上传 Windows/Linux 应用、源码包及对应校验清单。macOS 包结构参考 [Avalonia 官方发布说明](https://docs.avaloniaui.net/docs/deployment/macos)，运行时与签名要求见 [.NET macOS 发布说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos)。
 
 当前验证环境为 Windows。交叉构建、Mach-O/ELF 架构检查、归档权限和自动化测试不等于 Linux/macOS 实机通过。两端还需验证中文界面、布局保存、同时启动锁、文件选择器、默认浏览器、系统密钥服务、临时实例回收及真实游戏启动。在线认证与 Minecraft AppID 审核状态不因增加平台而改变。

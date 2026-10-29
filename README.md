@@ -34,9 +34,14 @@
 
 ## 三端原生发行
 
-Windows、Linux 与 macOS 由同一份源码生成原生应用，共用一个 `Wonder-0.7.2-source.tar.gz`。macOS 同时提供 Intel 与 Apple Silicon `.app` 试发行包；数据格式与功能逻辑共用，系统密钥服务和原生依赖按平台处理。macOS 本地签名、运行和互通边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。
+Windows、Linux 与 macOS 由同一份源码生成原生应用，共用一个 `Wonder-0.7.2-source.tar.gz`。本次 Release 提供可直接运行的 Windows 和 Linux 应用：
 
-`Wonder-0.7.2-linux-x64-preview.tar.gz` 面向 Ubuntu 24.04 x64 等 glibc 桌面环境，自带 .NET 运行时，使用 X11 或 Wayland 桌面的 XWayland。解压到可写目录后执行 `./start-Wonder.sh`；账户保存需要 `secret-tool` 和已解锁的 Secret Service 密钥环。系统依赖、校验、数据迁移与实机验收步骤见 [Linux 试发行说明](Guides/31-linux-trial.md)。
+- Windows x64：下载 `Wonder-0.7.2-win-x64.exe`，放到可写目录后双击运行。
+- Linux x64：下载 `Wonder-0.7.2-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.7.2-linux-x64`，再执行 `./Wonder-0.7.2-linux-x64`。
+
+两者均为自带 .NET 运行时的单文件应用，运行无需另行下载源码包或在旁边放置文档、启动脚本。独立源码包包含对应源码、构建与发布材料、公开文档及项目和第三方许可与通知。macOS Intel 与 Apple Silicon `.app` 试发行仍可在本地构建，本次 Release 不上传；本地签名、运行和互通边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。
+
+Linux 面向 Ubuntu 24.04 x64 等 glibc 桌面环境，仍需系统图形库及 X11 或 Wayland 桌面的 XWayland；账户保存需要 `secret-tool` 和已解锁的 Secret Service 密钥环。系统依赖、校验、数据迁移与实机验收步骤见 [Linux 试发行说明](Guides/31-linux-trial.md)。
 
 Linux 与 macOS 图形桌面、系统密钥服务和真实游戏启动仍待实机验收。macOS 包尚未进行 Developer ID 签名和 Apple 公证，试用需按说明在 Mac 上执行本地临时签名。Linux 未提供 ARM64、Alpine/musl、AppImage、deb 或 rpm 包，也不声明原生 Wayland 支持。
 
@@ -47,23 +52,22 @@ Linux 与 macOS 图形桌面、系统密钥服务和真实游戏启动仍待实�
 ```powershell
 dotnet build Wonder.slnx -c Release
 dotnet run --project src/Wonder.Desktop/Wonder.Desktop.csproj
-dotnet publish src/Wonder.Desktop/Wonder.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o artifacts/Wonder-win-x64
 ```
 
-完整发行包使用 PowerShell 7.4 或更新版本生成。默认 `all` 从同一份源码快照制作四个目标，共用一个源码包和校验文件；第二条命令演示单独发布一个目标：
+发行产物使用 PowerShell 7.4 或更新版本生成。默认 `all` 从同一份源码快照制作四个目标，共用一个源码包和校验文件；第二条命令演示单独发布一个目标：
 
 ```powershell
 pwsh -File packaging/Wonder.Publish.ps1
 pwsh -File packaging/Wonder.Publish.ps1 -Runtime linux-x64
 ```
 
-默认输出到 `artifacts/Wonder-win-x64/`、`artifacts/Wonder-linux-x64/`、`artifacts/Wonder-osx-x64/` 和 `artifacts/Wonder-osx-arm64/`，同时生成四个应用压缩包、统一的 `Wonder-0.7.2-source.tar.gz` 及 `Wonder-0.7.2-SHA256SUMS`。各目标的包名与入口见[三端发行说明](Guides/32-native-cross-platform.md)。单独指定目标时，校验文件只包含本次生成的应用包和源码包。
+Windows 和 Linux 的可分发应用直接输出为 `artifacts/Wonder-0.7.2-win-x64.exe` 和 `artifacts/Wonder-0.7.2-linux-x64`；`artifacts/Wonder-win-x64/`、`artifacts/Wonder-linux-x64/` 为发布工作目录。macOS 本地仍生成 `.app` 及原命名的试发行压缩包。各目标的产物与入口见[三端发行说明](Guides/32-native-cross-platform.md)。`Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS` 同样位于 `artifacts/`；校验文件按本次实际生成的应用产物和源码包列出 SHA-256，单独指定目标时只包含该次产物。上传本次 Release 时使用 Windows、Linux 应用及独立源码包，并提供与实际上传文件一致的校验清单。
 
 `Wonder.slnx` 包含六个生产工程，版本统一在 `Directory.Build.props` 中维护。三端使用相同设置与工作区格式，平台账户文件和绝对路径仍有差异。数据位于应用旁的 `WonderData/`，macOS 为 `.app` 的同级目录。更新前关闭启动器并保留数据目录；跨系统或更换桌面用户后，账户通常需要重新登录，游戏路径和 Java 也需重新设置。
 
 公开仓库保留 `src/`、`packaging/`、解决方案与构建配置、README、Wonder 使用说明、用户 Guides，以及许可、隐私和第三方原始通知。测试工程、探针、AI 开发约定、实施计划、内部验收记录和本地工具配置不纳入公开提交；游戏文件、用户数据、编译缓存及发布产物也不提交。
 
-分发程序时，请同步提供 README、Wonder.md、公开 Guides、PRIVACY.md、LICENSE、LICENSE.zh-CN.md、ADDITIONAL_TERMS.md、BRANDING.md、NOTICE、THIRD-PARTY-NOTICES.md 和 ThirdPartyLicenses，并按许可要求提供对应源码和必要构建材料。
+分发程序时须保留适用的项目与第三方许可、版权和通知，并按许可要求提供对应源码和必要构建材料。独立源码包保留 README、Wonder.md、公开 Guides、PRIVACY.md、LICENSE、LICENSE.zh-CN.md、ADDITIONAL_TERMS.md、BRANDING.md、NOTICE、THIRD-PARTY-NOTICES.md 和 ThirdPartyLicenses；这些文件无需放在 Windows/Linux 应用旁才能运行。
 
 ## 许可与转载
 

@@ -79,13 +79,9 @@ try {
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false `
             -p:DebugType=None -p:DebugSymbols=false -o $publish --nologo
         if ($LASTEXITCODE -ne 0) { throw "Publish failed: $targetRuntime" }
-        foreach ($name in $documents) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $app }
-        foreach ($folder in @('Guides','ThirdPartyLicenses')) { Copy-Item -LiteralPath (Join-Path $source $folder) -Destination $app -Recurse }
-        if ($targetRuntime -eq 'linux-x64') {
-            $script = [IO.File]::ReadAllText((Join-Path $source 'packaging/start-Wonder.sh')).Replace("`r`n", "`n")
-            [IO.File]::WriteAllText((Join-Path $app 'start-Wonder.sh'), $script, [Text.UTF8Encoding]::new($false))
-        }
         if ($macOS) {
+            foreach ($name in $documents) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $app }
+            foreach ($folder in @('Guides','ThirdPartyLicenses')) { Copy-Item -LiteralPath (Join-Path $source $folder) -Destination $app -Recurse }
             $plist = [IO.File]::ReadAllText((Join-Path $source 'packaging/Wonder.Info.plist')).Replace('@VERSION@',$version)
             [IO.File]::WriteAllText((Join-Path $app 'Wonder Launcher.app/Contents/Info.plist'), $plist, [Text.UTF8Encoding]::new($false))
             Copy-Item -LiteralPath (Join-Path $source 'packaging/Wonder.macOS.entitlements.plist') -Destination $app
@@ -98,9 +94,20 @@ try {
                 [IO.File]::SetUnixFileMode($entry.FullName, [IO.UnixFileMode]493)
             }
         }
-        $label = if ($targetRuntime -eq 'win-x64') { $targetRuntime } else { "$targetRuntime-preview" }
-        $archive = Join-Path $artifactRoot "Wonder-$version-$label.tar.gz"
-        Write-TarGzip $app $archive "Wonder-$targetRuntime"
+        if ($macOS) {
+            $archive = Join-Path $artifactRoot "Wonder-$version-$targetRuntime-preview.tar.gz"
+            Write-TarGzip $app $archive "Wonder-$targetRuntime"
+        } else {
+            $executable = if ($targetRuntime -eq 'win-x64') { 'Wonder.Desktop.exe' } else { 'Wonder.Desktop' }
+            $publishedFiles = @(Get-ChildItem -LiteralPath $app -Recurse -File)
+            if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne $executable) {
+                throw "Expected one self-contained application for $targetRuntime; review publish output."
+            }
+            $extension = if ($targetRuntime -eq 'win-x64') { '.exe' } else { '' }
+            $archive = Join-Path $artifactRoot "Wonder-$version-$targetRuntime$extension"
+            Copy-Item -LiteralPath (Join-Path $app $executable) -Destination $archive -Force
+            if (!$IsWindows -and $targetRuntime -eq 'linux-x64') { [IO.File]::SetUnixFileMode($archive, [IO.UnixFileMode]493) }
+        }
         $archives += $archive
         # Copy generated files only; keep existing WonderData and running Windows sessions.
         New-Item -ItemType Directory -Path $output -Force | Out-Null
@@ -118,7 +125,7 @@ try {
             }
         }
         Write-Output "Application: $output"
-        Write-Output "Package: $archive"
+        Write-Output "Download: $archive"
     }
     $checksums = foreach ($path in $archives) {
         (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + (Split-Path $path -Leaf)

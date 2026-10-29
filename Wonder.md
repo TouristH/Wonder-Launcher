@@ -8,11 +8,13 @@ NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR 
 
 ## 运行
 
-Windows、Linux、macOS 使用同一套源码与设置/工作区格式，各自输出本机原生入口并自带对应 .NET 运行时；无需 Wine 或 Windows EXE，也不意味着启用了 Native AOT。macOS Intel/Apple Silicon 的 `.app` 试用、本地签名、系统钥匙串和迁移边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。macOS 数据放在 `.app` 旁边的 `WonderData/`，运行时不写入应用包内部。
+Windows、Linux、macOS 使用同一套源码与设置/工作区格式，各自输出本机原生入口并自带对应 .NET 运行时；无需 Wine 或 Windows EXE，也不意味着启用了 Native AOT。本次 Release 只提供 Windows 与 Linux 应用，macOS Intel/Apple Silicon `.app` 保留本地构建；试用、本地签名、系统钥匙串和迁移边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。macOS 数据放在 `.app` 旁边的 `WonderData/`，运行时不写入应用包内部。
 
-直接运行发布产物 `artifacts/Wonder-win-x64/Wonder.Desktop.exe`。它是 Windows x64 自包含单文件应用，不要求预装 .NET；首次运行会按 .NET 的机制解包必要原生库。
+Windows 用户下载 `Wonder-0.7.2-win-x64.exe`，放到可写目录后双击运行；本地发布产物位于 `artifacts/Wonder-0.7.2-win-x64.exe`。它是 Windows x64 自包含单文件应用，不要求预装 .NET；首次运行会按 .NET 的机制解包必要原生库。
 
-Linux 用户将 `Wonder-0.7.2-linux-x64-preview.tar.gz` 解压到可写目录，进入 `Wonder-linux-x64` 后执行 `./start-Wonder.sh`。包内自带 .NET，仍需系统图形库、X11/XWayland 和用于保存账户的已解锁 Secret Service 密钥环。依赖安装、校验和限制见 [Linux 试发行说明](Guides/31-linux-trial.md)；Linux 图形桌面与真实游戏启动尚待实机验收。
+Linux 用户下载 `Wonder-0.7.2-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.7.2-linux-x64`，再执行 `./Wonder-0.7.2-linux-x64`；本地发布产物位于 `artifacts/Wonder-0.7.2-linux-x64`。它是自带 .NET 的 ELF 单文件应用，仍需系统图形库、X11/XWayland 和用于保存账户的已解锁 Secret Service 密钥环。依赖安装、校验和限制见 [Linux 试发行说明](Guides/31-linux-trial.md)；Linux 图形桌面与真实游戏启动尚待实机验收。
+
+Windows/Linux 应用运行无需相邻文档、启动脚本或源码包。Release 独立提供 `Wonder-0.7.2-source.tar.gz`，其中保留对应源码、构建材料、公开文档和全部适用的项目与第三方许可及通知；只使用应用时无需下载它。
 
 启动时在应用旁创建 `WonderData/`（macOS 在 `.app` 同级），集中存放设置、工作区和后续长期数据，并预留 `plugins/`。移动应用时一并移动此文件夹可保留文件数据，账户解密仍依赖原系统用户的密钥服务；分发程序时须一并提供适用的项目许可与第三方声明，不携带用户数据。所在目录需要可写，写入失败会明确提示，不自动切换到其他数据目录。
 

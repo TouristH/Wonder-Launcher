@@ -1,8 +1,8 @@
 # Linux x64 试发行
 
-适用版本：**Wonder Launcher 0.7.2 Linux x64 preview**。本包与 Windows、macOS 共用源码及业务实现，保留桌面、功能区、组件库、实例管理、账户与启动功能，面向 Ubuntu 24.04 x64 等 glibc 桌面系统。它以 Linux ELF 原生入口运行，包含 Linux .NET 运行时，不通过 Wine 运行 Windows EXE；系统图形库和游戏 Java 仍须由系统提供。完整平台清单见[三端发行说明](32-native-cross-platform.md)。
+适用版本：**Wonder Launcher 0.7.2 Linux x64 preview**。本应用与 Windows、macOS 共用源码及业务实现，保留桌面、功能区、组件库、实例管理、账户与启动功能，面向 Ubuntu 24.04 x64 等 glibc 桌面系统。`Wonder-0.7.2-linux-x64` 是 Linux ELF 单文件应用，包含 Linux .NET 运行时，不通过 Wine 运行 Windows EXE；系统图形库和游戏 Java 仍须由系统提供。完整平台清单见[三端发行说明](32-native-cross-platform.md)。
 
-**当前为交叉构建试发行，Linux 桌面实机验收尚未完成。** Windows 上的构建、自动化测试和归档检查不能代替 Linux 窗口、密钥环、回收站、在线登录和真实游戏启动验证。本包不适用于 ARM64 或 Alpine/musl，也未提供 AppImage、deb、rpm 安装器。
+**当前为交叉构建试发行，Linux 桌面实机验收尚未完成。** Windows 上的构建、自动化测试和产物检查不能代替 Linux 窗口、密钥环、回收站、在线登录和真实游戏启动验证。本应用不适用于 ARM64 或 Alpine/musl，也未提供 AppImage、deb、rpm 安装器。
 
 ## 准备系统
 
@@ -28,22 +28,21 @@ sudo apt install ca-certificates libc6 libgcc-s1 libgssapi-krb5-2 \
 
 | 文件 | 用途 |
 | --- | --- |
-| `Wonder-0.7.2-linux-x64-preview.tar.gz` | 可运行应用、启动脚本、文档与许可 |
-| `Wonder-0.7.2-source.tar.gz` | 四个平台目标共用的源码和发布脚本 |
-| `Wonder-0.7.2-SHA256SUMS` | 完整发布的四个应用包与一个源码包，共五个包的 SHA-256 |
+| `Wonder-0.7.2-linux-x64` | 自包含 ELF 单文件应用 |
+| `Wonder-0.7.2-source.tar.gz` | 各平台共用的对应源码、构建与发布材料、公开文档及项目和第三方许可与通知；运行应用无需下载 |
+| `Wonder-0.7.2-SHA256SUMS` | 本次实际发布的应用和源码包的 SHA-256 清单 |
 
-先校验再解压。完整发布包含四个应用包和一个源码包；若全部下载到同一目录，执行以下命令。若只下载 Linux 应用和源码包，校验时加 `--ignore-missing`，并确认这两个文件均显示 `OK`。选择自己可写的普通目录，不要解压到只读系统目录：
+下载 Linux 应用与校验文件到同一个可写目录，先校验，再赋予执行权限并启动。以下命令跳过未下载的其他平台文件；确认 `Wonder-0.7.2-linux-x64` 显示 `OK`。如另外下载了源码包，也应确认它显示 `OK`：
 
 ```bash
-sha256sum -c Wonder-0.7.2-SHA256SUMS
-tar -xzf Wonder-0.7.2-linux-x64-preview.tar.gz
-cd Wonder-linux-x64
-./start-Wonder.sh
+sha256sum --ignore-missing -c Wonder-0.7.2-SHA256SUMS
+chmod +x Wonder-0.7.2-linux-x64
+./Wonder-0.7.2-linux-x64
 ```
 
-归档保留 `Wonder.Desktop` 和 `start-Wonder.sh` 的执行权限；若经过不保留权限的复制工具，进入解压目录后执行 `chmod +x Wonder.Desktop start-Wonder.sh`。启动脚本检查 CPU 架构、图形会话、目录写入和执行权限，再启动应用。它设置仅当前用户可读写的新建数据权限，并确保没有继承关闭 .NET 文件锁的环境变量；建议始终使用该脚本。
+应用无需解压，也无需 `.sh` 启动脚本、相邻文档或源码包；复制或重新下载后若失去执行权限，再执行上述 `chmod` 命令。仍须满足前文的 CPU 架构、图形会话、系统依赖和目录写入要求。
 
-主程序为 `Wonder.Desktop`，数据在它旁边的 `WonderData/`，与从哪个工作目录运行无关。首次启动 .NET 可能解包原生库；“单文件”不代表运行中不会使用系统临时/缓存目录。应用和文档应一起保留。
+数据在应用旁边的 `WonderData/`，与从哪个工作目录运行无关。首次启动 .NET 可能解包原生库；“单文件”不代表运行中不会使用系统临时/缓存目录。
 
 ## 账户、实例与更新
 
@@ -55,7 +54,7 @@ Windows 的 `accounts.dat` 保留原样，不在 Linux 自动转换或解密。�
 
 删除实例或目录仍须确认范围并输入 `sure`。Linux 调用 `gio trash`；工具缺失、回收站不受支持或操作失败时提示错误，不改为永久删除。操作失败或超时时，应核对文件管理器和回收站中的实际状态后再重试。
 
-更新前关闭旧版 Wonder 并备份 `WonderData/`，用新版本应用与文档替换发行文件，保留数据目录。不要用新包的空目录覆盖已有数据。同一数据目录只能有一个写入进程，Linux 第二次启动在终端提示并退出，不自动激活原窗口；请手动切换到原窗口。不同便携目录可独立运行。
+更新前关闭旧版 Wonder 并备份 `WonderData/`，将新版本应用放到同一目录，赋予执行权限后启动，保留数据目录。不要覆盖已有数据。同一数据目录只能有一个写入进程，Linux 第二次启动在终端提示并退出，不自动激活原窗口；请手动切换到原窗口。不同便携目录可独立运行。
 
 ## 从源码制作
 
@@ -66,17 +65,17 @@ dotnet build Wonder.slnx -c Release
 pwsh -File packaging/Wonder.Publish.ps1 -Runtime linux-x64
 ```
 
-脚本先生成统一源码快照，再构建解决方案并发布所选目标；上面的 `-Runtime linux-x64` 仅制作 Linux 包，可直接查看的应用位于 `artifacts/Wonder-linux-x64/`。省略参数时默认 `all`，一次生成 Windows x64、Linux x64、macOS x64 和 macOS arm64 四个应用包，共用 `Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS`。单目标发布的校验文件只列出本次应用包和源码包。所有产物在 `artifacts/`。
+脚本先生成统一源码快照，再构建解决方案并发布所选目标；上面的 `-Runtime linux-x64` 直接生成 `artifacts/Wonder-0.7.2-linux-x64`，`artifacts/Wonder-linux-x64/` 为发布工作目录。省略参数时默认 `all`，制作 Windows x64、Linux x64 应用和两个 macOS 架构的本地 `.app` 试发行包，共用 `Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS`。校验文件只列出本次实际生成的应用产物和源码包；本次 Release 仅上传 Windows、Linux 应用与源码包，并提供对应校验清单。所有产物在 `artifacts/`。
 
-对应源码包纳入同一份源码及发布材料，排除游戏、账户、测试数据、探针、编译缓存与 Git 历史。主题和工作区使用共用格式；平台凭据保护、游戏路径和 Java 的差异见[三端发行说明](32-native-cross-platform.md)。
+对应源码包纳入同一份源码、构建与发布材料、公开文档，以及全部适用的项目和原始第三方许可、版权与通知，排除游戏、账户、测试数据、探针、编译缓存与 Git 历史。主题和工作区使用共用格式；平台凭据保护、游戏路径和 Java 的差异见[三端发行说明](32-native-cross-platform.md)。
 
-分发应用时同时提供对应源码包、公开文档与原始第三方许可，并遵守 [GPL-3.0-only](../LICENSE) 及[附加条款](../ADDITIONAL_TERMS.md)。不要以另一版本的源码替代实际分发版本。
+分发应用时须按 [GPL-3.0-only](../LICENSE)、[附加条款](../ADDITIONAL_TERMS.md)及适用的第三方许可提供对应源码与必要声明；本次发行通过独立源码包提供这些材料，无需与应用放在同一目录。不要以另一版本的源码替代实际分发版本。
 
 ## Linux 实机验收清单
 
 以下项目尚待在目标 Linux 桌面逐项执行，请使用独立试用目录和临时游戏副本：
 
-1. 校验压缩包；从含空格的路径启动，确认中文、缩放、窗口、菜单与文件选择器正常。
+1. 校验应用文件，赋予执行权限；从含空格的路径启动，确认中文、缩放、窗口、菜单与文件选择器正常。
 2. 移动功能区和组件、编辑便笺、切换主题，关闭重开后确认保存；从另一工作目录启动仍读取同一数据目录。
 3. 同一数据目录再次启动时只有原窗口运行；退出后能够重启，不手动删除锁文件。
 4. 在已解锁密钥环下添加合成离线玩家并重启；锁定密钥环后确认读取或保存失败会提示，原账户文件保留。恢复原密钥环后可重试。

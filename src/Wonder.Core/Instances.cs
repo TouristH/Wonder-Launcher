@@ -3,7 +3,7 @@
 
 namespace Wonder.Core;
 
-public enum InstanceSource { Official, Hmcl, Pcl, Prism, MultiMc }
+public enum InstanceSource { Official, Hmcl, Pcl, Prism, MultiMc, Wonder }
 
 public sealed record InstanceSettings
 {
@@ -76,6 +76,7 @@ public sealed record GameInstance
     public string VersionId { get; init; } = "";
     public string GameVersion { get; init; } = "";
     public List<InstalledModLoader> ModLoaders { get; init; } = [];
+    public string? PresetIconPath { get; init; }
     public string VersionLabel => string.Join(" · ", new[] { string.IsNullOrWhiteSpace(GameVersion) ? "版本待识别" : "Minecraft " + GameVersion }
         .Concat(ModLoaders.Select(loader => loader.Name + " " + loader.Version)));
     public string LibraryDirectory { get; init; } = "";
@@ -116,6 +117,7 @@ public sealed record GameInstance
         InstanceSettings.ValidatePath(AssetsDirectory, "资源目录");
         InstanceSettings.ValidatePath(VersionsDirectory, "版本目录");
         if (LocalLibraryDirectory is not null) InstanceSettings.ValidatePath(LocalLibraryDirectory, "本地依赖库目录");
+        if (PresetIconPath is not null) InstanceSettings.ValidatePath(PresetIconPath, "实例预设图标");
         if (MetadataPaths is null || MetadataPaths.Count > 128) throw new ArgumentException("实例元数据列表无效。");
         foreach (var path in MetadataPaths) InstanceSettings.ValidatePath(path, "元数据路径");
         if (Warnings is null || Warnings.Count > 128) throw new ArgumentException("实例诊断列表无效。");

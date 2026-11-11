@@ -10,6 +10,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Wonder.Application;
+using Wonder.Core;
+using Wonder.Infrastructure;
 using Wonder.Extensibility.Contracts;
 using Wonder.Workspace;
 
@@ -42,7 +44,10 @@ internal static class GameComponents
         var action = new TextBlock { FontSize = 15, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent };
         var name = new TextBlock { FontSize = 22, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
         var detail = Label(); detail.MaxLines = 2;
-        body.Children.Add(action); body.Children.Add(name); body.Children.Add(detail);
+        var icon = new InstanceIconView(38);
+        var launchHeading = new Grid { ColumnDefinitions = new ColumnDefinitions("38,10,*") };
+        launchHeading.Children.Add(icon); Grid.SetColumn(action, 2); action.VerticalAlignment = VerticalAlignment.Center; launchHeading.Children.Add(action);
+        body.Children.Add(launchHeading); body.Children.Add(name); body.Children.Add(detail);
         var surface = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(22, 18), Child = body };
         var button = new Button
         {
@@ -67,6 +72,7 @@ internal static class GameComponents
         void Refresh()
         {
             name.Text = context.Get("name", "尚未选择实例");
+            icon.SetIcon(context.Get("icon-path"), context.Get("icon-key", "minecraft"));
             detail.Text = context.Get("version", "请先在实例管理中选择实例") + "\n" +
                 context.Get("account-kind", "离线模式") + " · " + context.Get("username", "Player");
             action.Text = context.Get("phase") switch { "Preparing" => "正在准备…", "Running" => "游戏运行中", _ => "▶  启动游戏" };
@@ -121,7 +127,10 @@ internal static class GameComponents
         var body = new StackPanel { Spacing = 7, Margin = new Thickness(15, 5, 15, 8) };
         var name = new TextBlock { FontSize = 18, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
         var detail = Label(); var status = Label(); status.MaxHeight = 36;
-        body.Children.Add(name); body.Children.Add(detail); body.Children.Add(status); Grid.SetRow(body, 1); layout.Children.Add(body);
+        var icon = new InstanceIconView(34);
+        var identity = new Grid { ColumnDefinitions = new ColumnDefinitions("34,10,*") };
+        identity.Children.Add(icon); Grid.SetColumn(name, 2); name.VerticalAlignment = VerticalAlignment.Center; identity.Children.Add(name);
+        body.Children.Add(identity); body.Children.Add(detail); body.Children.Add(status); Grid.SetRow(body, 1); layout.Children.Add(body);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(15, 0, 15, 14) };
         var primary = new Button { Content = "管理实例", MinHeight = 34, IsEnabled = !context.IsPreview };
         AutomationProperties.SetName(primary, "打开实例管理");
@@ -130,6 +139,7 @@ internal static class GameComponents
         void Refresh()
         {
             name.Text = context.Get("name", "尚未选择实例"); ToolTip.SetTip(name, name.Text);
+            icon.SetIcon(context.Get("icon-path"), context.Get("icon-key", "minecraft"));
             detail.Text = context.Get("count", "0") + " 个实例 · " + context.Get("version", "选择已有游戏目录");
             detail.MaxLines = 3; ToolTip.SetTip(detail, detail.Text);
             status.Text = "在实例列表中选择启动目标或打开设置。";
@@ -151,6 +161,8 @@ internal static class GameComponents
                 return new Dictionary<string, string>
                 {
                     ["name"] = selected?.Name ?? "尚未选择实例", ["version"] = selected?.VersionLabel ?? "选择已有游戏目录", ["count"] = catalog.Instances.Count.ToString(),
+                    ["icon-path"] = selected is null ? "" : InstanceIcons.FindPreset(selected) ?? "",
+                    ["icon-key"] = selected is null ? "minecraft" : InstanceIcon.DefaultKey(selected),
                     ["username"] = accounts is null ? catalog.OfflineUsername : accounts.SelectedAccount?.Username ?? "请先添加账户",
                     ["account-kind"] = accounts is null ? "离线模式" : accounts.SelectedAccount is { } account ? AccountService.KindLabel(account.Kind) : "未选择账户",
                     ["status"] = service.StatusMessage, ["error"] = service.Error ?? "",

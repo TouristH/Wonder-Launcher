@@ -25,6 +25,52 @@ public sealed partial class WorkspaceView
     private string? _expandedSidebarId;
     private Point _sidebarPointer = new(-1, -1);
 
+    private MenuItem? BuildSidebarMenu(Area area)
+    {
+        if (area.SidebarEdge != SidebarEdge.None)
+            return Menu("恢复为普通功能区", () => SetSidebarFromMenu(area, SidebarEdge.None));
+        var edge = AvailableSidebarEdge(area);
+        if (edge == SidebarEdge.None) return null;
+        var label = edge switch
+        {
+            SidebarEdge.Left => "左侧",
+            SidebarEdge.Right => "右侧",
+            SidebarEdge.Top => "顶部",
+            _ => "底部"
+        };
+        return new MenuItem
+        {
+            Header = "收起为侧边栏",
+            ItemsSource = new[] { Menu(label, () => SetSidebarFromMenu(area, edge)) }
+        };
+    }
+
+    private SidebarEdge AvailableSidebarEdge(Area area)
+    {
+        var parent = ParentOf(Document.Root, area.Id);
+        if (parent == null || !Snapshot.Areas.TryGetValue(area.Id, out var bounds)) return SidebarEdge.None;
+        return WorkspaceLayout.GetSidebarEdge(parent, parent.First?.Area == area, bounds, Bounds.Width, Bounds.Height);
+    }
+
+    private void SetSidebarFromMenu(Area area, SidebarEdge edge)
+    {
+        if (Document.FindArea(area.Id) != area || area.SidebarEdge == edge) return;
+        CancelGesture();
+        // A menu can outlive the layout it describes; check the current outer edge again.
+        if (edge != SidebarEdge.None && AvailableSidebarEdge(area) != edge) return;
+        ContextMenu?.Close();
+        var from = Snapshot;
+        var opacity = CaptureSidebarOpacity();
+        if (edge != SidebarEdge.None)
+            area.SidebarExtent = Math.Clamp(area.SidebarExtent, 80, WorkspaceLayout.DefaultSidebarExtent);
+        area.SidebarEdge = edge;
+        _expandedSidebarId = null;
+        _sidebarCloseTimer.Stop();
+        Rebuild();
+        StartSidebarAnimation(from, opacity);
+        NotifyChanged();
+    }
+
     private void InitializeSidebars()
     {
         InitializeSidebarAnimation();

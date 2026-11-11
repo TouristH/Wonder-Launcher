@@ -14,9 +14,12 @@
 
 ## 已实现的功能
 
-- 桌面式工作区：功能区拖动换位、分隔边调整、四边侧栏和布局保存。
+- 桌面式工作区：左右/上下拆分，拖到目标功能区四边可重新摆放、拖到中央可交换；支持分隔边调整、四边侧栏和布局保存，右键可拖动坐标原点，十字轴与离屏方向箭头辅助定位。
+- 个性化设置统一管理外观、长按与侧栏交互，支持桌面组件整体大小 50%–200% 调整。
 - 通用组件与组件库：应用状态和快捷方式位置分开，支持便笺、设置和启动器状态。
-- 实例管理：读取已有游戏目录，切换列表/网格、选择实例、编辑启动设置及目录操作。
+- 下载组件与下载中心：安装 Minecraft、加载器与 Java，从 Modrinth 下载模组、整合包、资源包和光影；支持暂停、继续、重试及退出后恢复。在“设置 → 启动器设置”切换自动、官方、BMCLAPI 下载源并调整并发。见[下载帮助](Guides/33-download-center.md)。
+- Wonder 原生实例配置：下载实例自带 `.minecraft/wonder.instance.json`，保存 Wonder 创建署名、版本和独立启动参数；修改实例设置同步保存，移动实例后可重新导入。
+- 实例管理：读取已有游戏目录，切换列表/网格、选择实例、编辑启动设置及目录操作；优先显示整合包预设图标，缺失时按原版、Fabric、Forge、NeoForge 使用官方默认图标。
 - 账户中心与桌面组件：微软正版、自定义 Yggdrasil 和离线账户，支持搜索、账户详情、切换、刷新、重新登录、离线改名和删除；Windows 使用 DPAPI，Linux 使用 Secret Service，macOS 使用系统钥匙串保护加密账户库。
 - 角色外观与认证服务器：正版皮肤预览、上传、恢复和披风切换；离线默认皮肤选择（确认 UUID 变化后应用）；第三方选肤自动打开认证网站。自定义服务器发现与确认、重命名和移除，启动时自动准备经过校验的 authlib-injector。
 - 双层皮肤与头像：正背面预览叠加头部、上衣、袖子和裤腿外层；正版和第三方均显示已选披风。第三方支持 HD 皮肤、披风及头像预览，按原图分辨率取样。原有账户组件左侧显示当前皮肤头像，账户中心搜索和切页会保留仍显示的头像，第三方网站改肤后刷新资料即可更新。尺寸范围见[外观预览说明](Guides/30-layered-skins-capes-and-avatars.md)。
@@ -24,7 +27,7 @@
 - 同一份源码发布 Windows x64、Linux x64、macOS Intel/Apple Silicon 原生应用，自带各平台 .NET 运行时；Linux 和 macOS 当前为试发行。设置、布局和实例登记保存在应用旁的 `WonderData/`，macOS 放在 `.app` 外部。
 - 同一数据目录只允许一个启动器进程写入；Windows 再次打开会尝试激活已有窗口，Linux/macOS 将提示写入终端并退出。不同便携目录可独立运行。
 
-游戏安装/修复、第三方代码插件加载及权限沙箱仍待实现。没有将 `AssemblyLoadContext` 或普通子进程描述为安全沙箱。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
+已有实例的一键修复、第三方代码插件加载及权限沙箱仍待实现。没有将 `AssemblyLoadContext` 或普通子进程描述为安全沙箱。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
 
 ## 认证与隐私
 
@@ -47,21 +50,57 @@ Linux 与 macOS 图形桌面、系统密钥服务和真实游戏启动仍待实�
 
 ## 从源码构建
 
-需要 .NET 10 SDK。在源码根目录执行：
+需要 .NET 10 SDK。以下命令可在 Windows、Linux 或 macOS 的源码根目录执行，构建并运行当前系统的开发版本：
 
 ```powershell
 dotnet build Wonder.slnx -c Release
 dotnet run --project src/Wonder.Desktop/Wonder.Desktop.csproj
 ```
 
-发行产物使用 PowerShell 7.4 或更新版本生成。默认 `all` 从同一份源码快照制作四个目标，共用一个源码包和校验文件；第二条命令演示单独发布一个目标：
+制作发行产物还需要 PowerShell 7.4 或更新版本。Windows、Linux 和 macOS 均使用同一个发布脚本，可按目标平台分别构建：
+
+```powershell
+# Windows x64
+pwsh -File packaging/Wonder.Publish.ps1 -Runtime win-x64
+
+# Linux x64
+pwsh -File packaging/Wonder.Publish.ps1 -Runtime linux-x64
+
+# macOS Intel
+pwsh -File packaging/Wonder.Publish.ps1 -Runtime osx-x64
+
+# macOS Apple Silicon（M 系列）
+pwsh -File packaging/Wonder.Publish.ps1 -Runtime osx-arm64
+```
+
+也可以一次从同一份源码快照构建全部四个目标，共用一个源码包和校验文件：
 
 ```powershell
 pwsh -File packaging/Wonder.Publish.ps1
-pwsh -File packaging/Wonder.Publish.ps1 -Runtime linux-x64
 ```
 
-Windows 和 Linux 的可分发应用直接输出为 `artifacts/Wonder-0.7.2-win-x64.exe` 和 `artifacts/Wonder-0.7.2-linux-x64`；`artifacts/Wonder-win-x64/`、`artifacts/Wonder-linux-x64/` 为发布工作目录。macOS 本地仍生成 `.app` 及原命名的试发行压缩包。各目标的产物与入口见[三端发行说明](Guides/32-native-cross-platform.md)。`Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS` 同样位于 `artifacts/`；校验文件按本次实际生成的应用产物和源码包列出 SHA-256，单独指定目标时只包含该次产物。上传本次 Release 时使用 Windows、Linux 应用及独立源码包，并提供与实际上传文件一致的校验清单。
+| 目标 | 应用产物 |
+| --- | --- |
+| Windows x64 | `artifacts/Wonder-0.7.2-win-x64.exe` |
+| Linux x64 | `artifacts/Wonder-0.7.2-linux-x64` |
+| macOS Intel | `artifacts/Wonder-osx-x64/Wonder Launcher.app` |
+| macOS Apple Silicon | `artifacts/Wonder-osx-arm64/Wonder Launcher.app` |
+
+可以交叉构建其他系统的产物；运行验收仍须在相应系统进行。Linux 的系统依赖见[Linux 试发行说明](Guides/31-linux-trial.md)；macOS 应用构建后须在 Mac 上按[三端发行说明](Guides/32-native-cross-platform.md)完成本地签名与试用，交叉构建不等于已经签名、公证或实机验证。
+
+`artifacts/Wonder-win-x64/`、`artifacts/Wonder-linux-x64/` 为发布工作目录；macOS 同时生成原命名的试发行压缩包。`Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS` 同样位于 `artifacts/`；校验文件按本次实际生成的应用产物和源码包列出 SHA-256，单独指定目标时只包含该次产物。上传本次 Release 时使用 Windows、Linux 应用及独立源码包，并提供与实际上传文件一致的校验清单。
+
+### Windows x64 可选最小版
+
+本地可构建仅内置六个 Wonder 自身程序集的最小版 EXE，保留完整功能；所有第三方依赖由用户准备，当前仅支持 Windows x64。使用 .NET 10 SDK 和 PowerShell 7.4+ 执行：
+
+```powershell
+pwsh -File packaging/Wonder.PublishMinimal.ps1
+# 同时从源码发布结果准备第三方 DLL
+pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies
+```
+
+产物为 `artifacts/Wonder-0.7.2-win-x64-minimal.exe` 和依赖清单 `artifacts/Wonder-0.7.2-win-x64-minimal.dependencies.json`。运行前须在系统安装 .NET 10 x64 运行时，并按 JSON 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方 DLL 放在 EXE 同目录；.NET 运行时通过系统安装，无需放在 EXE 旁。`-PrepareDependencies` 额外生成 `artifacts/Wonder-minimal-dependencies-win-x64/`，可将其中 DLL 复制到最小版 EXE 同目录；这些 DLL 不内置于最小版 EXE。依赖不齐时最小版无法运行，普通用户使用原自包含版更省步骤，默认 Release 仍为自包含版。详见[三端发行说明](Guides/32-native-cross-platform.md#windows-x64-可选最小版)。
 
 `Wonder.slnx` 包含六个生产工程，版本统一在 `Directory.Build.props` 中维护。三端使用相同设置与工作区格式，平台账户文件和绝对路径仍有差异。数据位于应用旁的 `WonderData/`，macOS 为 `.app` 的同级目录。更新前关闭启动器并保留数据目录；跨系统或更换桌面用户后，账户通常需要重新登录，游戏路径和 Java 也需重新设置。
 

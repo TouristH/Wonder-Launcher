@@ -1,6 +1,6 @@
 # 实例管理与游戏启动
 
-Wonder 可登记并启动已安装的本地 Minecraft 实例，读取官方目录、HMCL、PCL、Prism 和 MultiMC 的相关配置。游戏账户通过[账户中心](26-account-management.md)管理；当前不提供游戏下载、缺失依赖修复或其他启动器账户迁移。
+Wonder 可通过[下载中心](33-download-center.md)安装游戏，也可登记已有本地实例。Wonder 自建实例优先读取 `.minecraft/wonder.instance.json` 中的来源署名与独立启动参数，同时支持官方目录、HMCL、PCL、Prism 和 MultiMC 的相关配置。游戏账户通过[账户中心](26-account-management.md)管理；当前不提供已有实例的一键依赖修复或其他启动器账户迁移。
 
 ## 添加与选择实例
 
@@ -55,7 +55,7 @@ Wonder 可登记并启动已安装的本地 Minecraft 实例，读取官方目�
 | PCL | 版本目录中的 `PCL/Setup.ini`、`PCL/config.json` 及相关配置；显式 Java、内存、参数和隔离设置 | 注册表全局项、自动内存/隔离、Java 范围选择及窗口策略不完整复刻，请核对来源诊断并设置 Wonder 覆盖值。 |
 | Prism / MultiMC | `instance.cfg`、全局配置和覆盖开关、`mmc-pack.json`、本地 patches 与共享元数据缓存 | 支持相关本地库与 tweakers；最大化窗口不等同全屏。元数据缺失时可登记，但不能启动残缺组合。 |
 
-支持本地标准版本继承、库覆盖、平台与功能规则、现代参数、旧式 `minecraftArguments` 以及 Prism 主 JAR 和本地库。当前不执行安装处理器、启动前后脚本，不支持 jarMods、额外 agents、未知 Prism traits 或旧式 `virtual/map_to_resources` 资产映射。来源启动器的自动下载、特殊优化和渲染器替换等行为不保证完整兼容。
+支持本地标准版本继承、库覆盖、平台与功能规则、现代参数、旧式 `minecraftArguments`、旧式 `virtual/map_to_resources` 资产映射，以及 Prism 主 JAR 和本地库。Forge/NeoForge 的客户端安装处理器在下载中心执行；启动阶段不执行安装处理器或启动前后脚本。不支持 jarMods、额外 agents 或未知 Prism traits。来源启动器的特殊优化和渲染器替换等行为不保证完整兼容。
 
 ## 格式参考与代码来源
 

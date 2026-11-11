@@ -66,6 +66,11 @@ public sealed partial class MainWindow
 
     private void ApplySettings()
     {
+        _downloads.SetOptions(new Wonder.Core.DownloadOptions
+        {
+            Source = _settings.DownloadSource, ConcurrentFiles = _settings.ConcurrentDownloads,
+            ConnectionsPerFile = _settings.DownloadConnections, RetryCount = _settings.DownloadRetries
+        });
         var variant = _settings.Theme switch
         {
             LauncherTheme.Light => ThemeVariant.Light,

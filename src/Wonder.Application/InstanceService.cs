@@ -44,17 +44,18 @@ public sealed partial class InstanceService
     }
 
     public Task ImportAsync(string path) => Discover(path, null);
+    public Task ImportInstalledAsync(string path) => Discover(path, null, allowRunning: true);
     public Task RefreshAsync(string id)
     {
         var item = Catalog.Instances.FirstOrDefault(x => x.Id == id);
         return item is null ? Task.CompletedTask : Discover(item.SourcePath, id);
     }
 
-    private async Task Discover(string path, string? onlyId)
+    private async Task Discover(string path, string? onlyId, bool allowRunning = false)
     {
         lock (_gate)
         {
-            if (_loadFailed || IsBusy) return;
+            if (_loadFailed || _operation || (!allowRunning && _launchId is not null)) return;
             _operation = true; Error = null; StatusMessage = "正在读取实例配置…";
         }
         Notify();
@@ -80,7 +81,10 @@ public sealed partial class InstanceService
                     else
                     {
                         var previous = catalog.Instances[index];
-                        var refreshed = Copy(candidate) with { Id = previous.Id, Name = previous.Name, Overrides = previous.Overrides, PreviousRootDirectories = [.. previous.PreviousRootDirectories] };
+                        var refreshed = Copy(candidate) with { Id = previous.Id,
+                            Name = candidate.Source == InstanceSource.Wonder ? candidate.Name : previous.Name,
+                            Overrides = candidate.Source == InstanceSource.Wonder ? candidate.Overrides : previous.Overrides,
+                            PreviousRootDirectories = [.. previous.PreviousRootDirectories] };
                         foreach (var oldRoot in previous.PreviousRootDirectories) refreshed = RebaseImportedSettings(refreshed, oldRoot, refreshed.RootDirectory);
                         catalog.Instances[index] = refreshed;
                     }

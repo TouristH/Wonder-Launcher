@@ -28,9 +28,12 @@ internal sealed class ComponentView : Viewbox, IDisposable
     private bool _showingFailure;
     private bool _refreshing;
     private bool _inViewport;
+    private double _scale = 1;
+    private bool _scaleApplied;
     private readonly List<Visual> _visibilityAncestors = [];
     public ComponentItem Item { get; }
-    public Size Footprint => new(_definition.Width, _definition.Height);
+    private Size NativeSize => new(_definition.Width, _definition.Height);
+    public Size Footprint => new(_definition.Width * _scale, _definition.Height * _scale);
 
     public ComponentView(ComponentItem item, ComponentHost host, bool preview = false)
     {
@@ -39,7 +42,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
         _preview = preview;
         _definition = host.GetDefinition(item);
         Stretch = Stretch.Uniform;
-        StretchDirection = StretchDirection.DownOnly;
+        StretchDirection = StretchDirection.Both;
         HorizontalAlignment = HorizontalAlignment.Left;
         VerticalAlignment = VerticalAlignment.Top;
         ToolTip.SetTip(this, _definition.Description);
@@ -90,11 +93,21 @@ internal sealed class ComponentView : Viewbox, IDisposable
         UpdateVisibility();
     }
 
+    public void SetScale(double factor)
+    {
+        if (!double.IsFinite(factor) || factor <= 0)
+            throw new ArgumentOutOfRangeException(nameof(factor));
+        _scale = factor;
+        _scaleApplied = true;
+        Width = Footprint.Width;
+        Height = Footprint.Height;
+    }
+
     public bool IsHitAt(Point local)
     {
         if (Child is null) return false;
         var point = this.TranslatePoint(local, Child);
-        return point.HasValue && (_outline?.FillContains(point.Value) ?? new Rect(Footprint).Contains(point.Value));
+        return point.HasValue && (_outline?.FillContains(point.Value) ?? new Rect(NativeSize).Contains(point.Value));
     }
 
     public bool CanStartDrag(Point local)
@@ -148,12 +161,13 @@ internal sealed class ComponentView : Viewbox, IDisposable
     private void BuildContent()
     {
         ReleaseContent();
+        if (_scaleApplied) SetScale(_scale);
         _outline = null;
         if (_definition.Outline.Count > 0)
         {
             _outline = new StreamGeometry();
             using var geometry = _outline.Open();
-            var points = _definition.Outline.Select(point => new Point(point.X * Footprint.Width, point.Y * Footprint.Height)).ToArray();
+            var points = _definition.Outline.Select(point => new Point(point.X * NativeSize.Width, point.Y * NativeSize.Height)).ToArray();
             geometry.BeginFigure(points[0], true);
             foreach (var point in points.Skip(1)) geometry.LineTo(point);
             geometry.EndFigure(true);
@@ -171,7 +185,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
                 (action, value) => _session?.Invoke(action, value));
             _content = registration.CreatePresentation(context);
             _showingFailure = false;
-            Child = new Grid { Width = Footprint.Width, Height = Footprint.Height, Children = { _content.Control } };
+            Child = new Grid { Width = NativeSize.Width, Height = NativeSize.Height, Children = { _content.Control } };
             _content.SetSelected(_selected);
             _content.Refresh();
         }
@@ -200,7 +214,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
         retry.Click += (_, _) => _session?.Retry();
         panel.Children.Add(retry);
         _content = ComponentContent.Card(panel, canStartDrag: point => point.Y < 40);
-        Child = new Grid { Width = Footprint.Width, Height = Footprint.Height, Children = { _content.Control } };
+        Child = new Grid { Width = NativeSize.Width, Height = NativeSize.Height, Children = { _content.Control } };
         _content.SetSelected(_selected);
     }
 

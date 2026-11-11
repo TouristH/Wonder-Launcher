@@ -49,9 +49,14 @@ public sealed partial class WorkspaceView : Panel
     {
         settings.Validate();
         CancelGesture();
+        ClearLibraryDrop();
         FinishSidebarAnimation();
         _settings = settings;
-        foreach (var area in _areas.Values) area.ShowNumber(settings.ShowAreaNumbers);
+        foreach (var area in _areas.Values)
+        {
+            area.ShowNumber(settings.ShowAreaNumbers);
+            area.SetScale(settings.ComponentScalePercent / 100d);
+        }
         _holdTimer.Interval = TimeSpan.FromMilliseconds(settings.HoldDelayMilliseconds);
         _sidebarCloseTimer.Stop();
         _sidebarCloseTimer.Interval = TimeSpan.FromMilliseconds(settings.SidebarCloseDelayMilliseconds);
@@ -150,6 +155,11 @@ public sealed partial class WorkspaceView : Panel
     {
         var gesture = _gesture;
         if (gesture == null) return;
+        if (gesture.CenterArea is { } centerArea)
+        {
+            centerArea.CenterX = gesture.OriginalX;
+            centerArea.CenterY = gesture.OriginalY;
+        }
         if (gesture.Component != null)
         {
             gesture.Component.X = gesture.OriginalX;
@@ -182,13 +192,20 @@ public sealed partial class WorkspaceView : Panel
         {
             items.Add(Menu("重命名功能区…", () => RenameArea(area)));
             items.Add(Menu("整理组件到可见范围", () => RecoverComponents(area)));
+            items.Add(Menu(_centerAreaId == area.Id ? "结束中心拖动" : "拖动工作区中心", () => EditCenter(_centerAreaId == area.Id ? null : area)));
+            items.Add(Menu("重置工作区中心", () => ResetCenter(area)));
+            if (BuildSidebarMenu(area) is { } sidebarMenu) items.Add(sidebarMenu);
             items.Add(new Separator());
             items.Add(Menu("左右拆分功能区", () => AddArea(area.Id, SplitAxis.Horizontal)));
             items.Add(Menu("上下拆分功能区", () => AddArea(area.Id, SplitAxis.Vertical)));
             items.Add(Menu("移除此功能区", () => { Document.RemoveArea(area.Id); CommitStructure(); }));
             items.Add(new Separator());
         }
-        else items.Add(Menu("添加功能区", () => AddArea(null, SplitAxis.Horizontal)));
+        else
+        {
+            items.Add(Menu("添加功能区", () => AddArea(null, SplitAxis.Horizontal)));
+            if (Document.Root is not null) items.Add(Menu("添加上下功能区", () => AddArea(null, SplitAxis.Vertical)));
+        }
         items.Add(Menu("恢复默认布局", RestoreDefaultLayout));
         items.Add(Menu("清空框架", () => ReplaceDocument(WorkspaceDocument.CreateEmpty())));
         items.Add(new Separator());
@@ -267,6 +284,7 @@ public sealed partial class WorkspaceView : Panel
         {
             ClearLibraryDrop();
             _libraryPreview = new ComponentView(Document.CreateShortcut(data.Application), Components, preview: true) { IsHitTestVisible = false, Opacity = .85, ZIndex = 400 };
+            _libraryPreview.SetScale(_settings.ComponentScalePercent / 100d);
             Children.Add(_libraryPreview);
             _libraryPreview.SetSelected(true);
         }
@@ -283,7 +301,7 @@ public sealed partial class WorkspaceView : Panel
     {
         var id = AreaAt(point);
         var area = id == null ? new LayoutRect(0, 0, Bounds.Width, Bounds.Height) : GetAreaBounds(id);
-        var center = point + data.GrabOffset;
+        var center = point + data.GrabOffset * (_settings.ComponentScalePercent / 100d);
         var offset = ClampOffset(area, size, center.X - area.X - area.Width / 2, center.Y - area.Y - area.Height / 2);
         return new Rect(area.X + area.Width / 2 + offset.X - size.Width / 2, area.Y + area.Height / 2 + offset.Y - size.Height / 2, size.Width, size.Height);
     }
@@ -303,11 +321,11 @@ public sealed partial class WorkspaceView : Panel
         var area = id == null ? Document.AddArea() : Document.FindArea(id)!;
         var item = Document.CreateShortcut(data.Application);
         var definition = Components.GetDefinition(item);
-        var size = new Size(definition.Width, definition.Height);
+        var size = new Size(definition.Width, definition.Height) * (_settings.ComponentScalePercent / 100d);
         var placed = LibraryPlacement(data, point, size);
         var bounds = GetAreaBounds(area.Id);
-        item.X = placed.Center.X - bounds.X - bounds.Width / 2;
-        item.Y = placed.Center.Y - bounds.Y - bounds.Height / 2;
+        item.X = placed.Center.X - bounds.X - bounds.Width / 2 - area.CenterX;
+        item.Y = placed.Center.Y - bounds.Y - bounds.Height / 2 - area.CenterY;
         area.Components.Add(item);
         CommitStructure();
     }
@@ -331,9 +349,9 @@ public sealed partial class WorkspaceView : Panel
         var bounds = GetAreaBounds(area.Id);
         foreach (var view in _areas[area.Id].Components.Values)
         {
-            var position = ClampOffset(bounds, view.Footprint, view.Item.X, view.Item.Y);
-            view.Item.X = position.X;
-            view.Item.Y = position.Y;
+            var position = ClampOffset(bounds, view.Footprint, view.Item.X + area.CenterX, view.Item.Y + area.CenterY);
+            view.Item.X = position.X - area.CenterX;
+            view.Item.Y = position.Y - area.CenterY;
         }
         InvalidateArrange();
         NotifyChanged();
@@ -363,10 +381,13 @@ public sealed partial class WorkspaceView : Panel
         Children.Clear();
         _areas.Clear();
         _splitters.Clear();
+        if (Document.FindArea(_centerAreaId ?? "") is null) _centerAreaId = null;
         var index = 0;
         foreach (var area in Document.Areas)
         {
             var view = new AreaView(area, index++, Components, _settings.ShowAreaNumbers);
+            view.SetScale(_settings.ComponentScalePercent / 100d);
+            view.ShowCenter(area.Id == _centerAreaId);
             _areas.Add(area.Id, view);
             Children.Add(view);
         }
@@ -383,6 +404,7 @@ public sealed partial class WorkspaceView : Panel
         }
         AddSplits(Document.Root);
         RebuildSidebars();
+        Children.Add(_areaPlacementPreview);
         _dragLabel.ZIndex = 500;
         Children.Add(_dragLabel);
         InvalidateMeasure();
@@ -398,6 +420,13 @@ public sealed partial class WorkspaceView : Panel
     {
         var snapshot = MeasureWorkspace(finalSize);
         UpgradePreviewCoordinates(snapshot, finalSize);
+        // Hover expansion and window resizing can change the target under a stationary
+        // pointer. Keep intent, feedback and release behavior on the same displayed frame.
+        if (_gesture is { Active: true, Component: null, Split: null, CenterArea: null } areaGesture)
+        {
+            UpdateAreaDrop(areaGesture);
+            UpdateHighlights();
+        }
         foreach (var (id, view) in _areas)
         {
             var rect = ToRect(snapshot.Areas[id]);
@@ -414,6 +443,7 @@ public sealed partial class WorkspaceView : Panel
             if (view.IsVisible) view.Arrange(SplitHitBounds(id, snapshot));
         }
         ArrangeSidebars(snapshot);
+        ArrangeAreaPlacementPreview(snapshot, finalSize);
         if (_gesture != null)
         {
             if (_dragPreview != null) _dragPreview.Arrange(PreviewBounds(_gesture));
@@ -434,6 +464,7 @@ public sealed partial class WorkspaceView : Panel
     {
         if (_gesture != null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         var position = e.GetPosition(this);
+        if (TryPressCenter(e, position)) return;
         _sidebarPointer = position;
         var snapshot = Snapshot;
         var gesture = new Gesture { Pointer = e.Pointer, Trigger = e, Start = position, Last = position };
@@ -491,6 +522,7 @@ public sealed partial class WorkspaceView : Panel
         if (_gesture.Component != null)
         {
             _dragPreview = new ComponentView(_gesture.Component, Components, preview: true) { IsHitTestVisible = false, Opacity = .92, ZIndex = 400 };
+            _dragPreview.SetScale(_settings.ComponentScalePercent / 100d);
             _dragPreview.SetSelected(true);
             Children.Insert(Children.Count - 1, _dragPreview);
             _areas[_gesture.AreaId!].Components[_gesture.Component.Id].Opacity = .2;
@@ -498,7 +530,7 @@ public sealed partial class WorkspaceView : Panel
         }
         Focus();
         Cursor = new Cursor(_gesture.Split != null ? (_gesture.Split.Axis == SplitAxis.Horizontal ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth) : StandardCursorType.SizeAll);
-        _dragText.Text = _gesture.SidebarArea != null ? "松开保持侧边栏 · Esc 取消" : _gesture.Split != null ? "调整大小 · Esc 取消" : _gesture.Component != null ? "拖入功能区放置 · Esc 取消" : "拖到其他功能区交换 · Esc 取消";
+        _dragText.Text = _gesture.SidebarArea != null ? "松开保持侧边栏 · Esc 取消" : _gesture.Split != null ? "调整大小 · Esc 取消" : _gesture.Component != null ? "拖入功能区放置 · Esc 取消" : "拖到目标边缘摆放，中央交换 · Esc 取消";
         _dragLabel.IsVisible = true;
         UpdateHighlights();
         InvalidateMeasure();
@@ -531,7 +563,12 @@ public sealed partial class WorkspaceView : Panel
             return;
         }
         e.Handled = true;
-        if (gesture.SidebarArea != null)
+        if (gesture.CenterArea is { } centerArea)
+        {
+            centerArea.CenterX = Math.Clamp(gesture.OriginalX + delta.X, -1_000_000, 1_000_000);
+            centerArea.CenterY = Math.Clamp(gesture.OriginalY + delta.Y, -1_000_000, 1_000_000);
+        }
+        else if (gesture.SidebarArea != null)
         {
             ResizeExpandedSidebar(gesture);
         }
@@ -554,7 +591,7 @@ public sealed partial class WorkspaceView : Panel
             if (length > 0) gesture.Split.Ratio = Math.Clamp((gesture.DividerStart - origin + offset) / length, .01, .99);
             FindSidebarCollapse(gesture, gesture.DividerStart - origin + offset, length);
         }
-        else gesture.TargetAreaId = AreaAt(gesture.Last);
+        else UpdateAreaDrop(gesture);
         UpdateHighlights();
         InvalidateArrange();
     }
@@ -586,6 +623,13 @@ public sealed partial class WorkspaceView : Panel
         var active = gesture.Active;
         gesture.Last = e.GetPosition(this);
         e.Handled = active || gesture.Aborted;
+        if (gesture.CenterArea is { } centerArea)
+        {
+            var changed = centerArea.CenterX != gesture.OriginalX || centerArea.CenterY != gesture.OriginalY;
+            EndGesture();
+            if (changed) NotifyChanged();
+            return;
+        }
         if (active && CommitSidebarGesture(gesture)) return;
         if (active && gesture.Split == null && !new Rect(Bounds.Size).Contains(e.GetPosition(this)))
         {
@@ -607,8 +651,8 @@ public sealed partial class WorkspaceView : Panel
             var preview = PreviewBounds(gesture);
             var position = ClampOffset(bounds, preview.Size,
                 preview.Center.X - bounds.X - bounds.Width / 2, preview.Center.Y - bounds.Y - bounds.Height / 2);
-            gesture.Component.X = position.X;
-            gesture.Component.Y = position.Y;
+            gesture.Component.X = position.X - target.CenterX;
+            gesture.Component.Y = position.Y - target.CenterY;
             if (source != target)
             {
                 source.Components.Remove(gesture.Component);
@@ -616,10 +660,20 @@ public sealed partial class WorkspaceView : Panel
                 transferred = true;
             }
         }
-        var swapped = active && gesture.Component == null && gesture.Split == null && gesture.AreaId != null && gesture.TargetAreaId != null && Document.SwapAreas(gesture.AreaId, gesture.TargetAreaId);
+        var rearranged = false;
+        var movingArea = gesture.Component == null && gesture.Split == null;
+        if (active && movingArea && gesture.AreaId is { } sourceId)
+        {
+            // Re-evaluate the release point, even if no final PointerMoved arrived.
+            UpdateAreaDrop(gesture);
+            if (gesture.TargetAreaId is { } targetId)
+                rearranged = gesture.Placement is { } placement
+                    ? Document.MoveArea(sourceId, targetId, placement)
+                    : Document.SwapAreas(sourceId, targetId);
+        }
         EndGesture();
-        if (swapped || transferred) Rebuild();
-        if (active) NotifyChanged();
+        if (rearranged || transferred) Rebuild();
+        if (active && (!movingArea || rearranged)) NotifyChanged();
     }
 
     private void EndGesture()
@@ -644,11 +698,13 @@ public sealed partial class WorkspaceView : Panel
 
     private void UpdateHighlights()
     {
+        UpdateAreaPlacementPreview();
         foreach (var (id, view) in _areas)
         {
-            var draggingArea = _gesture is { Active: true, Component: null, Split: null };
+            var draggingArea = _gesture is { Active: true, Component: null, Split: null, CenterArea: null };
             view.Highlight(draggingArea && id == _gesture!.AreaId,
-                draggingArea && id != _gesture!.AreaId && id == _gesture.TargetAreaId);
+                draggingArea && id != _gesture!.AreaId && id == _gesture.TargetAreaId,
+                placement: draggingArea ? _gesture!.Placement : null);
             foreach (var component in view.Components.Values)
                 component.SetSelected(_gesture is { Active: true } && component.Item == _gesture.Component);
         }
@@ -663,7 +719,7 @@ public sealed partial class WorkspaceView : Panel
 
     private void KeyPressed(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape) { CancelGesture(); e.Handled = true; }
+        if (e.Key == Key.Escape) { CancelGesture(); EditCenter(null); e.Handled = true; }
         else if (e.Key == Key.F1) { HelpRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; }
         else if (e.Key == Key.F10 && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
@@ -779,6 +835,7 @@ public sealed partial class WorkspaceView : Panel
         public Point Start, Last;
         public bool Active, Aborted;
         public string? AreaId, TargetAreaId;
+        public AreaPlacement? Placement;
         public ComponentItem? Component;
         public LayoutNode? Split;
         public double OriginalX, OriginalY, OriginalRatio, DividerStart;
@@ -786,6 +843,7 @@ public sealed partial class WorkspaceView : Panel
         public Rect ComponentBounds;
         public LayoutSnapshot? InitialSnapshot;
         public Area? CollapseArea, SidebarArea;
+        public Area? CenterArea;
         public SidebarEdge CollapseEdge;
         public double InitialSidebarExtent, SidebarPreviewExtent;
     }

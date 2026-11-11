@@ -126,7 +126,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var natives = Under(Path.Combine(Path.GetFullPath(request.CacheDirectory), "natives", instance.Id), nativeFingerprint);
         if (nativeArchives.Count > 0) ExtractNatives(nativeArchives, natives, ct);
         else Directory.CreateDirectory(natives);
-        var assets = ValidateAssets(instance.AssetsDirectory, assetId, ct);
+        var assets = ValidateAssets(instance.AssetsDirectory, assetId, settings.GameDirectory!, ct);
         var variables = new Dictionary<string, string>
         {
             ["auth_player_name"] = session.Username, ["auth_uuid"] = session.Uuid,
@@ -193,12 +193,10 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var relative = local ? lib.Get("MMC-filename").Text() ?? Path.GetFileName(LaunchArguments.Maven(name)) : lib.Get("downloads").Get("artifact").Get("path").Text() ?? LaunchArguments.Maven(name);
         return Under(local ? instance.LocalLibraryDirectory ?? throw new InvalidDataException("缺少本地依赖库目录。") : instance.LibraryDirectory, relative);
     }
-    private static string ValidateAssets(string root, string? id, CancellationToken ct)
+    private static string ValidateAssets(string root, string? id, string gameDirectory, CancellationToken ct)
     {
         if (id is null) return root;
         var index = Json(Required(Path.Combine(root, "indexes", Segment(id) + ".json")));
-        if (index.Get("virtual").Boolean() == true || index.Get("map_to_resources").Boolean() == true)
-            throw new InvalidDataException("此版本使用旧式资源映射，当前请使用原启动器启动。");
         var objects = index.Get("objects");
         if (objects.ValueKind != JsonValueKind.Object) throw new InvalidDataException("资产索引缺少 objects。");
         foreach (var item in objects.EnumerateObject())
@@ -207,7 +205,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             if (hash is null || hash.Length != 40 || !hash.All(char.IsAsciiHexDigit)) throw new InvalidDataException("资产索引包含无效哈希。");
             Required(Path.Combine(root, "objects", hash[..2], hash));
         }
-        return root;
+        return LegacyAssetMapping.Prepare(root, id, gameDirectory, index, ct);
     }
     private static void ExtractNatives(List<(string Path, string[] Exclude)> archives, string target, CancellationToken ct)
     {

@@ -29,6 +29,7 @@ internal sealed class InstanceManagerWindow : Window
     private InstanceRow[] _instanceRows = [];
     private readonly Grid _browser = new(), _detailPage = new();
     private readonly TextBlock _rootHeading = Text(), _empty = Text(), _detailTitle = Text(), _detailVersion = Text();
+    private readonly InstanceIconView _detailIcon = new(48);
     private readonly Dictionary<string, TextBox> _fields = new();
     private readonly Dictionary<string, Draft> _drafts = new();
     private readonly ComboBox _fullscreen = new() { ItemsSource = new[] { "继承来源", "窗口", "全屏" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -93,7 +94,10 @@ internal sealed class InstanceManagerWindow : Window
         _detailTitle.FontSize = 20; _detailTitle.Foreground = Palette.Text; _detailTitle.FontWeight = FontWeight.SemiBold;
         _detailTitle.TextTrimming = TextTrimming.CharacterEllipsis; _detailTitle.TextWrapping = TextWrapping.NoWrap;
         _detailVersion.Foreground = Palette.Accent;
-        identity.Children.Add(_detailTitle); identity.Children.Add(_detailVersion); Grid.SetColumn(identity, 2); detailHeader.Children.Add(identity);
+        identity.Children.Add(_detailTitle); identity.Children.Add(_detailVersion);
+        var detailIdentity = new Grid { ColumnDefinitions = new ColumnDefinitions("48,12,*") };
+        detailIdentity.Children.Add(_detailIcon); Grid.SetColumn(identity, 2); detailIdentity.Children.Add(identity);
+        Grid.SetColumn(detailIdentity, 2); detailHeader.Children.Add(detailIdentity);
         var sideActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         _refresh = Button("刷新实例来源", "重新读取来源", async () => { if (_currentId is { } id) { _localError = null; await _service.RefreshAsync(id); _localError = _service.Error; Refresh(); } });
         sideActions.Children.Add(_refresh);
@@ -194,14 +198,14 @@ internal sealed class InstanceManagerWindow : Window
             }
             foreach (var card in _roots.Children.OfType<InstanceBrowserCard>()) card.Selected = SameRoot((string)card.Tag!, _rootPath);
             var rows = catalog.Instances.Where(x => SameRoot(x.RootDirectory, _rootPath))
-                .Select(x => new InstanceRow(x.Id, x.Name, x.VersionLabel, SourceName(x.Source), x.SourcePath)).ToArray();
+                .Select(x => new InstanceRow(x.Id, x.Name, x.VersionLabel, SourceName(x.Source), x.SourcePath, x.PresetIconPath)).ToArray();
             if (!_instanceRows.SequenceEqual(rows))
             {
                 _instanceRows = rows; _list.Children.Clear();
                 foreach (var row in rows)
                 {
                     var card = new InstanceBrowserCard("实例：" + row.Name, row.Name, row.Version, row.Source + " · " + row.Path,
-                        () => SelectInstance(row.Id), () => OpenInstance(row.Id), () => _ = DeleteInstance(row.Id));
+                        () => SelectInstance(row.Id), () => OpenInstance(row.Id), () => _ = DeleteInstance(row.Id), catalog.Instances.Single(x => x.Id == row.Id));
                     card.Tag = row.Id; _list.Children.Add(card);
                 }
                 SizeInstanceCards();
@@ -221,6 +225,8 @@ internal sealed class InstanceManagerWindow : Window
             _browser.IsVisible = !_showDetails; _detailPage.IsVisible = _showDetails;
             _detailTitle.Text = instance?.Name; ToolTip.SetTip(_detailTitle, instance?.Name);
             _detailVersion.Text = instance?.VersionLabel;
+            _detailIcon.IsVisible = instance is not null;
+            if (instance is not null) _detailIcon.SetInstance(instance);
             _details.Text = instance is null ? "" : SourceName(instance.Source) + "  ·  " + instance.SourcePath;
             if (instance is not null)
             {
@@ -298,7 +304,7 @@ internal sealed class InstanceManagerWindow : Window
         var button = new Button { Content = label, MinHeight = 34 }; AutomationProperties.SetName(button, name); button.Click += (_, _) => action(); return button;
     }
     private static TextBlock Text(string text = "") => new() { Text = text, FontSize = 12, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap };
-    private static string SourceName(InstanceSource source) => source switch { InstanceSource.Hmcl => "HMCL", InstanceSource.Pcl => "PCL", InstanceSource.Prism => "Prism", InstanceSource.MultiMc => "MultiMC", _ => "官方目录" };
+    private static string SourceName(InstanceSource source) => source switch { InstanceSource.Wonder => "Wonder", InstanceSource.Hmcl => "HMCL", InstanceSource.Pcl => "PCL", InstanceSource.Prism => "Prism", InstanceSource.MultiMc => "MultiMC", _ => "官方目录" };
     private static string CanonicalRoot(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     private static bool SameRoot(string path, string? other) => other is not null && string.Equals(CanonicalRoot(path), CanonicalRoot(other), WonderPath.Comparison);
     private void OpenInstance(string id)
@@ -393,6 +399,6 @@ internal sealed class InstanceManagerWindow : Window
     {
         public string Name => System.IO.Path.GetFileName(Path) is { Length: > 0 } name ? name : Path;
     }
-    private sealed record InstanceRow(string Id, string Name, string Version, string Source, string Path);
+    private sealed record InstanceRow(string Id, string Name, string Version, string Source, string Path, string? PresetIconPath);
     private sealed record Draft(Dictionary<string, string> Text, int Fullscreen, bool ClearJvm, bool ClearGame);
 }

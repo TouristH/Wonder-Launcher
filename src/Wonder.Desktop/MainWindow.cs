@@ -75,9 +75,12 @@ public sealed partial class MainWindow : Window
         _accounts = new AccountService(accountStore, new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
             new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")));
         _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
+        _downloadEngine = new DownloadEngine();
+        _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine), System.IO.Path.Combine(dataDirectory, "downloads.json"), ImportDownloadedInstanceAsync);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
         GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
         AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);
+        DownloadComponents.Register(registry, _downloads, OpenDownloadCenter);
         _workspace = new WorkspaceView(document, dataDirectory, registry) { Margin = new Thickness(22, 20, 22, 22) };
         InitializeWorkspaceStorage(saveWorkspace ?? _store.Save);
         _workspace.Changed += WorkspaceChanged;
@@ -86,7 +89,7 @@ public sealed partial class MainWindow : Window
         _workspace.SettingsRequested += OpenSettings;
         Deactivated += (_, _) => _workspace.CancelGesture();
         Closing += CloseWorkspace;
-        Closed += (_, _) => { DisposeWorkspaceStorage(); _accounts.Cancel(); _workspace.DisposeComponents(); };
+        Closed += (_, _) => { DisposeWorkspaceStorage(); _accounts.Cancel(); _downloadCenter?.Close(); _downloads.Dispose(); _downloadEngine.Dispose(); _workspace.DisposeComponents(); };
         PropertyChanged += (_, e) =>
         {
             if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)
@@ -204,14 +207,16 @@ public sealed partial class MainWindow : Window
     private async void ShowHelp()
     {
         var text = "框架只保留顶栏，其余内容都可自由布置。\n\n" +
-            $"功能区：仅长按顶边栏 {_settings.HoldDelayMilliseconds} 毫秒，拖到其他区后松开交换。\n" +
+            $"功能区：长按顶边栏 {_settings.HoldDelayMilliseconds} 毫秒后拖动；目标区四边用于上下左右摆放，中央用于交换，按预览松开确认。\n" +
             "改名：右键功能区或侧边栏，选择“重命名功能区…”，Enter 保存、Esc 取消，名称随布局保存。\n" +
             "序号：默认隐藏，可在设置的“工作区”中开启“显示功能区序号”。\n" +
             "大小：整条分隔边均可选中，按住鼠标直接拖动，无需长按。\n" +
+            "布局：右键选择左右或上下拆分；外缘功能区可从菜单收起为左、右、顶部或底部侧栏。\n" +
             "侧边栏：把框架边缘的功能区拖小即可收起，悬停按固定厚度展开并压缩邻区。\n" +
             "恢复：展开后拖动朝向工作区的边向内放大，松开恢复普通功能区。\n" +
             "组件：短按按钮操作，长按后可在本区或跨功能区移动。\n" +
-            "定位：组件中心相对功能区中心的偏移固定，缩放不改变位置；右键可整理到可见范围。\n" +
+            "定位：右键“拖动工作区中心”，拖动画布平移原点与组件；十字轴显示原点，离屏箭头提示方向。Esc 退出，右键可重置中心或整理组件。\n" +
+            "组件大小：个性化设置统一缩放桌面组件（50%–200%），组件中心位置不变。\n" +
             "取消：按 Esc 或切换窗口；移动组件/换区时在工作区外松开也会取消。\n\n" +
             "提示：鼠标按住或跨窗口拖放时，悬浮提示暂停显示；操作提示继续保留。\n\n" +
             "组件库：独立窗口，可直接操作应用；拖到功能区创建快捷方式，所有入口共享状态，移除快捷方式不会删除应用。\n" +

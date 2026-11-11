@@ -19,6 +19,26 @@
 
 各平台使用本机格式的入口程序和对应 .NET/图形原生库：Windows PE、Linux ELF、macOS Mach-O。应用自带 .NET，不要求 Wine 或运行 Windows EXE；托管业务仍由 .NET 执行，这不是 Native AOT 声明。Linux 当前采用 X11/XWayland，这是 Linux 的显示服务，详见[Linux 安装说明](31-linux-trial.md)。
 
+## Windows x64 可选最小版
+
+默认 Release 继续提供自带 .NET 运行时和第三方库的自包含版，普通用户使用它更省步骤。本地还可构建最小版，仅内置六个 Wonder 自身程序集，保留完整桌面、功能区、组件、实例和启动功能；所有第三方依赖由用户准备，当前仅支持 Windows x64。
+
+使用 .NET 10 SDK 和 PowerShell 7.4+，在源码根目录执行：
+
+```powershell
+pwsh -File packaging/Wonder.PublishMinimal.ps1
+```
+
+生成 `artifacts/Wonder-0.7.2-win-x64-minimal.exe` 和 `artifacts/Wonder-0.7.2-win-x64-minimal.dependencies.json`。运行前在系统安装 **.NET 10 x64 运行时**，再按 JSON 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方托管与原生 DLL 放到最小版 EXE 同目录。.NET 运行时通过系统安装，无需放在 EXE 旁；第三方 DLL 不内置于最小版 EXE，依赖不齐时无法运行。
+
+也可以让脚本从源码发布结果准备清单所需的第三方 DLL：
+
+```powershell
+pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies
+```
+
+此命令在生成最小版 EXE 和依赖清单的同时，额外生成 `artifacts/Wonder-minimal-dependencies-win-x64/`；将其中 DLL 复制到最小版 EXE 同目录即可。该选项不把 DLL 合入 EXE，也不代替系统 .NET 运行时安装。最小版与自包含版都使用应用旁的 `WonderData/`；更新或切换版本前关闭旧进程并保留该目录。
+
 ## macOS 本地试发行
 
 试发行目标为 macOS 14 或更新系统；请使用仍受 Apple 和 .NET 支持的版本。Intel Mac 选 `osx-x64`，M 系列 Mac 选 `osx-arm64`，并选择相同架构的游戏 Java 和原生依赖。包内没有游戏或 Java。

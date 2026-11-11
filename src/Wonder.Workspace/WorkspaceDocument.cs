@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 namespace Wonder.Workspace;
 
 public enum SplitAxis { Horizontal, Vertical }
+public enum AreaPlacement { Left, Right, Top, Bottom }
 public enum SidebarEdge { None, Left, Right, Top, Bottom }
 
 public sealed class ComponentItem
@@ -57,6 +58,9 @@ public sealed class Area
     public string Title { get; set; } = "区域";
     public SidebarEdge SidebarEdge { get; set; }
     public double SidebarExtent { get; set; } = WorkspaceLayout.DefaultSidebarExtent;
+    /// <summary>Coordinate origin offset from the full region center, in DIP.</summary>
+    public double CenterX { get; set; }
+    public double CenterY { get; set; }
     [JsonRequired] public List<ComponentItem> Components { get; set; } = [];
 }
 
@@ -206,6 +210,52 @@ public sealed class WorkspaceDocument
             first.Area.SidebarEdge = second.Area!.SidebarEdge = SidebarEdge.None;
         (first.Area, second.Area) = (second.Area, first.Area);
         return true;
+    }
+
+    /// <summary>Moves an existing region to one side of another, sharing its space equally.</summary>
+    public bool MoveArea(string sourceId, string targetId, AreaPlacement placement)
+    {
+        if (!Enum.IsDefined(placement))
+            throw new ArgumentOutOfRangeException(nameof(placement));
+        if (sourceId == targetId)
+            return false;
+
+        var source = Nodes(Root).FirstOrDefault(node => node.Area?.Id == sourceId);
+        var target = Nodes(Root).FirstOrDefault(node => node.Area?.Id == targetId);
+        if (source is null || target is null)
+            return false;
+
+        // WorkspaceStore permits leaves at depth 24. Check the final topology before
+        // changing anything; removing the source can promote the target's subtree.
+        if (TargetDepthAfterRemoval(Root, 0) >= 24)
+            return false;
+
+        Root = Remove(Root, sourceId);
+        source.Area!.SidebarEdge = target.Area!.SidebarEdge = SidebarEdge.None;
+        var targetLeaf = new LayoutNode { Area = target.Area };
+        var sourceFirst = placement is AreaPlacement.Left or AreaPlacement.Top;
+        target.First = sourceFirst ? source : targetLeaf;
+        target.Second = sourceFirst ? targetLeaf : source;
+        target.Area = null;
+        target.Axis = placement is AreaPlacement.Left or AreaPlacement.Right ? SplitAxis.Horizontal : SplitAxis.Vertical;
+        target.Ratio = .5;
+        NormalizeSidebars(Root, null, (true, true, true, true));
+        return true;
+
+        int TargetDepthAfterRemoval(LayoutNode? node, int depth)
+        {
+            if (node is null)
+                return -1;
+            if (ReferenceEquals(node, target))
+                return depth;
+            if (ReferenceEquals(node.First, source))
+                return TargetDepthAfterRemoval(node.Second, depth);
+            if (ReferenceEquals(node.Second, source))
+                return TargetDepthAfterRemoval(node.First, depth);
+
+            var firstDepth = TargetDepthAfterRemoval(node.First, depth + 1);
+            return firstDepth >= 0 ? firstDepth : TargetDepthAfterRemoval(node.Second, depth + 1);
+        }
     }
 
     public Area? FindArea(string id) => Areas.FirstOrDefault(area => area.Id == id);

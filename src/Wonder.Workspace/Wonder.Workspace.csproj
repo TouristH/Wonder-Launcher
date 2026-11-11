@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Wonder.Core/Wonder.Core.csproj" />
     <InternalsVisibleTo Include="Wonder.Workspace.Tests" />
   </ItemGroup>
 </Project>

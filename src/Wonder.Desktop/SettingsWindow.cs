@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Wonder.Application;
+using Wonder.Core;
 using Wonder.Workspace;
 
 namespace Wonder.Desktop;
@@ -21,12 +22,15 @@ internal sealed class SettingsWindow : Window
     private readonly StackPanel _editor;
     private readonly ComboBox _theme;
     private readonly ComboBox _accent;
+    private readonly ComboBox _downloadSource;
+    private readonly Slider _downloadFiles, _downloadConnections, _downloadRetries;
     private readonly ToggleSwitch _showAreaNumbers;
-    private readonly Slider _padding, _hold, _extent, _closeDelay;
+    private readonly Slider _padding, _componentScale, _hold, _extent, _closeDelay;
     private readonly TextBlock _status, _error, _resetDescription;
     private readonly Border _errorBanner, _confirmation;
     private readonly List<Button> _categoryButtons = [];
-    private readonly StackPanel _launcherPage, _personalizationPage;
+    private readonly StackPanel _personalizationPage;
+    private readonly StackPanel _launcherPage;
     private readonly Control _gamePage;
     private readonly Border _footer;
     private readonly Control _gameFooter;
@@ -55,8 +59,8 @@ internal sealed class SettingsWindow : Window
 
         var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), Margin = new Thickness(26, 0, 26, 0) };
         var navigation = new StackPanel { Spacing = 12, Margin = new Thickness(0, 0, 20, 20) };
-        var titles = new[] { "启动器设置", "游戏全局设置", "个性化设置" };
-        var descriptions = new[] { "拖动与侧边栏交互", "Java、内存与启动参数", "主题、强调色与工作区" };
+        var titles = new[] { "个性化设置", "游戏全局设置", "启动器设置" };
+        var descriptions = new[] { "外观、组件与工作区交互", "Java、内存与启动参数", "下载源、并发与失败重试" };
         for (var index = 0; index < titles.Length; index++)
         {
             var category = index;
@@ -83,9 +87,10 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(_errorBanner);
         _editor = new StackPanel { Spacing = 18 };
         body.Children.Add(_editor);
-        _launcherPage = new StackPanel { Spacing = 18 };
         _personalizationPage = new StackPanel { Spacing = 18 };
-        _editor.Children.Add(_launcherPage); _editor.Children.Add(_personalizationPage);
+        _editor.Children.Add(_personalizationPage);
+        _launcherPage = new StackPanel { Spacing = 18 };
+        _editor.Children.Add(_launcherPage);
         if (instances is not null)
         {
             var gameEditor = new GlobalGameSettingsEditor(instances);
@@ -110,16 +115,27 @@ internal sealed class SettingsWindow : Window
         AutomationProperties.SetName(_showAreaNumbers, "显示功能区序号");
         _showAreaNumbers.IsCheckedChanged += (_, _) => Change(_settings with { ShowAreaNumbers = _showAreaNumbers.IsChecked == true });
         workspace.Children.Add(ChoiceRow("显示功能区序号", _showAreaNumbers));
+        _componentScale = Range(workspace, "组件整体大小", "统一缩放桌面与侧边栏中的组件内容；100% 为原始大小", 50, 200, 10, "%", value => _settings with { ComponentScalePercent = value });
         _padding = Range(workspace, "工作区留白", "功能区与窗口边缘之间的距离", 0, 40, 2, "DIP", value => _settings with { WorkspacePadding = value });
         _personalizationPage.Children.Add(Card(workspace));
         var interaction = Section("工作区交互", "调整组件和功能区的移动手感。");
         _hold = Range(interaction, "长按拖动时间", "短按打开组件，长按后移动组件或功能区", 250, 1000, 50, "ms", value => _settings with { HoldDelayMilliseconds = value });
-        _launcherPage.Children.Add(Card(interaction));
+        _personalizationPage.Children.Add(Card(interaction));
 
         var sidebar = Section("侧边栏", "悬停展开，离开后自动收起。");
         _extent = Range(sidebar, "侧边栏展开尺寸", "左右侧栏为宽度，上下侧栏为高度；空间不足时自动缩小", 200, 600, 20, "DIP", value => _settings with { SidebarExtent = value });
         _closeDelay = Range(sidebar, "侧边栏收起延迟", "移出侧栏后等待多久收起，拖动期间保持展开", 100, 1000, 20, "ms", value => _settings with { SidebarCloseDelayMilliseconds = value });
-        _launcherPage.Children.Add(Card(sidebar));
+        _personalizationPage.Children.Add(Card(sidebar));
+
+        var downloads = Section("下载与网络", "新下载和列表刷新使用当前策略；进行中的任务保留开始时的设置。");
+        _downloadSource = Choice("下载源", ["自动（镜像优先）", "官方源", "BMCLAPI 镜像"]);
+        _downloadSource.SelectionChanged += (_, _) => { if (_downloadSource.SelectedIndex >= 0) Change(_settings with { DownloadSource = (DownloadSource)_downloadSource.SelectedIndex }); };
+        downloads.Children.Add(ChoiceRow("下载源", _downloadSource));
+        downloads.Children.Add(Hint("自动与 BMCLAPI 优先使用镜像，失败后回退官方。官方源直接连接原站。模组、整合包、资源包和光影使用 Modrinth 原始下载地址。"));
+        _downloadFiles = Range(downloads, "并发文件数", "同时传输的游戏依赖与资源文件数量", 1, 32, 1, "个", value => _settings with { ConcurrentDownloads = value });
+        _downloadConnections = Range(downloads, "单文件连接数", "大文件支持分段时使用多个连接；服务器不支持时自动降级", 1, 16, 1, "个", value => _settings with { DownloadConnections = value });
+        _downloadRetries = Range(downloads, "失败重试次数", "连接或校验失败后自动重试的次数", 0, 8, 1, "次", value => _settings with { DownloadRetries = value });
+        _launcherPage.Children.Add(Card(downloads));
 
         var storage = new StackPanel { Spacing = 8 };
         storage.Children.Add(Hint("设置仅保存在此设备。恢复默认设置不会清空功能区和快捷方式。"));
@@ -183,9 +199,14 @@ internal sealed class SettingsWindow : Window
             _accent.SelectedIndex = (int)settings.Accent;
             _showAreaNumbers.IsChecked = settings.ShowAreaNumbers;
             _padding.Value = settings.WorkspacePadding;
+            _componentScale.Value = settings.ComponentScalePercent;
             _hold.Value = settings.HoldDelayMilliseconds;
             _extent.Value = settings.SidebarExtent;
             _closeDelay.Value = settings.SidebarCloseDelayMilliseconds;
+            _downloadSource.SelectedIndex = (int)settings.DownloadSource;
+            _downloadFiles.Value = settings.ConcurrentDownloads;
+            _downloadConnections.Value = settings.DownloadConnections;
+            _downloadRetries.Value = settings.DownloadRetries;
         }
         finally { _updating = false; }
     }
@@ -200,21 +221,23 @@ internal sealed class SettingsWindow : Window
         _status.Foreground = error == null ? Palette.Muted : Palette.Error;
         _resetDescription.Text = readBlocked
             ? "恢复默认设置将覆盖无法读取的设置文件。功能区和快捷方式保持原样。"
-            : "将外观和交互参数恢复为默认值。功能区和快捷方式保持原样。";
+            : "将外观、交互和下载参数恢复为默认值。功能区和快捷方式保持原样。";
     }
+
+    public void ShowLauncherSettings() => SelectCategory(2);
 
     private void SelectCategory(int index)
     {
-        _launcherPage.IsVisible = index == 0;
         _gamePage.IsVisible = index == 1;
-        _personalizationPage.IsVisible = index == 2;
+        _personalizationPage.IsVisible = index == 0;
+        _launcherPage.IsVisible = index == 2;
         _editor.IsVisible = index != 1;
         _footer.IsVisible = index != 1;
         _gameFooter.IsVisible = index == 1;
         _storage.IsVisible = index != 1;
         _errorBanner.IsVisible = index != 1 && _storageError is not null;
         _confirmation.IsVisible = false;
-        _pageTitle.Text = index switch { 0 => "启动器设置", 1 => "游戏全局设置", _ => "个性化设置" };
+        _pageTitle.Text = index switch { 1 => "游戏全局设置", 2 => "启动器设置", _ => "个性化设置" };
         _pageDescription.Text = index == 1 ? "为所有实例设置共同的启动偏好，保存后在下次启动时生效。" : "更改立即生效，并自动保存在此设备。";
         for (var i = 0; i < _categoryButtons.Count; i++) PageStyles.SetSelected(_categoryButtons[i], i == index);
         _scroll.Offset = default;

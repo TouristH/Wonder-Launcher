@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Additional terms: see ADDITIONAL_TERMS.md in the repository root.
+namespace Wonder.Core;
+
+public enum DownloadSource { Automatic, Official, BmclApi }
+public enum DownloadResourceKind { Mod, Modpack, ResourcePack, Shader }
+public enum DownloadTaskState { Queued, Running, Paused, Completed, Failed, Cancelled }
+
+public sealed record DownloadOptions
+{
+    public DownloadSource Source { get; init; }
+    public int ConcurrentFiles { get; init; } = 8;
+    public int ConnectionsPerFile { get; init; } = 4;
+    public int RetryCount { get; init; } = 3;
+    public void Validate()
+    {
+        if (!Enum.IsDefined(Source) || ConcurrentFiles is < 1 or > 32 || ConnectionsPerFile is < 1 or > 16 || RetryCount is < 0 or > 8)
+            throw new ArgumentException("下载源或并发参数无效。");
+    }
+}
+
+public sealed record DownloadFile(string Url, string Destination, string? Hash = null, string HashAlgorithm = "SHA1", long? Size = null);
+public sealed record DownloadProgress(string Stage, long BytesReceived = 0, long? TotalBytes = null, int CompletedFiles = 0, int TotalFiles = 0, double BytesPerSecond = 0);
+public sealed record MinecraftVersion(string Id, string Type, string Url, DateTimeOffset ReleaseTime);
+public sealed record LoaderVersion(string Loader, string Version, string MinecraftVersion, bool Stable = true);
+public sealed record ResourceProject(string Id, string Title, string Description, DownloadResourceKind Kind, string? IconUrl = null, long Downloads = 0);
+public sealed record ResourceDependency(string? ProjectId, string? VersionId, string Type);
+public sealed record ResourceVersion(string Id, string ProjectId, string Name, string VersionNumber, IReadOnlyList<string> GameVersions, IReadOnlyList<string> Loaders, IReadOnlyList<DownloadFile> Files, IReadOnlyList<ResourceDependency> Dependencies);
+public sealed record ResourceSearchResult(IReadOnlyList<ResourceProject> Projects, int Total, int Offset);
+public sealed record GameInstallRequest(string MinecraftVersion, string InstanceName, string TargetDirectory, string Loader = "vanilla", string? LoaderVersion = null, string? JavaPath = null);
+public sealed record ResourceInstallRequest(ResourceProject Project, ResourceVersion Version, string TargetDirectory, string MinecraftVersion = "", string Loader = "", string? InstanceName = null, string? JavaPath = null);
+public sealed record DownloadTaskSnapshot(string Id, string Title, DownloadTaskState State, DownloadProgress Progress, string? Error, string? ResultPath, DateTimeOffset CreatedAt);

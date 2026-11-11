@@ -11,6 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Wonder.Desktop.Tests" />
+    <AvaloniaResource Include="Assets/InstanceIcons/*.png" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <ProjectReference Include="../Wonder.Workspace/Wonder.Workspace.csproj" />
@@ -21,6 +22,17 @@
   <Target Name="ExcludePackageDebugSymbols" AfterTargets="ComputeFilesToPublish">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+  <Target Name="ExternalizeThirdPartyDependencies" BeforeTargets="_ComputeFilesToBundle"
+          Condition="'$(WonderExternalDependencies)' == 'true'">
+    <Error Condition="'$(SelfContained)' != 'false' or '$(PublishSingleFile)' != 'true'"
+           Text="WonderExternalDependencies requires a framework-dependent single-file publish." />
+    <ItemGroup>
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)"
+                            Condition="'%(ResolvedFileToPublish.Extension)' == '.dll' and !$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('Wonder.'))">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 </Project>

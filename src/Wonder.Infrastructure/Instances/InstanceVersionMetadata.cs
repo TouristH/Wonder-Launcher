@@ -45,9 +45,13 @@ internal static partial class InstanceVersionMetadata
         if (depth >= 32 || !visited.Add(Path.GetFullPath(path))) return;
         var json = Json(path);
         var arguments = json.Get("arguments").Get("game").Items().Take(4096).ToArray();
+        // NeoForge 1.20.1 retains --fml.forgeVersion, but ships NeoForged's FML.
+        // Its FML version is a separate dependency version, not the NeoForge version.
+        var neoforgedFml = json.Get("libraries").Items().Take(4096).Any(x =>
+            x.Get("name").Text()?.StartsWith("net.neoforged.fancymodloader:loader:", StringComparison.Ordinal) == true);
         for (var index = 0; index + 1 < arguments.Length; index++)
         {
-            var name = arguments[index].Text() switch { "--fml.forgeVersion" => "Forge", "--fml.neoForgeVersion" => "NeoForge", _ => null };
+            var name = arguments[index].Text() switch { "--fml.forgeVersion" => neoforgedFml ? "NeoForge" : "Forge", "--fml.neoForgeVersion" => "NeoForge", _ => null };
             AddLoader(loaders, name, arguments[index + 1].Text());
         }
         foreach (var library in json.Get("libraries").Items().Take(4096))

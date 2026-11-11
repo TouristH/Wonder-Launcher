@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Wonder.Core;
 
 namespace Wonder.Desktop;
 
@@ -23,7 +24,7 @@ internal sealed class InstanceBrowserCard : Border
         set { _selected = value; Classes.Set("selected", value); SelectButton.Classes.Set("selected", value); Paint(); }
     }
 
-    public InstanceBrowserCard(string name, string title, string version, string path, Action select, Action settings, Action delete)
+    public InstanceBrowserCard(string name, string title, string version, string path, Action select, Action settings, Action delete, GameInstance? instance = null)
     {
         CornerRadius = new CornerRadius(12); BorderThickness = new Thickness(1);
         HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -32,10 +33,18 @@ internal sealed class InstanceBrowserCard : Border
         content.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextWrapping = TextWrapping.Wrap });
         content.Children.Add(new TextBlock { Text = version, FontSize = 11, LineHeight = 16, Foreground = Palette.Accent, TextWrapping = TextWrapping.Wrap });
         content.Children.Add(new TextBlock { Text = path, FontSize = 10, LineHeight = 15, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap });
+        Control selectionContent = content;
+        if (instance is not null)
+        {
+            var identity = new Grid { ColumnDefinitions = new ColumnDefinitions("40,10,*") };
+            var icon = new InstanceIconView { VerticalAlignment = VerticalAlignment.Top };
+            icon.SetInstance(instance); identity.Children.Add(icon);
+            Grid.SetColumn(content, 2); identity.Children.Add(content); selectionContent = identity;
+        }
         SelectButton = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
-            Template = new FuncControlTemplate<Button>((_, _) => new Border { Background = Brushes.Transparent, Padding = new Thickness(12, 10, 52, 10), Child = content })
+            Template = new FuncControlTemplate<Button>((_, _) => new Border { Background = Brushes.Transparent, Padding = new Thickness(12, 10, 52, 10), Child = selectionContent })
         };
         AutomationProperties.SetName(SelectButton, name);
         SelectButton.Click += (_, e) => { e.Handled = true; select(); };

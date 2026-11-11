@@ -19,6 +19,7 @@ internal sealed class AreaView : Border, IDisposable
     private readonly Canvas _canvas;
     private readonly TextBlock _hint;
     private readonly TextBlock _number;
+    private readonly WorkspaceCenterOverlay _centerOverlay;
 
     public AreaView(Area area, int index, ComponentHost host, bool showNumber = false)
     {
@@ -39,11 +40,14 @@ internal sealed class AreaView : Border, IDisposable
         header.Children.Add(_number);
         header.Children.Add(title);
         header.Children.Add(_hint);
-        ToolTip.SetTip(header, "长按顶边栏拖动，放到另一个功能区以交换位置");
+        ToolTip.SetTip(header, "长按顶边栏拖动：目标边缘上下左右摆放，中央交换位置");
         _canvas = new Canvas { ClipToBounds = true, Margin = new Thickness(Inset, 0, Inset, Inset) };
         Grid.SetRow(_canvas, 1);
         grid.Children.Add(header);
         grid.Children.Add(_canvas);
+        _centerOverlay = new WorkspaceCenterOverlay(area) { IsVisible = false, IsHitTestVisible = false };
+        Grid.SetRow(_centerOverlay, 1);
+        grid.Children.Add(_centerOverlay);
         Child = grid;
         foreach (var component in area.Components)
         {
@@ -62,6 +66,13 @@ internal sealed class AreaView : Border, IDisposable
 
     public void ShowNumber(bool visible) => _number.IsVisible = visible;
 
+    public void ShowCenter(bool visible) => _centerOverlay.IsVisible = visible;
+
+    public void SetScale(double scale)
+    {
+        foreach (var component in Components.Values) component.SetScale(scale);
+    }
+
     public void SetRuntimeVisible(bool visible)
     {
         foreach (var view in Components.Values) view.SetRuntimeVisible(visible);
@@ -72,24 +83,30 @@ internal sealed class AreaView : Border, IDisposable
         foreach (var view in Components.Values) view.Dispose();
     }
 
-    public void Highlight(bool source, bool target, bool pending = false)
+    public void Highlight(bool source, bool target, bool pending = false, AreaPlacement? placement = null)
     {
         BorderBrush = source || target || pending ? Palette.Accent : Palette.Line;
-        Background = target ? Palette.Active : Palette.Surface;
+        Background = target && placement is null ? Palette.Active : Palette.Surface;
         Opacity = source ? .65 : 1;
-        _hint.Text = target ? "松开交换" : source ? "拖动中" : pending ? "按住…" : "⠿";
+        _hint.Text = target ? placement switch
+        {
+            AreaPlacement.Top => "放在上方", AreaPlacement.Bottom => "放在下方",
+            AreaPlacement.Left => "放在左侧", AreaPlacement.Right => "放在右侧", _ => "松开交换"
+        } : source ? "拖动中" : pending ? "按住…" : "⠿";
         _hint.FontSize = source || target || pending ? 11 : 18;
     }
 
     public Rect ComponentRect(ComponentView view, Size areaSize)
     {
         var position = WorkspaceLayout.FromCenterOffset(areaSize.Width, areaSize.Height,
-            view.Footprint.Width, view.Footprint.Height, view.Item.X, view.Item.Y);
+            view.Footprint.Width, view.Footprint.Height, view.Item.X + Area.CenterX, view.Item.Y + Area.CenterY);
         return new Rect(position.X, position.Y, view.Footprint.Width, view.Footprint.Height);
     }
 
     public void PositionComponents(Size size)
     {
+        _centerOverlay.Origin = new Point(size.Width / 2 + Area.CenterX - 1, size.Height / 2 + Area.CenterY - HeaderHeight - 1);
+        _centerOverlay.InvalidateVisual();
         foreach (var view in Components.Values)
         {
             var rect = ComponentRect(view, size);

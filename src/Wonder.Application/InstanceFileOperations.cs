@@ -40,12 +40,13 @@ public sealed partial class InstanceService
         {
             RequireFileOperationAvailable();
             var item = Require(_catalog, id);
-            var directory = item.Source is InstanceSource.Prism or InstanceSource.MultiMc ? item.SourcePath : Path.Combine(item.VersionsDirectory, item.VersionId);
+            var directory = item.Source == InstanceSource.Wonder ? item.RootDirectory : item.Source is InstanceSource.Prism or InstanceSource.MultiMc ? item.SourcePath : Path.Combine(item.VersionsDirectory, item.VersionId);
             directory = Full(directory);
-            if (!Within(directory, item.RootDirectory) || Same(directory, item.RootDirectory)) throw new InvalidOperationException("无法确定独立实例目录，拒绝删除共享游戏目录。");
+            if (!Within(directory, item.RootDirectory) || Same(directory, item.RootDirectory) && item.Source != InstanceSource.Wonder) throw new InvalidOperationException("无法确定独立实例目录，拒绝删除共享游戏目录。");
             ValidateOwnedPath(directory);
             EnsureNoOtherReferences(directory, [id]);
-            _files!.EnsureNoVersionDependents(item, directory);
+            if (item.Source == InstanceSource.Wonder) _files!.EnsureGameRoot(directory);
+            else _files!.EnsureNoVersionDependents(item, directory);
             var note = "将移入回收站此实例目录及其中的存档、模组和配置，并移除 1 个实例登记。";
             if (!Within(item.EffectiveSettings.GameDirectory!, directory)) note += "\n此实例使用目录之外的游戏数据；共享或外部游戏目录、资源和依赖保持原样。";
             return new(_planOwner, item.Name, directory, note, [id], _files.InspectDirectory(directory), id);
@@ -208,6 +209,7 @@ public sealed partial class InstanceService
         SourcePath = MapPath(item.SourcePath, from, to), RootDirectory = MapPath(item.RootDirectory, from, to),
         LibraryDirectory = MapPath(item.LibraryDirectory, from, to), AssetsDirectory = MapPath(item.AssetsDirectory, from, to),
         VersionsDirectory = MapPath(item.VersionsDirectory, from, to), LocalLibraryDirectory = item.LocalLibraryDirectory is { } local ? MapPath(local, from, to) : null,
+        PresetIconPath = item.PresetIconPath is { } icon ? MapPath(icon, from, to) : null,
         MetadataPaths = item.MetadataPaths.Select(p => MapPath(p, from, to)).ToList(), ConfigSource = MapText(item.ConfigSource, from, to)!,
         Overrides = RebaseSettings(item.Overrides, from, to),
         PreviousRootDirectories = Same(item.RootDirectory, from) ? item.PreviousRootDirectories.Append(from).Distinct(WonderPath.Comparer).ToList() : [.. item.PreviousRootDirectories]

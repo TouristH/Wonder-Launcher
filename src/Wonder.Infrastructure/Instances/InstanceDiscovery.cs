@@ -24,8 +24,14 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         {
             ct.ThrowIfCancellationRequested();
             try { var instance = create(); instance.Validate(); if (found.All(x => x.Id != instance.Id)) found.Add(instance); }
-            catch (Exception ex) when (ex is IOException or JsonException or ArgumentException or UnauthorizedAccessException or InvalidOperationException)
+            catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or ArgumentException or UnauthorizedAccessException or InvalidOperationException)
             { if (diagnostics.Count < 100) diagnostics.Add(ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message); }
+        }
+        var nativeRoot = NativeRoot(selected);
+        if (nativeRoot is not null)
+        {
+            Add(() => WonderInstanceConfigurationStore.Read(nativeRoot));
+            return new(found, diagnostics);
         }
         string? prism = null;
         if (File.Exists(Path.Combine(selected, "mmc-pack.json"))) prism = selected;
@@ -62,10 +68,21 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
                     if (!profiles.Contains(Path.GetFileName(dir))) Add(() => ReadStandard(root, dir));
             var instances = Directory.Exists(Path.Combine(selected, "instances")) ? Path.Combine(selected, "instances") : selected;
             foreach (var dir in Directory.EnumerateDirectories(instances).Take(1024))
-                if (File.Exists(Path.Combine(dir, "mmc-pack.json"))) Add(() => ReadPrism(dir));
+                if (NativeRoot(dir) is { } native) Add(() => WonderInstanceConfigurationStore.Read(native));
+                else if (File.Exists(Path.Combine(dir, "mmc-pack.json"))) Add(() => ReadPrism(dir));
         }
         if (found.Count == 0 && diagnostics.Count == 0) diagnostics.Add("未找到 versions/<版本>/<版本>.json 或 Prism/MultiMC 的 mmc-pack.json。");
         return new(found, diagnostics);
+    }
+
+    // A selected native container/root/version always resolves to its one configured instance.
+    // Collection scanning stays one level deep and never recursively traverses user directories.
+    private static string? NativeRoot(string selected)
+    {
+        var candidates = new List<string> { selected, Path.Combine(selected, ".minecraft") };
+        if (Path.GetFileName(selected) == "versions") candidates.Add(Path.GetDirectoryName(selected)!);
+        if (Path.GetFileName(Path.GetDirectoryName(selected)) == "versions") candidates.Add(Path.GetDirectoryName(Path.GetDirectoryName(selected))!);
+        return candidates.FirstOrDefault(path => File.Exists(Path.Combine(path, WonderInstanceConfigurationStore.FileName)));
     }
 
     private static GameInstance ReadStandard(string root, string versionDirectory, JsonElement profile = default, string? profileId = null)
@@ -115,6 +132,7 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
             RootDirectory = root, DefaultGameDirectory = gameDir, VersionId = id, Source = source,
             GameVersion = InstanceVersionMetadata.ReadStandard(metadataPath, Path.Combine(root, "versions")),
             ModLoaders = InstanceVersionMetadata.ReadModLoaders([metadataPath], Path.Combine(root, "versions")),
+            PresetIconPath = InstanceIcons.ForStandard(versionDirectory, gameDir, root),
             LibraryDirectory = Path.Combine(root, "libraries"), AssetsDirectory = Path.Combine(root, "assets"), VersionsDirectory = Path.Combine(root, "versions"),
             MetadataPaths = [metadataPath], ImportedSettings = settings, ConfigSource = config, Warnings = warnings
         };
@@ -168,6 +186,7 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
             Source = prism ? InstanceSource.Prism : InstanceSource.MultiMc, LibraryDirectory = Path.Combine(root, "libraries"), AssetsDirectory = Path.Combine(root, "assets"),
             VersionsDirectory = Path.Combine(root, "versions"), LocalLibraryDirectory = Path.Combine(dir, "libraries"), MetadataPaths = metadata,
             ModLoaders = InstanceVersionMetadata.ReadModLoaders(metadata, Path.Combine(root, "versions"), Path.Combine(dir, "mmc-pack.json")),
+            PresetIconPath = InstanceIcons.ForPrism(dir, root),
             ImportedSettings = Normalize(settings, warnings), ConfigSource = Path.Combine(dir, "instance.cfg"), Warnings = warnings
         };
     }

@@ -139,6 +139,7 @@ public sealed class WorkspaceStore
             {
                 Id = node.Area.Id, Title = node.Area.Title,
                 SidebarEdge = node.Area.SidebarEdge, SidebarExtent = node.Area.SidebarExtent,
+                CenterX = node.Area.CenterX, CenterY = node.Area.CenterY,
                 Components = node.Area.Components.Select(item => new ComponentItem
                 {
                     Id = item.Id, DefinitionId = item.DefinitionId, ApplicationId = item.ApplicationId,
@@ -211,6 +212,9 @@ public sealed class WorkspaceStore
                 throw Invalid("叶区域包含子分区或区域数量超过 128。");
             var area = node.Area;
             Identity(area.Id);
+            if (!double.IsFinite(area.CenterX) || !double.IsFinite(area.CenterY) ||
+                Math.Abs(area.CenterX) > 1_000_000 || Math.Abs(area.CenterY) > 1_000_000)
+                throw Invalid("工作区中心坐标无效。");
             if (!Enum.IsDefined(area.SidebarEdge) || !double.IsFinite(area.SidebarExtent) || area.SidebarExtent is < 80 or > 1_000_000)
                 throw Invalid("侧边栏方向或展开尺寸无效。");
             if (area.Title is null || area.Title.Length > 120 || area.Components is null || area.Components.Count > 64)

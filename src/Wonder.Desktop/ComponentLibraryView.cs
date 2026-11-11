@@ -150,9 +150,11 @@ internal sealed class ComponentLibraryView : Border
             start = e.GetPosition(source);
             if (component != null && (!component.IsHitAt(start) || !component.CanStartDrag(start))) return;
             pending = e;
-            // Keep the point grabbed within the component under the pointer.
+            // Normalize the grabbed content point before the desktop applies its own scale.
             // A card-title drag instead places its component center at the pointer.
-            grabOffset = component == null ? default : new Point(component.Bounds.Width / 2, component.Bounds.Height / 2) - start;
+            grabOffset = component == null ? default : new Vector(
+                (component.Bounds.Width / 2 - start.X) * component.Footprint.Width / component.Bounds.Width,
+                (component.Bounds.Height / 2 - start.Y) * component.Footprint.Height / component.Bounds.Height);
         }, RoutingStrategies.Tunnel, true);
         source.AddHandler(PointerPressedEvent, (_, e) =>
         {

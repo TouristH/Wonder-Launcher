@@ -1,6 +1,6 @@
 # 隐私说明 / Privacy statement
 
-适用版本：Wonder Launcher 0.7.2。更新日期：2026-10-28。维护者：[TouristH](https://github.com/TouristH)，联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
+适用版本：Wonder Launcher 0.7.2。更新日期：2026-11-11。维护者：[TouristH](https://github.com/TouristH)，联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
 
 ## 当前实现
 
@@ -9,6 +9,8 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 | 本地数据 | 用途 |
 | --- | --- |
 | `settings.json` | 主题、个性化和交互参数 |
+| `downloads.json` | 下载任务、资源元数据、安装目标与恢复状态；不含账户凭据 |
+| 实例目录内 `.minecraft/wonder.instance.json` | Wonder 创建署名、实例身份与启动参数，随实例保存，不含账户令牌；实例内部路径使用相对位置 |
 | `workspace.json` | 功能区、组件快捷方式、便笺等应用状态 |
 | `instances.json` | 用户主动登记的游戏路径、启动设置、所选实例及离线用户名 |
 | `accounts.dat` | Windows 当前用户 DPAPI 加密的账户库，包括账户资料、所选身份、刷新/游戏令牌、公开 Client ID、皮肤 URL/模型和自有披风资料、最近验证时间、保存的认证服务器及第三方适配器路径/哈希 |
@@ -23,6 +25,8 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 启动后的 Java 游戏进程、用户安装的模组和所连接的服务器可能独立访问网络、处理账号或产生游戏日志；这些行为不由本声明代表。程序默认不上传本地设置或日志。向 Issues 或邮箱发送诊断信息属于用户主动分享，应先移除令牌、私人路径、存档与个人信息。
 
 ## 登录与凭据
+
+用户打开下载列表、搜索资源或创建安装任务时，启动器访问 Mojang/Microsoft、BMCLAPI、Fabric、Quilt、Forge、NeoForge、Modrinth 及元数据指定的 HTTPS 文件地址。这些服务可收到来源 IP、搜索词和所请求的版本，不接收 Wonder 账户令牌。镜像选择和并发参数保存在本地设置；Java、游戏、资源和未完成下载片段保存在用户选择的安装目录附近。取消或清除任务记录不删除这些文件。
 
 微软登录使用设备码授权，权限为 Xbox 登录和离线刷新，使用启动器内置的公开 Wonder Client ID，玩家无需填写。密码与多因素验证仅在微软官方网页填写。Wonder 向 Microsoft、Xbox、Minecraft Services 交换本次用户会话并查询 entitlement/角色，不向第三方服务器发送微软令牌。用户点击登录后会打开微软官方页面；设备码只在当前窗口显示，不写入布局或日志，点击“复制设备码”时才写入系统剪贴板。登录可取消，关闭账户窗口取消正在等待的登录。
 

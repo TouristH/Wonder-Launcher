@@ -74,7 +74,7 @@ internal sealed class PolygonButton : Button, ICustomHitTest
     protected override void OnClick()
     {
         // Only a completed click reaches here; captured drags and cancelled presses do not.
-        _ripple.Start(_clickPosition ?? new Point(Bounds.Width / 2, Bounds.Height / 2));
+        if (ButtonClickRipples.AnimationsEnabled()) _ripple.Start(_clickPosition ?? new Point(Bounds.Width / 2, Bounds.Height / 2));
         base.OnClick();
     }
 

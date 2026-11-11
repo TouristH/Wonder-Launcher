@@ -16,6 +16,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
     private Bitmap? _cape;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Func<string, CancellationToken, Task<byte[]>>? _download;
+    private CancellationTokenSource? _defaultLoad;
     private readonly AccountTextureClient _textures = new();
     private bool _back, _slim, _disposed;
     private int _revision;
@@ -80,21 +81,42 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             }
         }
     }
-    public async Task LoadDefaultAsync(GameInstance? instance, string textureName, string variant, bool legacy)
+    public async Task LoadDefaultAsync(GameInstance? instance, string textureName, string variant, bool legacy,
+        IReadOnlyList<GameInstance>? alternatives = null, Func<string, string, CancellationToken, Task<byte[]?>>? readOfficial = null)
     {
         if (_disposed) return;
+        _defaultLoad?.Cancel();
+        using var load = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _defaultLoad = load;
         var revision = ++_revision;
         _capeRevision++;
         ClearTextures(); Slim = variant == "slim";
-        Description = textureName + " · 正在读取所选实例的默认纹理…"; InvalidateVisual(); LoadedTexture?.Invoke();
+        Description = textureName + " · 正在读取默认纹理…"; InvalidateVisual(); LoadedTexture?.Invoke();
         try
         {
-            var png = await Task.Run(() => DefaultSkinTextureReader.TryRead(instance, textureName, variant, legacy), _lifetime.Token);
+            var local = await Task.Run(() => DefaultSkinTextureReader.TryRead(instance, alternatives ?? [], textureName, variant, legacy, load.Token), load.Token);
             if (_disposed || revision != _revision) return;
-            if (png is not null) { _skin = Decode(png, cape: false); Description = textureName + " · 来自所选实例"; }
-            else Description = textureName + " · 纹理未安装，显示模型示意";
+            if (local is { } match)
+            {
+                _skin = Decode(match.Bytes, cape: false);
+                Description = textureName + (match.SelectedInstance ? " · 来自所选实例" : " · 来自其他已登记实例");
+            }
+            else
+            {
+                var png = DefaultSkinTextureReader.TryReadCachedOfficial(textureName, variant);
+                if (png is null && readOfficial is not null) png = await readOfficial(textureName, variant, load.Token);
+                if (_disposed || revision != _revision) return;
+                if (png is not null)
+                {
+                    _skin = Decode(png, cape: false);
+                    Description = textureName + (legacy ? " · Minecraft 26.3 同名纹理参考" : " · 来自 Minecraft 官方默认纹理");
+                }
+                else Description = textureName + " · 纹理未安装，显示模型示意";
+            }
         }
+        catch (OperationCanceledException) when (load.IsCancellationRequested) { }
         catch { if (!_disposed && revision == _revision) Description = textureName + " · 纹理不可用，显示模型示意"; }
+        finally { if (ReferenceEquals(_defaultLoad, load)) _defaultLoad = null; }
         if (!_disposed && revision == _revision) { InvalidateVisual(); LoadedTexture?.Invoke(); }
     }
     private static Bitmap Decode(byte[] png, bool cape, bool allowHighDefinition = false)

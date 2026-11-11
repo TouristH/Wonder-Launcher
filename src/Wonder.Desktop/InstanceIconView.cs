@@ -32,7 +32,7 @@ internal sealed class InstanceIconView : Image
     public void SetIcon(string? path, string key)
     {
         _path = string.IsNullOrWhiteSpace(path) ? null : path;
-        _key = key is "fabric" or "forge" or "neoforge" ? key : "minecraft";
+        _key = key is "fabric" or "quilt" or "forge" or "neoforge" ? key : "minecraft";
         Update();
     }
 

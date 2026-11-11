@@ -75,6 +75,7 @@ public sealed partial class MainWindow : Window
         _accounts = new AccountService(accountStore, new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
             new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")));
         _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
+        Opened += (_, _) => _ = _instances.ReadRegisteredDirectoriesAsync();
         _downloadEngine = new DownloadEngine();
         _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine), System.IO.Path.Combine(dataDirectory, "downloads.json"), ImportDownloadedInstanceAsync);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
@@ -193,7 +194,8 @@ public sealed partial class MainWindow : Window
             if (_accountManager.WindowState == WindowState.Minimized) _accountManager.WindowState = WindowState.Normal;
             _accountManager.Activate(); return;
         }
-        _accountManager = new AccountManagerWindow(_accounts, _instances.Catalog.OfflineUsername, instances: _instances) { FontFamily = FontFamily };
+        _accountManager = new AccountManagerWindow(_accounts, _instances.Catalog.OfflineUsername, instances: _instances,
+            defaultSkinDownload: DefaultSkinTextureReader.ReadOfficialAsync) { FontFamily = FontFamily };
         _accountManager.Closed += (_, _) => _accountManager = null;
         _accountManager.Show(this);
     }

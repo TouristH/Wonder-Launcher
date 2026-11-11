@@ -15,16 +15,19 @@ public sealed partial class MinecraftDownloadCatalog
     public async Task<string> InstallGameAsync(GameInstallRequest request, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         options.Validate(); StrictSegment(request.InstanceName); StrictSegment(request.MinecraftVersion);
+        ValidateInstallCollection(request.TargetDirectory, request.InstallInCollection, request.ShareGameDirectory);
         var transaction = PrepareInstall(request.TargetDirectory, request);
         if (transaction.Completed is { } completed) return completed;
         var root = SafePath(transaction.Stage, ".minecraft"); Directory.CreateDirectory(root);
-        var version = await InstallGameContent(request, root, options, progress, ct);
-        return CompleteInstall(transaction.Stage, request.TargetDirectory, version, ct);
+        var steps = new InstallSteps(progress, 6);
+        var version = await InstallGameContent(request, root, options, steps, ct);
+        steps.Begin("保存并登记实例");
+        return CompleteInstall(transaction.Stage, request.TargetDirectory, version, ct, request.InstallInCollection, request.ShareGameDirectory);
     }
 
-    private async Task<string> InstallGameContent(GameInstallRequest request, string root, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
+    private async Task<string> InstallGameContent(GameInstallRequest request, string root, DownloadOptions options, InstallSteps steps, CancellationToken ct)
     {
-        progress?.Report(new("读取 Minecraft 版本描述"));
+        var progress = steps.Begin("读取游戏版本与准备 Java");
         var versions = await GetMinecraftVersionsAsync(options, ct);
         var selected = versions.FirstOrDefault(x => x.Id == request.MinecraftVersion) ?? throw new InvalidDataException("Minecraft 版本不存在，请刷新版本列表。");
         var metadata = await GetJson(selected.Url, options, ct);
@@ -35,10 +38,12 @@ public sealed partial class MinecraftDownloadCatalog
         var savedJava = Path.IsPathFullyQualified(javaPath) && javaPath.StartsWith(root + Path.DirectorySeparatorChar, WonderPath.Comparison)
             ? Path.Combine(Path.GetFullPath(request.TargetDirectory), ".minecraft", Path.GetRelativePath(root, javaPath)) : javaPath;
         await WriteJson(Path.Combine(Path.GetDirectoryName(root)!, ".wonder-launch.json"), JsonSerializer.Serialize(new { instanceName = request.InstanceName, javaPath = savedJava }), ct);
+        progress = steps.Begin("安装客户端与依赖库");
         var versionDirectory = SafePath(root, "versions/" + StrictSegment(selected.Id)); Directory.CreateDirectory(versionDirectory);
         await WriteJson(Path.Combine(versionDirectory, selected.Id + ".json"), metadata.GetRawText(), ct);
         await engine.DownloadAsync(Descriptor(metadata.Get("downloads").Get("client"), Path.Combine(versionDirectory, selected.Id + ".jar")), options, progress, ct);
         await InstallLibraries(metadata, root, options, progress, ct);
+        progress = steps.Begin("下载游戏资源与日志配置");
         var assetIndex = metadata.Get("assetIndex");
         if (assetIndex.ValueKind == JsonValueKind.Object)
         {
@@ -58,21 +63,31 @@ public sealed partial class MinecraftDownloadCatalog
         var log = metadata.Get("logging").Get("client").Get("file");
         if (log.ValueKind == JsonValueKind.Object)
             await engine.DownloadAsync(Descriptor(log, Path.Combine(root, "assets", "log_configs", StrictSegment(log.Get("id").Text() ?? ""))), options, progress, ct);
+        progress = steps.Begin("安装模组加载器");
+        var version = await InstallLoader(request, root, javaPath, metadata, options, progress, ct);
+        progress = steps.Begin("安装可选组件");
+        return await InstallGameAddons(request, version, root, javaPath, options, progress, ct);
+    }
+
+    private async Task<string> InstallLoader(GameInstallRequest request, string root, string javaPath, JsonElement metadata,
+        DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
+    {
+        var minecraft = request.MinecraftVersion;
         var loader = request.Loader.ToLowerInvariant();
-        if (loader == "vanilla") return selected.Id;
+        if (loader == "vanilla") return minecraft;
         var loaderVersion = StrictSegment(request.LoaderVersion ?? throw new InvalidDataException("请选择模组加载器版本。"));
         if (loader is "fabric" or "quilt")
         {
-            var profile = await GetJson($"{LoaderHost(loader)}/v{(loader == "fabric" ? 2 : 3)}/versions/loader/{Escape(selected.Id)}/{Escape(loaderVersion)}/profile/json", options, ct);
+            var profile = await GetJson($"{LoaderHost(loader)}/v{(loader == "fabric" ? 2 : 3)}/versions/loader/{Escape(minecraft)}/{Escape(loaderVersion)}/profile/json", options, ct);
             var id = StrictSegment(profile.Get("id").Text() ?? "");
-            if (profile.Get("inheritsFrom").Text() != selected.Id || profile.Get("mainClass").Text() is null) throw new InvalidDataException("加载器版本描述与 Minecraft 版本不匹配。");
+            if (profile.Get("inheritsFrom").Text() != minecraft || profile.Get("mainClass").Text() is null) throw new InvalidDataException("加载器版本描述与 Minecraft 版本不匹配。");
             await InstallLibraries(profile, root, options, progress, ct);
             await WriteJson(Path.Combine(root, "versions", id, id + ".json"), profile.GetRawText(), ct);
             return id;
         }
         if (loader is not ("forge" or "neoforge")) throw new InvalidDataException("不支持的模组加载器。");
-        var artifact = loader == "forge" || selected.Id == "1.20.1" ? "forge" : "neoforge";
-        var fullVersion = loaderVersion.StartsWith(selected.Id + "-", StringComparison.Ordinal) || artifact != "forge" ? loaderVersion : selected.Id + "-" + loaderVersion;
+        var artifact = loader == "forge" || minecraft == "1.20.1" ? "forge" : "neoforge";
+        var fullVersion = loaderVersion.StartsWith(minecraft + "-", StringComparison.Ordinal) || artifact != "forge" ? loaderVersion : minecraft + "-" + loaderVersion;
         var origin = loader == "forge" ? "https://maven.minecraftforge.net/net/minecraftforge" : "https://maven.neoforged.net/releases/net/neoforged";
         var installerUrl = $"{origin}/{artifact}/{Escape(fullVersion)}/{artifact}-{Escape(fullVersion)}-installer.jar";
         var installer = Path.Combine(root, "installer", loader + "-installer.jar");
@@ -147,7 +162,17 @@ public sealed partial class MinecraftDownloadCatalog
         else { Directory.CreateDirectory(stage); File.WriteAllText(Path.Combine(stage, ".wonder-request.json"), fingerprint); }
         return (stage, null);
     }
-    private static string CompleteInstall(string stage, string target, string version, CancellationToken ct)
+    private static void ValidateInstallCollection(string target, bool grouped, bool shared = false)
+    {
+        if (!grouped && !shared) return;
+        if (!Path.IsPathFullyQualified(target)) throw new ArgumentException("安装目标必须是完整路径。");
+        var instancePath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
+        var collection = WonderInstanceConfigurationStore.CollectionRoot(Path.Combine(instancePath, ".minecraft"));
+        if (!grouped || collection is null) throw new ArgumentException("目标必须是所选游戏目录下的新实例。");
+        SafePath(collection, "instances/" + Path.GetFileName(instancePath));
+    }
+
+    private static string CompleteInstall(string stage, string target, string version, CancellationToken ct, bool grouped = false, bool shared = false)
     {
         ct.ThrowIfCancellationRequested();
         var launch = Json(Path.Combine(stage, ".wonder-launch.json"));
@@ -155,11 +180,56 @@ public sealed partial class MinecraftDownloadCatalog
         if (configuredJava is not null && Path.IsPathFullyQualified(configuredJava) &&
             configuredJava.StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(target)) + Path.DirectorySeparatorChar, WonderPath.Comparison))
             configuredJava = Path.Combine(stage, Path.GetRelativePath(target, configuredJava));
-        WonderInstanceConfigurationStore.Create(Path.Combine(stage, ".minecraft"), launch.Get("instanceName").Text() ?? version, version, configuredJava);
+        var stageRoot = Path.Combine(stage, ".minecraft");
+        WonderInstanceConfigurationStore.Create(stageRoot, launch.Get("instanceName").Text() ?? version, version, configuredJava, grouped, shared);
         File.WriteAllText(Path.Combine(stage, ".wonder-complete.json"), JsonSerializer.Serialize(new { fingerprint = File.ReadAllText(Path.Combine(stage, ".wonder-request.json")), version,
             instanceName = launch.Get("instanceName").Text(), javaPath = launch.Get("javaPath").Text() }));
-        Directory.Move(stage, target);
+        if (shared) PublishSharedInstance(stage, target, stageRoot, ct);
+        else Directory.Move(stage, target);
         return Path.Combine(Path.GetFullPath(target), ".minecraft", "versions", version);
+    }
+
+    private static void PublishSharedInstance(string stage, string target, string stageRoot, CancellationToken ct)
+    {
+        var collection = WonderInstanceConfigurationStore.CollectionRoot(stageRoot)!;
+        var source = SafePath(stageRoot, "mods");
+        var newFiles = new List<string>();
+        try
+        {
+            if (Directory.Exists(source))
+            {
+                foreach (var mod in Directory.EnumerateFiles(source, "*.jar"))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var destination = SafePath(collection, "mods/" + Path.GetFileName(mod));
+                    if (File.Exists(destination))
+                    {
+                        using var staged = File.OpenRead(mod);
+                        using var existing = File.OpenRead(destination);
+                        if (!SHA256.HashData(staged).AsSpan().SequenceEqual(SHA256.HashData(existing)))
+                            throw new IOException("共享模组目录已有同名文件，未覆盖：" + Path.GetFileName(destination));
+                        continue;
+                    }
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    try
+                    {
+                        File.Copy(mod, temporary);
+                        File.Move(temporary, destination);
+                        newFiles.Add(destination);
+                    }
+                    finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                }
+            }
+            ct.ThrowIfCancellationRequested();
+            Directory.Move(stage, target);
+        }
+        catch
+        {
+            foreach (var file in newFiles)
+                try { File.Delete(file); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            throw;
+        }
     }
     private static async Task WriteJson(string path, string text, CancellationToken ct)
     {

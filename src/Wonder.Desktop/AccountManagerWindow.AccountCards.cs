@@ -30,6 +30,7 @@ internal sealed partial class AccountManagerWindow
             _accounts.Children.Remove(card.Button); card.Dispose(); _accountCards.Remove(id);
         }
         var instance = _selectedInstance?.Invoke();
+        var alternatives = _instances?.Catalog.Instances;
         var children = new List<Control>();
         foreach (var account in visible)
         {
@@ -39,7 +40,7 @@ internal sealed partial class AccountManagerWindow
                 card = new AccountCard(() => { _viewId = id; Navigate("details"); });
                 _accountCards.Add(id, card);
             }
-            card.Update(account, instance, _textureDownload, account.Id == _service.SelectedAccount?.Id,
+            card.Update(account, instance, alternatives, _textureDownload, account.Id == _service.SelectedAccount?.Id,
                 account.Id == _viewId && _mode == "details", account.ServerUrl is { } url ? ServerName(url) : null);
             children.Add(card.Button);
         }
@@ -77,7 +78,7 @@ internal sealed partial class AccountManagerWindow
             Button.Padding = new Thickness(0); Button.BorderThickness = new Thickness(0); Button.Background = Palette.Surface;
         }
 
-        public void Update(AccountProfile account, GameInstance? instance, Func<string, CancellationToken, Task<byte[]>>? download,
+        public void Update(AccountProfile account, GameInstance? instance, IReadOnlyList<GameInstance>? alternatives, Func<string, CancellationToken, Task<byte[]>>? download,
             bool current, bool viewed, string? serverName)
         {
             _name.Text = account.Username;
@@ -86,14 +87,14 @@ internal sealed partial class AccountManagerWindow
             AutomationProperties.SetName(Button, "查看账户 " + account.Username);
             _surface.Background = viewed ? Palette.Active : Palette.Surface;
             _surface.BorderBrush = viewed ? Palette.Accent : Palette.Line;
-            var key = AccountAvatarLoader.Key(account, instance);
+            var key = AccountAvatarLoader.Key(account, instance, alternatives);
             if (_avatarKey == key) return;
             _avatarKey = key;
             if (_avatar is not null) { _avatar.Dispose(); _content.Children.Remove(_avatar); }
             var avatar = new AccountSkinPreview(download) { Width = 40, Height = 40, HeadOnly = true, VerticalAlignment = VerticalAlignment.Center };
             _avatar = avatar; _content.Children.Insert(0, avatar);
             avatar.LoadedTexture += () => ToolTip.SetTip(avatar, avatar.Description);
-            _ = AccountAvatarLoader.LoadAsync(avatar, account, instance);
+            _ = AccountAvatarLoader.LoadAsync(avatar, account, instance, alternatives);
         }
 
         public void Dispose() => _avatar?.Dispose();

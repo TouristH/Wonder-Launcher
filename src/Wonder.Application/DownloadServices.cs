@@ -15,7 +15,9 @@ public interface IDownloadCatalog
 {
     Task<IReadOnlyList<MinecraftVersion>> GetMinecraftVersionsAsync(DownloadOptions options, CancellationToken ct = default);
     Task<IReadOnlyList<LoaderVersion>> GetLoaderVersionsAsync(string loader, string minecraftVersion, DownloadOptions options, CancellationToken ct = default);
+    Task<IReadOnlyList<GameAddonVersion>> GetGameAddonsAsync(GameAddonKind kind, string loader, string minecraftVersion, string? loaderVersion, DownloadOptions options, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<GameAddonVersion>>([]);
     Task<ResourceSearchResult> SearchResourcesAsync(DownloadResourceKind kind, string query, string? minecraftVersion, string? loader, int offset, DownloadOptions options, CancellationToken ct = default);
+    Task<ResourceProject> GetResourceProjectAsync(ResourceProject project, DownloadOptions options, CancellationToken ct = default) => Task.FromResult(project);
     Task<IReadOnlyList<ResourceVersion>> GetResourceVersionsAsync(string projectId, string? minecraftVersion, string? loader, DownloadOptions options, CancellationToken ct = default);
     Task<string> InstallGameAsync(GameInstallRequest request, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct);
     Task<string> InstallResourceAsync(ResourceInstallRequest request, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct);

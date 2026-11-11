@@ -89,7 +89,10 @@ internal sealed class InstanceManagerWindow : Window
 
         _detailPage.RowDefinitions = new RowDefinitions("Auto,*,Auto");
         var detailHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,18,*,Auto"), Margin = new Thickness(0, 0, 0, 16) };
-        detailHeader.Children.Add(Button("返回游戏目录", "← 游戏目录", () => { RememberDraft(); _showDetails = false; Refresh(); }));
+        detailHeader.Children.Add(Button("返回游戏目录", "← 游戏目录", () =>
+        {
+            RememberDraft(); _showDetails = false; Refresh(); ReadDetailDirectory();
+        }));
         var identity = new StackPanel { Spacing = 4 };
         _detailTitle.FontSize = 20; _detailTitle.Foreground = Palette.Text; _detailTitle.FontWeight = FontWeight.SemiBold;
         _detailTitle.TextTrimming = TextTrimming.CharacterEllipsis; _detailTitle.TextWrapping = TextWrapping.NoWrap;
@@ -145,7 +148,11 @@ internal sealed class InstanceManagerWindow : Window
         _retry = Button("重试实例索引读取", "重试读取实例索引", () => { _localError = null; _service.Reload(); });
         footer.Children.Add(_retry);
         Grid.SetRow(footer, 2); layout.Children.Add(footer); Content = layout;
-        _service.Changed += Changed; Closed += (_, _) => { _closed = true; _service.Changed -= Changed; };
+        _service.Changed += Changed; Closed += (_, _) =>
+        {
+            _closed = true; _service.Changed -= Changed;
+            if (_showDetails) ReadDetailDirectory();
+        };
         SetLayout(initialLayout); Refresh();
     }
 
@@ -161,9 +168,13 @@ internal sealed class InstanceManagerWindow : Window
                 _localError = _service.Error;
                 var fullPath = CanonicalRoot(path);
                 var imported = _service.Catalog.Instances.FirstOrDefault(x =>
-                    SameRoot(x.RootDirectory, fullPath) || SameRoot(x.SourcePath, fullPath) || SameRoot(x.DefaultGameDirectory, fullPath) ||
+                    SameRoot(x.GameDirectoryGroup, fullPath) || SameRoot(x.SourcePath, fullPath) || SameRoot(x.DefaultGameDirectory, fullPath) ||
                     x.SourcePath.StartsWith(fullPath + Path.DirectorySeparatorChar, WonderPath.Comparison));
-                if (imported is not null) _rootPath = CanonicalRoot(imported.RootDirectory);
+                if (imported is not null)
+                {
+                    _service.SelectGameDirectory(imported.GameDirectoryGroup);
+                    if (!SameRoot(imported.GameDirectoryGroup, fullPath)) await _service.ReadGameDirectoryAsync(imported.GameDirectoryGroup);
+                }
             }
         }
         catch (Exception ex) { _localError = "目录选择失败：" + ex.Message; }
@@ -183,21 +194,20 @@ internal sealed class InstanceManagerWindow : Window
         _updating = true;
         try
         {
-            var roots = catalog.GameDirectories.Select(path => new RootRow(path, catalog.Instances.Count(x => SameRoot(x.RootDirectory, path)))).ToArray();
-            if (!roots.Any(x => SameRoot(x.Path, _rootPath)))
-                _rootPath = roots.FirstOrDefault(x => selected is not null && SameRoot(x.Path, selected.RootDirectory))?.Path ?? roots.FirstOrDefault()?.Path;
+            var roots = catalog.GameDirectories.Select(path => new RootRow(path, catalog.Instances.Count(x => SameRoot(x.GameDirectoryGroup, path)))).ToArray();
+            _rootPath = _service.SelectedGameDirectory ?? roots.FirstOrDefault()?.Path;
             if (!_rootRows.SequenceEqual(roots))
             {
                 _rootRows = roots; _roots.Children.Clear();
                 foreach (var root in roots)
                 {
                     var card = new InstanceBrowserCard("游戏目录：" + root.Name, root.Name, root.Count + " 个实例", root.Path,
-                        () => { _rootPath = root.Path; Refresh(); }, () => _ = EditDirectory(root.Path), () => _ = DeleteDirectory(root.Path));
+                        () => _service.SelectGameDirectory(root.Path), () => _ = EditDirectory(root.Path), () => _ = DeleteDirectory(root.Path));
                     card.Tag = root.Path; _roots.Children.Add(card);
                 }
             }
             foreach (var card in _roots.Children.OfType<InstanceBrowserCard>()) card.Selected = SameRoot((string)card.Tag!, _rootPath);
-            var rows = catalog.Instances.Where(x => SameRoot(x.RootDirectory, _rootPath))
+            var rows = catalog.Instances.Where(x => SameRoot(x.GameDirectoryGroup, _rootPath))
                 .Select(x => new InstanceRow(x.Id, x.Name, x.VersionLabel, SourceName(x.Source), x.SourcePath, x.PresetIconPath)).ToArray();
             if (!_instanceRows.SequenceEqual(rows))
             {
@@ -266,6 +276,12 @@ internal sealed class InstanceManagerWindow : Window
         if (_currentId is { } id && _draftStatus.Text?.StartsWith("未保存") == true)
             _drafts[id] = new(_fields.ToDictionary(x => x.Key, x => x.Value.Text ?? ""), _fullscreen.SelectedIndex, _clearJvm.IsChecked == true, _clearGame.IsChecked == true);
     }
+    private void ReadDetailDirectory()
+    {
+        if (_currentId is not { } id) return;
+        var instance = _service.Catalog.Instances.FirstOrDefault(x => x.Id == id);
+        if (instance is not null) _ = _service.ReadGameDirectoryAsync(instance.GameDirectoryGroup);
+    }
     private void MarkDraft() { if (!_updating) _draftStatus.Text = "未保存的编辑 · 点击保存后用于下次启动"; }
     private void Save()
     {
@@ -280,9 +296,14 @@ internal sealed class InstanceManagerWindow : Window
                 FullScreen = _fullscreen.SelectedIndex == 0 ? null : _fullscreen.SelectedIndex == 2,
                 JvmArguments = _clearJvm.IsChecked == true ? "" : Value("jvm"), GameArguments = _clearGame.IsChecked == true ? "" : Value("game")
             };
+            var previous = _service.Catalog.Instances.FirstOrDefault(x => x.Id == id);
             _localError = null; _service.UpdateInstance(id, Value("name") ?? "", settings);
             _localError = _service.Error;
-            if (_service.Error is null) { _drafts.Remove(id); LoadFields(_service.Catalog.Instances.Single(x => x.Id == id)); }
+            if (_service.Error is null)
+            {
+                _drafts.Remove(id); LoadFields(_service.Catalog.Instances.Single(x => x.Id == id));
+                if (previous?.Overrides.GameDirectory != settings.GameDirectory) ReadDetailDirectory();
+            }
         }
         catch (ArgumentException ex) { _localError = ex.Message; }
         Refresh();
@@ -347,7 +368,7 @@ internal sealed class InstanceManagerWindow : Window
             {
                 var moved = await _service.MoveDirectoryAsync(path, target);
                 if (!moved) return _service.Error ?? "目录修改未完成。";
-                _rootPath = target;
+                _service.SelectGameDirectory(target);
                 foreach (var draft in _drafts.Values)
                     foreach (var key in new[] { "java", "directory", "jvm", "game" })
                     {
@@ -355,6 +376,7 @@ internal sealed class InstanceManagerWindow : Window
                         if (string.Equals(text, path, WonderPath.Comparison)) draft.Text[key] = target;
                         else draft.Text[key] = text.Replace(path + Path.DirectorySeparatorChar, target + Path.DirectorySeparatorChar, WonderPath.Comparison);
                     }
+                await _service.ReadGameDirectoryAsync(target);
                 return null;
             }) { FontFamily = FontFamily };
             await dialog.ShowDialog<bool>(this);

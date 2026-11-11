@@ -72,6 +72,9 @@ public sealed record GameInstance
     public string Name { get; init; } = "";
     public string SourcePath { get; init; } = "";
     public string RootDirectory { get; init; } = "";
+    public string? CollectionDirectory { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string GameDirectoryGroup => CollectionDirectory ?? RootDirectory;
     public string DefaultGameDirectory { get; init; } = "";
     public string VersionId { get; init; } = "";
     public string GameVersion { get; init; } = "";
@@ -112,6 +115,7 @@ public sealed record GameInstance
                 throw new ArgumentException("模组加载器名称或版本无效。");
         InstanceSettings.ValidatePath(SourcePath, "来源路径");
         InstanceSettings.ValidatePath(RootDirectory, "根目录");
+        if (CollectionDirectory is not null) InstanceSettings.ValidatePath(CollectionDirectory, "所属游戏目录");
         InstanceSettings.ValidatePath(DefaultGameDirectory, "默认游戏目录");
         InstanceSettings.ValidatePath(LibraryDirectory, "依赖库目录");
         InstanceSettings.ValidatePath(AssetsDirectory, "资源目录");
@@ -142,6 +146,7 @@ public sealed class InstanceCatalog
     public string? SelectedInstanceId { get; set; }
     public string OfflineUsername { get; set; } = "Player";
     public InstanceSettings GlobalSettings { get; set; } = new();
+    public bool VersionIsolationEnabled { get; set; } = true;
 
     public void Validate()
     {

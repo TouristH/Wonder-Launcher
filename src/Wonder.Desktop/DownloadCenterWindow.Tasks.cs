@@ -108,11 +108,15 @@ internal sealed partial class DownloadCenterWindow
         }
         public void Update(DownloadTaskSnapshot task)
         {
-            _task = task; _state.Text = StateLabel(task.State); _stage.Text = task.Progress.Stage;
+            _task = task; _state.Text = StateLabel(task.State);
             var p = task.Progress;
+            _stage.Text = p.TotalSteps > 0
+                ? $"第 {p.StepNumber}/{p.TotalSteps} 步  {p.StepName}" + (p.Stage != p.StepName ? "\n" + p.Stage : "")
+                : p.Stage;
             _progress.IsIndeterminate = task.State == DownloadTaskState.Running && p.TotalBytes is not > 0 && p.TotalFiles <= 0;
             _progress.Value = task.State == DownloadTaskState.Completed ? 100 : p.TotalBytes is > 0 ? Math.Clamp(p.BytesReceived * 100d / p.TotalBytes.Value, 0, 100) : p.TotalFiles > 0 ? Math.Clamp(p.CompletedFiles * 100d / p.TotalFiles, 0, 100) : 0;
-            _metrics.Text = Bytes(p.BytesReceived) + (p.TotalBytes is > 0 ? " / " + Bytes(p.TotalBytes.Value) : "") +
+            var percent = !_progress.IsIndeterminate && (p.TotalBytes is > 0 || p.TotalFiles > 0) ? $"{_progress.Value:F0}% · " : "";
+            _metrics.Text = percent + Bytes(p.BytesReceived) + (p.TotalBytes is > 0 ? " / " + Bytes(p.TotalBytes.Value) : "") +
                 (task.State == DownloadTaskState.Running ? " · " + Bytes((long)Math.Max(0, p.BytesPerSecond)) + "/s" : "") +
                 (p.TotalFiles > 0 ? $" · {p.CompletedFiles}/{p.TotalFiles} 文件" : "");
             _error.Text = task.Error; _error.IsVisible = !string.IsNullOrEmpty(task.Error);

@@ -25,12 +25,14 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     private readonly ComboBox _fullscreen = new() { ItemsSource = new[] { "继承实例原配置", "窗口模式", "全屏模式" }, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly CheckBox _clearJvm = new() { Content = "清空额外 JVM 参数" };
     private readonly CheckBox _clearGame = new() { Content = "清空额外游戏参数" };
+    private readonly ToggleSwitch _versionIsolation = new() { OnContent = "开启", OffContent = "关闭" };
     private readonly TextBlock _status = PageStyles.Hint("");
     private readonly Button _retry = new() { Content = "重试读取实例设置", HorizontalAlignment = HorizontalAlignment.Left };
     private readonly StackPanel _actions = new() { Orientation = Orientation.Horizontal, Spacing = 10 };
     public Control Footer { get; }
     private bool _updating = true, _dirty, _disposed;
     private InstanceSettings _loaded = new();
+    private bool _loadedIsolation = true;
 
     public GlobalGameSettingsEditor(InstanceService service)
     {
@@ -52,6 +54,11 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         };
         identity.Children.Add(_username); identity.Children.Add(_saveUsername); identity.Children.Add(_usernameStatus);
         _form.Children.Add(PageStyles.Card(identity));
+        var isolation = Section("版本隔离", "为新安装的普通游戏实例分别保存存档、模组和配置。关闭后，新实例共用安装时所选的游戏目录。整合包使用自己的游戏目录。");
+        AutomationProperties.SetName(_versionIsolation, "新实例版本隔离");
+        _versionIsolation.IsCheckedChanged += (_, _) => MarkDirty();
+        isolation.Children.Add(_versionIsolation);
+        _form.Children.Add(PageStyles.Card(isolation));
         var java = Section("Java 与内存", "Java 留空时沿用实例配置；未配置时自动查找。内存单位为 MiB。");
         java.Children.Add(Field("java", "全局 Java 路径", "继承实例原配置 / 自动查找"));
         java.Children.Add(Pair(Field("min", "全局最小内存", "继承 / 默认 512"), Field("max", "全局最大内存", "继承 / 默认 4096")));
@@ -109,7 +116,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
                 GameArguments = _clearGame.IsChecked == true ? "" : Optional("game")
             };
             settings.Validate();
-            _service.UpdateGlobalSettings(settings);
+            _service.UpdateGlobalSettings(settings, _versionIsolation.IsChecked == true);
             if (_service.Error is { } error) Report(error, true);
             else { LoadValues(); Report("已保存 · 下次启动游戏时生效", false); }
         }
@@ -120,6 +127,8 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     {
         _updating = true;
         _loaded = _service.Catalog.GlobalSettings;
+        _loadedIsolation = _service.Catalog.VersionIsolationEnabled;
+        _versionIsolation.IsChecked = _loadedIsolation;
         if (!_usernameDirty) { _loadedUsername = _service.Catalog.OfflineUsername; _username.Text = _loadedUsername; }
         _fields["java"].Text = _loaded.JavaPath ?? "";
         _fields["min"].Text = _loaded.MinimumMemoryMb?.ToString() ?? "";
@@ -155,7 +164,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         }
         _retry.IsVisible = _service.IsReadBlocked;
         if (_service.IsReadBlocked) Report(_service.Error ?? "实例设置读取失败。原文件已保留。", true);
-        else if (!_dirty && (wasBlocked || _loaded != _service.Catalog.GlobalSettings)) LoadValues();
+        else if (!_dirty && (wasBlocked || _loaded != _service.Catalog.GlobalSettings || _loadedIsolation != _service.Catalog.VersionIsolationEnabled)) LoadValues();
     }
 
     private void MarkDirty() { if (!_updating) { _dirty = true; Report("尚未保存 · 点击保存后应用于下次启动", false); } }

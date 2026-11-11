@@ -43,9 +43,13 @@ public sealed partial class InstanceService
             var directory = item.Source == InstanceSource.Wonder ? item.RootDirectory : item.Source is InstanceSource.Prism or InstanceSource.MultiMc ? item.SourcePath : Path.Combine(item.VersionsDirectory, item.VersionId);
             directory = Full(directory);
             if (!Within(directory, item.RootDirectory) || Same(directory, item.RootDirectory) && item.Source != InstanceSource.Wonder) throw new InvalidOperationException("无法确定独立实例目录，拒绝删除共享游戏目录。");
+            if (item.Source == InstanceSource.Wonder && item.CollectionDirectory is { } collection &&
+                WonderPath.Comparer.Equals(Path.GetFileName(directory), ".minecraft") &&
+                Path.GetDirectoryName(directory) is { } container && Path.GetDirectoryName(container) is { } instances &&
+                Same(instances, Path.Combine(collection, "instances"))) directory = container;
             ValidateOwnedPath(directory);
             EnsureNoOtherReferences(directory, [id]);
-            if (item.Source == InstanceSource.Wonder) _files!.EnsureGameRoot(directory);
+            if (item.Source == InstanceSource.Wonder) _files!.EnsureGameRoot(item.RootDirectory);
             else _files!.EnsureNoVersionDependents(item, directory);
             var note = "将移入回收站此实例目录及其中的存档、模组和配置，并移除 1 个实例登记。";
             if (!Within(item.EffectiveSettings.GameDirectory!, directory)) note += "\n此实例使用目录之外的游戏数据；共享或外部游戏目录、资源和依赖保持原样。";
@@ -59,7 +63,7 @@ public sealed partial class InstanceService
         {
             RequireFileOperationAvailable();
             var path = Full(rootDirectory);
-            var members = _catalog.Instances.Where(x => Same(x.RootDirectory, path)).ToArray();
+            var members = _catalog.Instances.Where(x => Same(x.GameDirectoryGroup, path)).ToArray();
             if (!_catalog.GameDirectories.Any(root => Same(root, path))) throw new ArgumentException("游戏目录未登记。");
             ValidateOwnedPath(path); _files!.EnsureGameRoot(path); EnsureNoOtherReferences(path, members.Select(x => x.Id).ToArray());
             return new(_planOwner, Path.GetFileName(path), path, $"将移入回收站整个游戏目录，包括其中的游戏、存档、模组、资源与配置，并移除 {members.Length} 个实例登记。目录内其他启动器文件也会一起移入回收站。", members.Select(x => x.Id).Order().ToArray(), _files!.InspectDirectory(path), null);
@@ -113,7 +117,7 @@ public sealed partial class InstanceService
                 source = Full(rootDirectory); target = Full(targetFullPath);
                 if (!_catalog.GameDirectories.Any(root => Same(root, source))) throw new ArgumentException("游戏目录未登记。");
                 _files!.EnsureGameRoot(source);
-                EnsureNoOtherReferences(source, _catalog.Instances.Where(x => Same(x.RootDirectory, source)).Select(x => x.Id).ToArray());
+                EnsureNoOtherReferences(source, _catalog.Instances.Where(x => Same(x.GameDirectoryGroup, source)).Select(x => x.Id).ToArray());
                 ValidateOwnedPath(source); ValidateOwnedPath(target);
                 if (Same(source, target)) return true;
                 if (Within(source, target) || Within(target, source)) throw new ArgumentException("新旧目录不能互相包含。");
@@ -131,7 +135,12 @@ public sealed partial class InstanceService
         try
         {
             await _files!.MoveDirectoryAsync(source, target, identity); moved = true;
-            lock (_gate) { _store.Save(Copy(next)); _catalog = next; Error = null; StatusMessage = "游戏目录已修改：" + target; }
+            lock (_gate)
+            {
+                _store.Save(Copy(next)); _catalog = next;
+                if (_browseDirectory is not null) _browseDirectory = MapPath(_browseDirectory, source, target);
+                Error = null; StatusMessage = "游戏目录已修改：" + target;
+            }
             return true;
         }
         catch (Exception ex)
@@ -207,6 +216,7 @@ public sealed partial class InstanceService
     private static GameInstance RebaseInstance(GameInstance item, string from, string to) => RebaseImportedSettings(item, from, to) with
     {
         SourcePath = MapPath(item.SourcePath, from, to), RootDirectory = MapPath(item.RootDirectory, from, to),
+        CollectionDirectory = item.CollectionDirectory is null ? null : MapPath(item.CollectionDirectory, from, to),
         LibraryDirectory = MapPath(item.LibraryDirectory, from, to), AssetsDirectory = MapPath(item.AssetsDirectory, from, to),
         VersionsDirectory = MapPath(item.VersionsDirectory, from, to), LocalLibraryDirectory = item.LocalLibraryDirectory is { } local ? MapPath(local, from, to) : null,
         PresetIconPath = item.PresetIconPath is { } icon ? MapPath(icon, from, to) : null,

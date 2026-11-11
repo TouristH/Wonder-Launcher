@@ -19,6 +19,7 @@ internal sealed partial class AccountManagerWindow : Window
     private readonly AccountService _service;
     private readonly Action<Uri> _openBrowser;
     private readonly Func<string, CancellationToken, Task<byte[]>>? _textureDownload;
+    private readonly Func<string, string, CancellationToken, Task<byte[]?>>? _defaultSkinDownload;
     private readonly Func<GameInstance?>? _selectedInstance;
     private readonly InstanceService? _instances;
     private readonly string _offlineUsername;
@@ -45,13 +46,15 @@ internal sealed partial class AccountManagerWindow : Window
     private string? _reauthenticateId;
 
     public AccountManagerWindow(AccountService service, string offlineUsername = "Player", Action<Uri>? openBrowser = null,
-        Func<string, CancellationToken, Task<byte[]>>? textureDownload = null, Func<GameInstance?>? selectedInstance = null, InstanceService? instances = null)
+        Func<string, CancellationToken, Task<byte[]>>? textureDownload = null, Func<GameInstance?>? selectedInstance = null, InstanceService? instances = null,
+        Func<string, string, CancellationToken, Task<byte[]?>>? defaultSkinDownload = null)
     {
         _service = service; _offlineUsername = offlineUsername;
         _textureDownload = textureDownload;
+        _defaultSkinDownload = defaultSkinDownload;
         _instances = instances;
         _selectedInstance = selectedInstance ?? (() => instances?.SelectedInstance);
-        _instancePreviewKey = AccountAvatarLoader.InstanceKey(_selectedInstance());
+        _instancePreviewKey = AccountAvatarLoader.InstanceKey(_selectedInstance(), _instances?.Catalog.Instances);
         _openBrowser = openBrowser ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }));
         Title = "账户中心 · Wonder Launcher"; Width = 1100; Height = 800; MinWidth = 880; MinHeight = 660;
         Background = Palette.Background; Foreground = Palette.Text; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -206,7 +209,7 @@ internal sealed partial class AccountManagerWindow : Window
         void Update()
         {
             if (_closed) return;
-            var key = AccountAvatarLoader.InstanceKey(_selectedInstance?.Invoke());
+            var key = AccountAvatarLoader.InstanceKey(_selectedInstance?.Invoke(), _instances?.Catalog.Instances);
             if (key == _instancePreviewKey) return;
             _instancePreviewKey = key; _cardKey = null;
             if (_renderedProfile?.Kind == AccountKind.Offline) _renderedProfile = null;

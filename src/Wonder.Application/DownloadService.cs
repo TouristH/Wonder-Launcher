@@ -120,18 +120,21 @@ public sealed class DownloadService : IDisposable
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)) throw new ArgumentException("安装目标必须是完整路径。");
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     }
+
+    private static bool CreatesInstance(GameInstallRequest? game, ResourceInstallRequest? resource) =>
+        game is not null || resource is { DownloadOnly: false, Project.Kind: DownloadResourceKind.Modpack };
     private void EnsureNoConflict(GameInstallRequest? game, ResourceInstallRequest? resource, Job? except = null)
     {
         var target = Destination(game, resource);
-        var createsInstance = game is not null || resource!.Project.Kind == DownloadResourceKind.Modpack;
+        var createsInstance = CreatesInstance(game, resource);
         foreach (var other in _jobs)
         {
             if (ReferenceEquals(other, except) || other.Snapshot.State is not (DownloadTaskState.Queued or DownloadTaskState.Running or DownloadTaskState.Paused)) continue;
             if (!WonderPath.Comparer.Equals(Destination(other.Game, other.Resource), target)) continue;
             // Installs own the entire new directory. Resource tasks are serialized and may share
             // an existing instance, but two pending versions of the same project are ambiguous.
-            if (createsInstance || other.Game is not null || other.Resource!.Project.Kind == DownloadResourceKind.Modpack ||
-                other.Resource.Project.Id == resource!.Project.Id)
+            if (createsInstance || CreatesInstance(other.Game, other.Resource) ||
+                other.Resource?.Project.Id == resource?.Project.Id)
                 throw new InvalidOperationException("此目标已有相同或冲突的未结束任务，请等待完成或先取消。");
         }
     }
@@ -178,7 +181,7 @@ public sealed class DownloadService : IDisposable
                 // after the owner has closed and released its data-directory guard.
                 lock (_gate) if (_disposed) return;
                 string? warning = null;
-                if (_import is not null && (job.Game is not null || job.Resource!.Project.Kind == DownloadResourceKind.Modpack))
+                if (_import is not null && CreatesInstance(job.Game, job.Resource))
                 {
                     try { await _import(path).ConfigureAwait(false); }
                     catch (Exception ex) { warning = "文件已安装，实例登记尚未完成：" + ex.Message + "。可在实例管理中导入安装目录。"; }

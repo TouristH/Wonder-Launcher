@@ -27,7 +27,7 @@ Wonder 内置公开应用 ID，普通玩家不填写开发配置。没有替换�
 
 不同版本的映射并不一致，例如现代版经典 Steve 的 UUID 在旧版可能显示 Alex。界面明确列出两种结果；早于 1.8 的版本通常只有 Steve。服务器可能按用户名重新生成 UUID，模组或资源包也可能覆盖外观，所以此功能不保证服务器中的最终皮肤。它不安装皮肤模组、不注入第三方认证、不上传图片。
 
-预览仅从当前选中、已安装游戏的已知客户端 JAR 位置读取指定默认纹理，限制文件及 PNG 尺寸；未安装相应纹理时显示带说明的模型示意。程序不复制或分发 Minecraft 默认纹理，不扫描整个磁盘或修改游戏 JAR。
+预览先尝试当前实例的客户端纹理，缺少时查看其他已登记实例。账户详情也能从 Mojang 客户端下载约 19 KB 的皮肤片段，校验后在内存中复用。首次打开且本地和网络都没有可用纹理时，界面显示带说明的模型示意。
 
 默认皮肤名称和双模型由 [Minecraft 官方介绍](https://www.minecraft.net/en-us/article/introducing-new-default-skins)确认；UUID 映射互操作参考 [HMCL TexturesLoader](https://github.com/HMCL-dev/HMCL/blob/main/HMCL/src/main/java/org/jackhuang/hmcl/game/TexturesLoader.java)。Wonder 独立实现 Java UUID 哈希和确定性身份生成，没有复制上游代码或资源。
 

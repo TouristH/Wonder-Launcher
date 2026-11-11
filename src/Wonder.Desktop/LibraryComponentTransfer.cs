@@ -7,7 +7,7 @@ using Wonder.Workspace;
 
 namespace Wonder.Desktop;
 
-internal sealed record LibraryComponentTransfer(ComponentItem Application, Vector GrabOffset)
+internal sealed record LibraryComponentTransfer(ComponentItem Application, Vector GrabOffset, bool UsesFloatingPreview = false)
 {
     // Pointer-to-center offset in native component DIP, independent of library or desktop scaling.
     // Only this running application can supply live library components.

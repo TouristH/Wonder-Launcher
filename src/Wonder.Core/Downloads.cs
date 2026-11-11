@@ -4,6 +4,7 @@ namespace Wonder.Core;
 
 public enum DownloadSource { Automatic, Official, BmclApi }
 public enum DownloadResourceKind { Mod, Modpack, ResourcePack, Shader }
+public enum GameAddonKind { OptiFine, FabricApi, QuiltApi }
 public enum DownloadTaskState { Queued, Running, Paused, Completed, Failed, Cancelled }
 
 public sealed record DownloadOptions
@@ -20,13 +21,42 @@ public sealed record DownloadOptions
 }
 
 public sealed record DownloadFile(string Url, string Destination, string? Hash = null, string HashAlgorithm = "SHA1", long? Size = null);
-public sealed record DownloadProgress(string Stage, long BytesReceived = 0, long? TotalBytes = null, int CompletedFiles = 0, int TotalFiles = 0, double BytesPerSecond = 0);
+public sealed record DownloadProgress(string Stage, long BytesReceived = 0, long? TotalBytes = null, int CompletedFiles = 0, int TotalFiles = 0, double BytesPerSecond = 0,
+    int StepNumber = 0, int TotalSteps = 0, string? StepName = null);
 public sealed record MinecraftVersion(string Id, string Type, string Url, DateTimeOffset ReleaseTime);
 public sealed record LoaderVersion(string Loader, string Version, string MinecraftVersion, bool Stable = true);
-public sealed record ResourceProject(string Id, string Title, string Description, DownloadResourceKind Kind, string? IconUrl = null, long Downloads = 0);
+public sealed record GameAddonVersion(string Id, string Name, GameAddonKind Kind, bool Stable = true);
+public sealed record ResourceProject(string Id, string Title, string Description, DownloadResourceKind Kind, string? IconUrl = null, long Downloads = 0)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Author { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PageUrl { get; init; }
+}
 public sealed record ResourceDependency(string? ProjectId, string? VersionId, string Type);
-public sealed record ResourceVersion(string Id, string ProjectId, string Name, string VersionNumber, IReadOnlyList<string> GameVersions, IReadOnlyList<string> Loaders, IReadOnlyList<DownloadFile> Files, IReadOnlyList<ResourceDependency> Dependencies);
+public sealed record ResourceVersion(string Id, string ProjectId, string Name, string VersionNumber, IReadOnlyList<string> GameVersions, IReadOnlyList<string> Loaders, IReadOnlyList<DownloadFile> Files, IReadOnlyList<ResourceDependency> Dependencies)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReleaseType { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? PublishedAt { get; init; }
+}
 public sealed record ResourceSearchResult(IReadOnlyList<ResourceProject> Projects, int Total, int Offset);
-public sealed record GameInstallRequest(string MinecraftVersion, string InstanceName, string TargetDirectory, string Loader = "vanilla", string? LoaderVersion = null, string? JavaPath = null);
-public sealed record ResourceInstallRequest(ResourceProject Project, ResourceVersion Version, string TargetDirectory, string MinecraftVersion = "", string Loader = "", string? InstanceName = null, string? JavaPath = null);
+public sealed record GameInstallRequest(string MinecraftVersion, string InstanceName, string TargetDirectory, string Loader = "vanilla", string? LoaderVersion = null, string? JavaPath = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? OptiFineVersion = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? FabricApiVersion = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? QuiltApiVersion = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool InstallInCollection { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ShareGameDirectory { get; init; }
+}
+public sealed record ResourceInstallRequest(ResourceProject Project, ResourceVersion Version, string TargetDirectory, string MinecraftVersion = "", string Loader = "", string? InstanceName = null, string? JavaPath = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool InstallInCollection { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool DownloadOnly { get; init; }
+}
 public sealed record DownloadTaskSnapshot(string Id, string Title, DownloadTaskState State, DownloadProgress Progress, string? Error, string? ResultPath, DateTimeOffset CreatedAt);

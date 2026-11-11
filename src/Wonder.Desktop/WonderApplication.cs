@@ -15,6 +15,7 @@ public sealed class WonderApplication : Avalonia.Application
         RequestedThemeVariant = ThemeVariant.Dark;
         Styles.Add(new FluentTheme());
         HoverTipBehavior.Initialize();
+        ButtonClickRipples.Initialize();
     }
 
     public override void OnFrameworkInitializationCompleted()

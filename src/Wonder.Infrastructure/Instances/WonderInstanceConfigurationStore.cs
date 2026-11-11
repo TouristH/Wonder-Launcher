@@ -17,7 +17,7 @@ public static class WonderInstanceConfigurationStore
         AllowDuplicateProperties = false, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 32
     };
 
-    public static void Create(string gameRoot, string instanceName, string versionId, string? javaPath)
+    public static void Create(string gameRoot, string instanceName, string versionId, string? javaPath, bool installInCollection = false, bool shareGameDirectory = false)
     {
         var root = FullRoot(gameRoot);
         var path = Path.Combine(root, FileName);
@@ -28,13 +28,15 @@ public static class WonderInstanceConfigurationStore
                 throw new IOException("此目录已有不同的 Wonder 实例配置，未覆盖。");
             return;
         }
+        if (installInCollection && CollectionRoot(root) is null || shareGameDirectory && !installInCollection)
+            throw new ArgumentException("新实例必须位于所选游戏目录的 instances 文件夹下。");
         var settings = new InstanceSettings { JavaPath = javaPath };
         settings.Validate();
         var document = new Configuration
         {
             Id = Guid.NewGuid().ToString("N"), Name = instanceName, VersionId = CheckedSegment(versionId),
             CreatedAt = DateTimeOffset.UtcNow, CreatedBy = new("Wonder Minecraft Launcher", LauncherBuildInfo.Version),
-            LaunchSettings = EncodeSettings(root, settings)
+            LaunchSettings = EncodeSettings(root, settings), InstallInCollection = installInCollection, ShareGameDirectory = shareGameDirectory
         };
         var instance = ToInstance(root, document);
         document.GameVersion = instance.GameVersion; document.ModLoaders = instance.ModLoaders;
@@ -85,7 +87,7 @@ public static class WonderInstanceConfigurationStore
             configuration.CreatedAt == default || configuration.CreatedBy is null || string.IsNullOrWhiteSpace(configuration.CreatedBy.Name) ||
             configuration.CreatedBy.Name.Length > 120 || configuration.CreatedBy.Name.Any(char.IsControl) ||
             string.IsNullOrWhiteSpace(configuration.CreatedBy.Version) || configuration.CreatedBy.Version.Length > 100 || configuration.CreatedBy.Version.Any(char.IsControl) ||
-            configuration.LaunchSettings is null || configuration.ModLoaders is null)
+            configuration.LaunchSettings is null || configuration.ModLoaders is null || configuration.ShareGameDirectory && !configuration.InstallInCollection)
             throw new InvalidDataException("Wonder 实例配置格式、标识或创建信息无效。");
         if (string.IsNullOrWhiteSpace(configuration.Name) || configuration.Name.Length > 120 || configuration.Name.Any(char.IsControl))
             throw new InvalidDataException("Wonder 实例名称无效。");
@@ -99,17 +101,27 @@ public static class WonderInstanceConfigurationStore
         var metadata = Path.Combine(versions, configuration.VersionId, configuration.VersionId + ".json");
         ValidateMetadata(root, versions, configuration.VersionId);
         var settings = DecodeSettings(root, configuration.LaunchSettings);
+        var collection = configuration.InstallInCollection ? CollectionRoot(root) : null;
+        var gameDirectory = configuration.ShareGameDirectory ? collection ?? root : root;
         var instance = new GameInstance
         {
             Id = configuration.Id, Name = configuration.Name, Source = InstanceSource.Wonder,
-            SourcePath = root, RootDirectory = root, DefaultGameDirectory = root, VersionId = configuration.VersionId,
+            SourcePath = root, RootDirectory = root, CollectionDirectory = collection, DefaultGameDirectory = gameDirectory, VersionId = configuration.VersionId,
             GameVersion = InstanceVersionMetadata.ReadStandard(metadata, versions),
             ModLoaders = InstanceVersionMetadata.ReadModLoaders([metadata], versions),
             VersionsDirectory = versions, LibraryDirectory = Path.Combine(root, "libraries"), AssetsDirectory = Path.Combine(root, "assets"),
             MetadataPaths = [metadata], Overrides = settings, ConfigSource = Path.Combine(root, FileName),
-            PresetIconPath = InstanceIcons.ForStandard(Path.GetDirectoryName(metadata)!, settings.GameDirectory ?? root, root)
+            PresetIconPath = InstanceIcons.ForStandard(Path.GetDirectoryName(metadata)!, settings.GameDirectory ?? gameDirectory, root)
         };
         instance.Validate(); return instance;
+    }
+
+    internal static string? CollectionRoot(string root)
+    {
+        if (!WonderPath.Comparer.Equals(Path.GetFileName(root), ".minecraft")) return null;
+        var container = Path.GetDirectoryName(root);
+        var instances = container is null ? null : Path.GetDirectoryName(container);
+        return instances is not null && WonderPath.Comparer.Equals(Path.GetFileName(instances), "instances") ? Path.GetDirectoryName(instances) : null;
     }
 
     private static void ValidateMetadata(string root, string versions, string version)
@@ -195,6 +207,8 @@ public static class WonderInstanceConfigurationStore
         [JsonRequired] public Creator? CreatedBy { get; set; }
         [JsonRequired] public DateTimeOffset CreatedAt { get; set; }
         [JsonRequired] public InstanceSettings LaunchSettings { get; set; } = new();
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool InstallInCollection { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ShareGameDirectory { get; set; }
     }
     private sealed record Creator(string Name, string Version);
 }

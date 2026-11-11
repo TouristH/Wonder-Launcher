@@ -42,7 +42,8 @@ internal sealed partial class AccountManagerWindow
             var choice = draftId is null ? OfflineDefaultSkins.ForUuid(draftUuid) : OfflineDefaultSkins.Get(draftId);
             compatibility.Text = (draftId is null ? "自动分配。" : choice.Description + "\n") +
                 "1.19.3+：" + OfflineDefaultSkins.ForUuid(draftUuid).Name + "\n1.8–1.19.2：" + OfflineDefaultSkins.LegacySkinName(draftUuid) + "\n早于 1.8 通常只有 Steve。";
-            _ = preview.LoadDefaultAsync(_selectedInstance?.Invoke(), choice.TextureName, choice.Variant, choice.IsLegacy);
+            _ = preview.LoadDefaultAsync(_selectedInstance?.Invoke(), choice.TextureName, choice.Variant, choice.IsLegacy,
+                _instances?.Catalog.Instances, _defaultSkinDownload);
         }
         selector.SelectionChanged += (_, _) => PreviewChoice();
         body.Children.Add(IdleButton("应用默认皮肤…", "应用离线默认皮肤", () =>

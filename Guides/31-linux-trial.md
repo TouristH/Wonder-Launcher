@@ -14,11 +14,13 @@ Ubuntu 24.04 可安装以下依赖（其他发行版请使用其对应包名）�
 sudo apt update
 sudo apt install ca-certificates libc6 libgcc-s1 libgssapi-krb5-2 \
   libicu74 libssl3t64 libstdc++6 tzdata zlib1g \
-  libx11-6 libice6 libsm6 libfontconfig1 fonts-noto-cjk \
+  libx11-6 libxext6 libice6 libsm6 libfontconfig1 fonts-noto-cjk \
   libsecret-tools libglib2.0-bin xdg-utils
 ```
 
 前两行依赖包来自 [.NET Ubuntu 24.04 运行依赖](https://learn.microsoft.com/en-us/dotnet/core/install/linux-ubuntu-install#ubuntu-2404)，X11 与字体依赖依据 [Avalonia 原生依赖说明](https://docs.avaloniaui.net/docs/deployment/docker#required-packages)。中文界面需系统中文字体；Wayland 桌面缺少 XWayland 时还需安装并启用 `xwayland`。
+
+拖动组件时，跨窗口的实时预览使用 `libxext6` 提供的 X11 Shape 输入区域，让鼠标可以穿过预览投放到下方窗口。预览的透明背景由桌面合成器提供。[X.Org Shape 扩展](https://www.x.org/archive/X11R7.5/doc/Xext/shape.pdf)
 
 账户保存依赖 `secret-tool`（[Ubuntu 的 libsecret-tools 包](https://packages.ubuntu.com/en/noble/libsecret-tools)）以及正常运行、已解锁的 Secret Service 密钥环，例如 GNOME Keyring。仅安装命令行工具不代表密钥环服务已经就绪；在系统“密码与密钥”等管理器中确认。GNOME 桌面通常已配置该服务，其他桌面需配置兼容服务。不要用 `sudo` 启动 Wonder。目录回收使用 `gio`，由 [libglib2.0-bin](https://packages.ubuntu.com/noble/libglib2.0-bin) 提供；默认浏览器与目录打开还需正常的桌面关联。
 

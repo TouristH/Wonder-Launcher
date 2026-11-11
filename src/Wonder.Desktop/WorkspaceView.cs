@@ -28,7 +28,7 @@ public sealed partial class WorkspaceView : Panel
     // Divider resizing temporarily changes the model until release or cancellation.
     internal bool HasPendingGesture => _gesture is not null;
     private bool _runtimeVisible = true;
-    internal Control? ComponentLibraryDropTarget { get; set; }
+    internal ComponentLibraryView? ComponentLibraryDropTarget { get; set; }
     private readonly Dictionary<string, AreaView> _areas = new();
     private readonly Dictionary<string, Border> _splitters = new();
     private readonly DispatcherTimer _holdTimer;
@@ -36,14 +36,15 @@ public sealed partial class WorkspaceView : Panel
     private readonly TextBlock _dragText;
     private Gesture? _gesture;
     private ComponentView? _dragPreview;
+    private FloatingComponentPreview? _floatingPreview;
     private ComponentView? _libraryPreview;
     private Rect _libraryPreviewBounds;
-    private string? _libraryTargetAreaId;
     private Point _libraryPointer;
     private string? _hoveredSplitId;
     private bool _finishing;
     private AreaRenameWindow? _renameDialog;
     private LauncherSettings _settings = new();
+    private double ComponentScale => _settings.ComponentScalePercent / 100d;
 
     public void ApplySettings(LauncherSettings settings)
     {
@@ -88,15 +89,15 @@ public sealed partial class WorkspaceView : Panel
         PointerExited += (_, _) => { _hoveredSplitId = null; UpdateHighlights(); };
         DetachedFromVisualTree += (_, _) => { CancelGesture(); FinishSidebarAnimation(); };
         DragDrop.SetAllowDrop(this, true);
-        DragDrop.AddDragEnterHandler(this, LibraryDragOver);
-        DragDrop.AddDragOverHandler(this, LibraryDragOver);
+        DragDrop.AddDragEnterHandler(this, ComponentDragOver);
+        DragDrop.AddDragOverHandler(this, ComponentDragOver);
         DragDrop.AddDragLeaveHandler(this, (_, _) =>
         {
             _sidebarPointer = new Point(-1, -1);
             ClearLibraryDrop();
             ScheduleSidebarClose();
         });
-        DragDrop.AddDropHandler(this, LibraryDrop);
+        DragDrop.AddDropHandler(this, DropComponent);
         Rebuild();
     }
 
@@ -262,71 +263,130 @@ public sealed partial class WorkspaceView : Panel
         return true;
     }
 
-    private bool CanDropLibraryComponent(LibraryComponentTransfer data, Point point, out Area? area)
+    private sealed record ComponentDrag(ComponentItem Item, Vector GrabOffset, Area? Source, bool UsesFloatingPreview)
     {
-        var id = AreaAt(point);
-        area = id == null ? null : Document.FindArea(id);
-        return Document.Library.Contains(data.Application) && new Rect(Bounds.Size).Contains(point) && (Document.Root == null || area is { Components.Count: < 24 });
+        public DragDropEffects Effect => Source is null ? DragDropEffects.Copy : DragDropEffects.Move;
     }
 
-    private void LibraryDragOver(object? sender, DragEventArgs e)
+    private ComponentDrag? GetComponentDrag(IDataTransfer data)
     {
-        var data = e.DataTransfer.TryGetValue(LibraryComponentTransfer.Format);
+        if (data.TryGetValue(WorkspaceComponentTransfer.Format) is { } move && move.Source == this && move.Document == Document &&
+            Document.Areas.FirstOrDefault(area => area.Components.Contains(move.Shortcut)) is { } source)
+            return new ComponentDrag(move.Shortcut, move.GrabOffset, source, move.UsesFloatingPreview);
+        if (data.TryGetValue(LibraryComponentTransfer.Format) is { } copy && Document.Library.Contains(copy.Application))
+            return new ComponentDrag(copy.Application, copy.GrabOffset, null, copy.UsesFloatingPreview);
+        return null;
+    }
+
+    private bool CanDropComponent(ComponentDrag data, Point point, out Area? area)
+    {
+        area = AreaAt(point) is { } id ? Document.FindArea(id) : null;
+        return new Rect(Bounds.Size).Contains(point) &&
+            (Document.Root == null && data.Source == null || area is not null && (area == data.Source || area.Components.Count < 24));
+    }
+
+    private void ComponentDragOver(object? sender, DragEventArgs e)
+    {
+        var data = GetComponentDrag(e.DataTransfer);
         if (data == null) { e.DragEffects = DragDropEffects.None; ClearLibraryDrop(); return; }
         CancelGesture();
         var point = e.GetPosition(this);
-        UpdateSidebarHover(point);
-        var allowed = e.DragEffects.HasFlag(DragDropEffects.Copy) && CanDropLibraryComponent(data, point, out _);
-        e.DragEffects = allowed ? DragDropEffects.Copy : DragDropEffects.None;
+        var allowed = ShowComponentDrop(data, point, e.DragEffects);
+        e.DragEffects = allowed ? data.Effect : DragDropEffects.None;
         e.Handled = true;
-        if (!allowed) { ClearLibraryDrop(); return; }
-        if (_libraryPreview?.Item.Application != data.Application)
+    }
+
+    private bool ShowComponentDrop(ComponentDrag data, Point point, DragDropEffects effects)
+    {
+        UpdateSidebarHover(point);
+        var allowed = CanDropComponent(data, point, out var target) && effects.HasFlag(data.Effect);
+        if (!new Rect(Bounds.Size).Contains(point)) { ClearLibraryDrop(); return false; }
+        if (!data.UsesFloatingPreview && _libraryPreview?.Item != data.Item)
         {
             ClearLibraryDrop();
-            _libraryPreview = new ComponentView(Document.CreateShortcut(data.Application), Components, preview: true) { IsHitTestVisible = false, Opacity = .85, ZIndex = 400 };
-            _libraryPreview.SetScale(_settings.ComponentScalePercent / 100d);
+            _libraryPreview = CreateLibraryPreview(data.Item);
             Children.Add(_libraryPreview);
-            _libraryPreview.SetSelected(true);
         }
-        _libraryTargetAreaId = AreaAt(point);
         _libraryPointer = point;
-        _libraryPreviewBounds = LibraryPlacement(data, point, _libraryPreview.Footprint);
-        _dragText.Text = _libraryTargetAreaId == null ? "松开创建功能区并放置快捷方式" : "松开创建快捷方式";
+        if (_libraryPreview is { } preview)
+        {
+            preview.Opacity = allowed ? .85 : .55;
+            _libraryPreviewBounds = LibraryPlacement(data.GrabOffset, point, preview.Footprint, target);
+        }
+        _dragText.Text = !allowed ? "此处无法放置" : data.Source != null ? "松开放入功能区" : target == null ? "松开创建功能区并放置快捷方式" : "松开创建快捷方式";
         _dragLabel.IsVisible = true;
         UpdateHighlights();
         InvalidateMeasure();
+        return allowed;
     }
 
-    private Rect LibraryPlacement(LibraryComponentTransfer data, Point point, Size size)
+    internal void UpdateCapturedLibraryDrag(ComponentItem application, Vector grabOffset, PixelPoint screenPoint, bool floating)
     {
-        var id = AreaAt(point);
-        var area = id == null ? new LayoutRect(0, 0, Bounds.Width, Bounds.Height) : GetAreaBounds(id);
-        var center = point + data.GrabOffset * (_settings.ComponentScalePercent / 100d);
+        var point = this.PointToClient(screenPoint);
+        if (!new Rect(Bounds.Size).Contains(point) || !Document.Library.Contains(application))
+        {
+            ClearLibraryDrop();
+            return;
+        }
+        ShowComponentDrop(new ComponentDrag(application, grabOffset, null, floating), point, DragDropEffects.Copy);
+    }
+
+    internal bool DropCapturedLibraryDrag(ComponentItem application, Vector grabOffset, PixelPoint screenPoint)
+    {
+        ClearLibraryDrop();
+        var data = new ComponentDrag(application, grabOffset, null, false);
+        var point = this.PointToClient(screenPoint);
+        if (!Document.Library.Contains(application) || !CanDropComponent(data, point, out var target) ||
+            TopLevel.GetTopLevel(this) is not Window window || !X11FloatingPreview.IsWindowAt(window, screenPoint)) return false;
+        PlaceComponentDrop(data, point, target);
+        return true;
+    }
+
+    internal ComponentView CreateLibraryPreview(ComponentItem application)
+    {
+        var preview = new ComponentView(application, Components, preview: true, livePreview: true) { Opacity = .85, ZIndex = 400 };
+        preview.SetScale(ComponentScale);
+        preview.SetSelected(true);
+        return preview;
+    }
+
+    private Rect LibraryPlacement(Vector grabOffset, Point point, Size size, Area? target)
+    {
+        var area = target == null ? new LayoutRect(0, 0, Bounds.Width, Bounds.Height) : GetAreaBounds(target.Id);
+        var center = point + grabOffset * ComponentScale;
         var offset = ClampOffset(area, size, center.X - area.X - area.Width / 2, center.Y - area.Y - area.Height / 2);
         return new Rect(area.X + area.Width / 2 + offset.X - size.Width / 2, area.Y + area.Height / 2 + offset.Y - size.Height / 2, size.Width, size.Height);
     }
 
-    private void LibraryDrop(object? sender, DragEventArgs e)
+    private void DropComponent(object? sender, DragEventArgs e)
     {
-        var data = e.DataTransfer.TryGetValue(LibraryComponentTransfer.Format);
+        var data = GetComponentDrag(e.DataTransfer);
         if (data == null) { e.DragEffects = DragDropEffects.None; ClearLibraryDrop(); return; }
         var point = e.GetPosition(this);
-        var allowed = e.DragEffects.HasFlag(DragDropEffects.Copy) && CanDropLibraryComponent(data, point, out _);
-        e.DragEffects = allowed ? DragDropEffects.Copy : DragDropEffects.None;
+        var allowed = CanDropComponent(data, point, out var target) && e.DragEffects.HasFlag(data.Effect);
+        e.DragEffects = allowed ? data.Effect : DragDropEffects.None;
         e.Handled = true;
         ClearLibraryDrop();
         if (!allowed) return;
+        PlaceComponentDrop(data, point, target);
+    }
+
+    private void PlaceComponentDrop(ComponentDrag data, Point point, Area? target)
+    {
         CancelGesture();
-        var id = AreaAt(point);
-        var area = id == null ? Document.AddArea() : Document.FindArea(id)!;
-        var item = Document.CreateShortcut(data.Application);
+        var area = target ?? Document.AddArea();
+        var item = data.Source is null ? Document.CreateShortcut(data.Item) : data.Item;
         var definition = Components.GetDefinition(item);
-        var size = new Size(definition.Width, definition.Height) * (_settings.ComponentScalePercent / 100d);
-        var placed = LibraryPlacement(data, point, size);
+        var size = new Size(definition.Width, definition.Height) * ComponentScale;
+        var placed = LibraryPlacement(data.GrabOffset, point, size, area);
         var bounds = GetAreaBounds(area.Id);
         item.X = placed.Center.X - bounds.X - bounds.Width / 2 - area.CenterX;
         item.Y = placed.Center.Y - bounds.Y - bounds.Height / 2 - area.CenterY;
-        area.Components.Add(item);
+        if (data.Source != area)
+        {
+            data.Source?.Components.Remove(item);
+            area.Components.Add(item);
+        }
         CommitStructure();
     }
 
@@ -338,7 +398,6 @@ public sealed partial class WorkspaceView : Panel
             _libraryPreview.Dispose();
         }
         _libraryPreview = null;
-        _libraryTargetAreaId = null;
         if (_gesture == null) _dragLabel.IsVisible = false;
         UpdateHighlights();
         InvalidateArrange();
@@ -450,9 +509,9 @@ public sealed partial class WorkspaceView : Panel
             var size = _dragLabel.DesiredSize;
             _dragLabel.Arrange(new Rect(Math.Clamp(_gesture.Last.X + 18, 0, Math.Max(0, finalSize.Width - size.Width)), Math.Clamp(_gesture.Last.Y + 18, 0, Math.Max(0, finalSize.Height - size.Height)), size.Width, size.Height));
         }
-        if (_libraryPreview != null)
+        if (_libraryPreview != null) _libraryPreview.Arrange(_libraryPreviewBounds);
+        if (_gesture == null && _dragLabel.IsVisible)
         {
-            _libraryPreview.Arrange(_libraryPreviewBounds);
             var size = _dragLabel.DesiredSize;
             _dragLabel.Arrange(new Rect(Math.Clamp(_libraryPointer.X + 18, 0, Math.Max(0, finalSize.Width - size.Width)),
                 Math.Clamp(_libraryPointer.Y + 18, 0, Math.Max(0, finalSize.Height - size.Height)), size.Width, size.Height));
@@ -521,10 +580,13 @@ public sealed partial class WorkspaceView : Panel
         _gesture.Pointer.Capture(this);
         if (_gesture.Component != null)
         {
-            _dragPreview = new ComponentView(_gesture.Component, Components, preview: true) { IsHitTestVisible = false, Opacity = .92, ZIndex = 400 };
-            _dragPreview.SetScale(_settings.ComponentScalePercent / 100d);
-            _dragPreview.SetSelected(true);
-            Children.Insert(Children.Count - 1, _dragPreview);
+            if (_gesture.Pointer.Type == PointerType.Mouse)
+                _floatingPreview = FloatingComponentPreview.TryShow(this, _gesture.Component, GrabOffset(_gesture));
+            if (_floatingPreview == null)
+            {
+                _dragPreview = CreateLibraryPreview(_gesture.Component);
+                Children.Insert(Children.Count - 1, _dragPreview);
+            }
             _areas[_gesture.AreaId!].Components[_gesture.Component.Id].Opacity = .2;
             _gesture.TargetAreaId = _gesture.AreaId;
         }
@@ -534,6 +596,10 @@ public sealed partial class WorkspaceView : Panel
         _dragLabel.IsVisible = true;
         UpdateHighlights();
         InvalidateMeasure();
+        // Keep the mouse capture on X11. Its XDND source requires another motion after
+        // starting to find a target and consumes Escape without cancelling the drag.
+        _gesture.CapturedAcrossWindows = _gesture.Component != null && _gesture.Pointer.Type == PointerType.Mouse &&
+            OperatingSystem.IsLinux() && TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.HandleDescriptor == "XID";
     }
 
     private void Moved(object? sender, PointerEventArgs e)
@@ -574,13 +640,21 @@ public sealed partial class WorkspaceView : Panel
         }
         else if (gesture.Component != null && gesture.AreaId != null)
         {
-            if (IsOverComponentLibrary(gesture.Last))
+            var library = ComponentLibraryAt(gesture.Last, gesture.CapturedAcrossWindows);
+            if (gesture.CapturedAcrossWindows)
             {
-                ReturnShortcutToLibrary(gesture);
+                if (gesture.CapturedLibrary != library) gesture.CapturedLibrary?.ClearCapturedWorkspaceDrag();
+                gesture.CapturedLibrary = library;
+                library?.ShowCapturedWorkspaceDrag(gesture.Component, GrabOffset(gesture), this.PointToScreen(gesture.Last), _floatingPreview != null);
+            }
+            else if (library != null)
+            {
+                StartNativeShortcutDrag(gesture);
                 return;
             }
-            gesture.TargetAreaId = AreaAt(gesture.Last);
-            _dragText.Text = gesture.TargetAreaId == null ? "松开取消 · Esc 返回" : "松开放入功能区 · Esc 取消";
+            gesture.TargetAreaId = library == null ? AreaAt(gesture.Last) : null;
+            _dragText.Text = library != null ? "松开移除此快捷方式 · Esc 取消" :
+                gesture.TargetAreaId == null ? "松开取消 · Esc 返回" : "松开放入功能区 · Esc 取消";
         }
         else if (gesture.Split != null)
         {
@@ -596,25 +670,34 @@ public sealed partial class WorkspaceView : Panel
         InvalidateArrange();
     }
 
-    private bool IsOverComponentLibrary(Point point)
+    private ComponentLibraryView? ComponentLibraryAt(Point point, bool checkX11, bool releasing = false)
     {
         var target = ComponentLibraryDropTarget;
         if (target == null || TopLevel.GetTopLevel(target) is not Window { IsVisible: true } window ||
-            window.WindowState == WindowState.Minimized) return false;
-        return new Rect(target.Bounds.Size).Contains(target.PointToClient(this.PointToScreen(point)));
+            window.WindowState == WindowState.Minimized) return null;
+        var screenPoint = this.PointToScreen(point);
+        if (!new Rect(target.Bounds.Size).Contains(target.PointToClient(screenPoint))) return null;
+        if (checkX11 && !(_floatingPreview?.IsX11WindowAt(window, screenPoint) ??
+            (!releasing || X11FloatingPreview.IsWindowAt(window, screenPoint)))) return null;
+        return target;
     }
 
-    private async void ReturnShortcutToLibrary(Gesture gesture)
+    private async void StartNativeShortcutDrag(Gesture gesture)
     {
+        using var preview = _floatingPreview;
+        _floatingPreview = null;
         var data = new DataTransfer();
         data.Add(DataTransferItem.Create(WorkspaceComponentTransfer.Format,
-            new WorkspaceComponentTransfer(this, gesture.Component!)));
-        // Only the library's accepted Drop removes a shortcut. Finish capture and
-        // preview first so native capture loss cannot cancel or touch a removed view.
+            new WorkspaceComponentTransfer(this, gesture.Component!, GrabOffset(gesture), preview != null)));
+        // Release local capture before entering the native drag. A valid drop in either
+        // window decides the outcome, including a return to a different workspace area.
         EndGesture();
         using var hoverSuppression = HoverTipBehavior.SuppressForNativeDrag();
-        await DragDrop.DoDragDropAsync(gesture.Trigger, data, DragDropEffects.Move);
+        try { await DragDrop.DoDragDropAsync(gesture.Trigger, data, DragDropEffects.Move); }
+        finally { ClearLibraryDrop(); }
     }
+
+    private Vector GrabOffset(Gesture gesture) => (gesture.ComponentBounds.Center - gesture.Start) / ComponentScale;
 
     private void Released(object? sender, PointerReleasedEventArgs e)
     {
@@ -623,6 +706,19 @@ public sealed partial class WorkspaceView : Panel
         var active = gesture.Active;
         gesture.Last = e.GetPosition(this);
         e.Handled = active || gesture.Aborted;
+        if (active && gesture.CapturedAcrossWindows && gesture.Component is { } dragged)
+        {
+            if (ComponentLibraryAt(gesture.Last, checkX11: true, releasing: true) != null)
+            {
+                RemoveShortcut(dragged);
+                return;
+            }
+            if (TopLevel.GetTopLevel(this) is not Window window || !X11FloatingPreview.IsWindowAt(window, this.PointToScreen(gesture.Last)))
+            {
+                CancelGesture();
+                return;
+            }
+        }
         if (gesture.CenterArea is { } centerArea)
         {
             var changed = centerArea.CenterX != gesture.OriginalX || centerArea.CenterY != gesture.OriginalY;
@@ -681,9 +777,12 @@ public sealed partial class WorkspaceView : Panel
         var sidebarReturn = _gesture?.SidebarArea is { SidebarEdge: not SidebarEdge.None } ? Snapshot : null;
         _holdTimer.Stop();
         var pointer = _gesture?.Pointer;
+        _gesture?.CapturedLibrary?.ClearCapturedWorkspaceDrag();
         if (_gesture?.Component != null && _gesture.AreaId != null)
             _areas[_gesture.AreaId].Components[_gesture.Component.Id].Opacity = 1;
         if (_dragPreview != null) { Children.Remove(_dragPreview); _dragPreview.Dispose(); _dragPreview = null; }
+        _floatingPreview?.Dispose();
+        _floatingPreview = null;
         _gesture = null;
         if (sidebarReturn != null) StartSidebarAnimation(sidebarReturn);
         _dragLabel.IsVisible = false;
@@ -834,6 +933,8 @@ public sealed partial class WorkspaceView : Panel
         public required PointerPressedEventArgs Trigger;
         public Point Start, Last;
         public bool Active, Aborted;
+        public bool CapturedAcrossWindows;
+        public ComponentLibraryView? CapturedLibrary;
         public string? AreaId, TargetAreaId;
         public AreaPlacement? Placement;
         public ComponentItem? Component;

@@ -8,6 +8,7 @@ namespace Wonder.Application;
 public sealed partial class InstanceService
 {
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _discoveryGate = new(1);
     private readonly IInstanceStore _store;
     private readonly IInstanceDiscovery _discovery;
     private readonly IGameLauncher _launcher;
@@ -18,6 +19,7 @@ public sealed partial class InstanceService
     private readonly List<string> _logs = [];
     private bool _loadFailed, _operation;
     private string? _launchId;
+    private string? _browseDirectory;
     private CancellationTokenSource? _preparation;
     public event EventHandler? Changed;
     public string? Error { get; private set; }
@@ -27,6 +29,15 @@ public sealed partial class InstanceService
     public bool IsReadBlocked { get { lock (_gate) return _loadFailed; } }
     public InstanceCatalog Catalog { get { lock (_gate) { var result = Copy(_catalog); result.Instances = result.Instances.Select(x => x with { GlobalSettings = result.GlobalSettings }).ToList(); return result; } } }
     public GameInstance? SelectedInstance { get { lock (_gate) return _catalog.Instances.FirstOrDefault(x => x.Id == _catalog.SelectedInstanceId) is { } item ? Copy(item) with { GlobalSettings = _catalog.GlobalSettings } : null; } }
+    public string? SelectedGameDirectory
+    {
+        get
+        {
+            lock (_gate)
+                return _browseDirectory is { } current && _catalog.GameDirectories.Any(path => Same(path, current))
+                    ? current : _catalog.Instances.FirstOrDefault(x => x.Id == _catalog.SelectedInstanceId)?.GameDirectoryGroup ?? _catalog.GameDirectories.FirstOrDefault();
+        }
+    }
     public IReadOnlyList<string> LogLines { get { lock (_gate) return _logs.ToArray(); } }
 
     public InstanceService(IInstanceStore store, IInstanceDiscovery discovery, IGameLauncher launcher, string cacheDirectory, IInstanceFileOperations? fileOperations = null, ILaunchAccountProvider? accounts = null)
@@ -45,31 +56,71 @@ public sealed partial class InstanceService
 
     public Task ImportAsync(string path) => Discover(path, null);
     public Task ImportInstalledAsync(string path) => Discover(path, null, allowRunning: true);
+    public Task ReadRegisteredDirectoriesAsync() => DiscoverDirectories(Catalog.GameDirectories, null, allowRunning: true, automatic: true);
+    public Task ReadGameDirectoryAsync(string path) => DiscoverDirectories([path], null, allowRunning: true, automatic: true);
     public Task RefreshAsync(string id)
     {
         var item = Catalog.Instances.FirstOrDefault(x => x.Id == id);
         return item is null ? Task.CompletedTask : Discover(item.SourcePath, id);
     }
 
-    private async Task Discover(string path, string? onlyId, bool allowRunning = false)
+    private Task Discover(string path, string? onlyId, bool allowRunning = false) =>
+        DiscoverDirectories([path], onlyId, allowRunning, automatic: false);
+
+    private async Task DiscoverDirectories(IReadOnlyList<string> paths, string? onlyId, bool allowRunning, bool automatic)
     {
-        lock (_gate)
-        {
-            if (_loadFailed || _operation || (!allowRunning && _launchId is not null)) return;
-            _operation = true; Error = null; StatusMessage = "正在读取实例配置…";
-        }
-        Notify();
+        if (paths.Count == 0) return;
+        await _discoveryGate.WaitAsync();
+        var started = false;
         try
         {
-            var found = await _discovery.DiscoverAsync(path);
+            while (!started)
+            {
+                var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void ChangedWhileBusy(object? _, EventArgs args) => finished.TrySetResult();
+                lock (_gate)
+                {
+                    if (_loadFailed || (!allowRunning && (_operation || _launchId is not null))) return;
+                    if (!_operation)
+                    {
+                        started = _operation = true; Error = null;
+                        if (_launchId is null) StatusMessage = "正在读取实例配置…";
+                    }
+                    else Changed += ChangedWhileBusy;
+                }
+                if (!started)
+                {
+                    try { await finished.Task; }
+                    finally { Changed -= ChangedWhileBusy; }
+                }
+            }
+            Notify();
+            var discovered = new List<GameInstance>();
+            var diagnostics = new List<string>();
+            foreach (var path in paths)
+            {
+                if (automatic && !Directory.Exists(path)) continue;
+                try
+                {
+                    var found = await _discovery.DiscoverAsync(path);
+                    discovered.AddRange(found.Instances); diagnostics.AddRange(found.Diagnostics);
+                }
+                catch (Exception ex) when (automatic && ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException)
+                { diagnostics.Add(ex.Message); }
+            }
             var original = onlyId is null ? null : Catalog.Instances.FirstOrDefault(x => x.Id == onlyId);
-            var candidates = found.Instances.Where(x => onlyId is null || x.Id == onlyId || original is not null && SameSource(x, original)).ToArray();
-            if (candidates.Length == 0) throw new InvalidDataException("没有发现可登记的实例。" + string.Join("\n", found.Diagnostics));
+            var candidates = discovered.Where(x => onlyId is null || x.Id == onlyId || original is not null && SameSource(x, original)).DistinctBy(x => x.Id).ToArray();
+            if (candidates.Length == 0)
+            {
+                if (!automatic) throw new InvalidDataException("没有发现可登记的实例。" + string.Join("\n", diagnostics.Take(8)));
+                if (_launchId is null) StatusMessage = "已检查游戏目录。" + (diagnostics.Count > 0 ? "\n" + string.Join("\n", diagnostics.Take(8)) : "");
+                return;
+            }
             Commit(catalog =>
             {
                 foreach (var candidate in candidates)
                 {
-                    if (!catalog.GameDirectories.Any(path => Same(path, candidate.RootDirectory))) catalog.GameDirectories.Add(Full(candidate.RootDirectory));
+                    if (!catalog.GameDirectories.Any(path => Same(path, candidate.GameDirectoryGroup))) catalog.GameDirectories.Add(Full(candidate.GameDirectoryGroup));
                     var index = catalog.Instances.FindIndex(x => x.Id == (onlyId ?? candidate.Id));
                     if (index < 0)
                     {
@@ -90,20 +141,40 @@ public sealed partial class InstanceService
                     }
                 }
                 catalog.SelectedInstanceId ??= catalog.Instances.First(x => x.Id == candidates[0].Id || SameSource(x, candidates[0])).Id;
-            });
-            if (Error is null) StatusMessage = $"已读取 {candidates.Length} 个实例。" + (found.Diagnostics.Count > 0 ? "\n" + string.Join("\n", found.Diagnostics) : "");
+            }, onlySaveChanges: automatic);
+            if (Error is null && _launchId is null) StatusMessage = $"已读取 {candidates.Length} 个实例。" + (diagnostics.Count > 0 ? "\n" + string.Join("\n", diagnostics.Take(8)) : "");
         }
         catch (Exception ex) { Error = "实例读取失败：" + ex.Message; }
-        finally { lock (_gate) _operation = false; Notify(); }
+        finally
+        {
+            if (started) lock (_gate) _operation = false;
+            _discoveryGate.Release();
+            if (started) Notify();
+        }
     }
 
-    public void Select(string id) => Commit(c => { Require(c, id); c.SelectedInstanceId = id; });
+    public void Select(string id)
+    {
+        Commit(c => { Require(c, id); c.SelectedInstanceId = id; });
+        if (Error is null && SelectedInstance is { } item && item.Id == id) SelectGameDirectory(item.GameDirectoryGroup);
+    }
+    public void SelectGameDirectory(string path)
+    {
+        lock (_gate)
+        {
+            if (_browseDirectory is not null && Same(_browseDirectory, path) || !_catalog.GameDirectories.Any(root => Same(root, path))) return;
+            _browseDirectory = Full(path);
+        }
+        Notify();
+    }
     public void Rename(string id, string name) => Commit(c => Replace(c, id, x => x with { Name = name.Trim() }));
     public void UpdateSettings(string id, InstanceSettings overrides) => Commit(c => Replace(c, id, x => x with { Overrides = overrides }));
     public void UpdateInstance(string id, string name, InstanceSettings overrides) => Commit(c => Replace(c, id, x => x with { Name = name.Trim(), Overrides = overrides }));
     public void SetOfflineUsername(string username) => Commit(c => c.OfflineUsername = username.Trim());
     public void UpdateGlobalSettings(InstanceSettings settings) => Commit(c => c.GlobalSettings = settings);
-    public void ResetGlobalSettings() => UpdateGlobalSettings(new());
+    public void UpdateGlobalSettings(InstanceSettings settings, bool versionIsolationEnabled) => Commit(c =>
+    { c.GlobalSettings = settings; c.VersionIsolationEnabled = versionIsolationEnabled; });
+    public void ResetGlobalSettings() => UpdateGlobalSettings(new(), true);
     public void Remove(string id) => Commit(c =>
     {
         if (id == _launchId) throw new InvalidOperationException("实例正在启动或运行，暂不能移除登记。");
@@ -111,7 +182,7 @@ public sealed partial class InstanceService
         if (c.SelectedInstanceId == id) c.SelectedInstanceId = c.Instances.FirstOrDefault()?.Id;
     });
 
-    private void Commit(Action<InstanceCatalog> change)
+    private void Commit(Action<InstanceCatalog> change, bool onlySaveChanges = false)
     {
         lock (_gate)
         {
@@ -120,12 +191,25 @@ public sealed partial class InstanceService
             try
             {
                 var next = Copy(_catalog); change(next); next.Validate();
+                if (onlySaveChanges && next.SelectedInstanceId == _catalog.SelectedInstanceId &&
+                    next.GameDirectories.SequenceEqual(_catalog.GameDirectories, WonderPath.Comparer) &&
+                    next.Instances.Count == _catalog.Instances.Count && next.Instances.Zip(_catalog.Instances, SameReadInstance).All(equal => equal))
+                { Error = null; return; }
                 _store.Save(Copy(next)); _catalog = next; Error = null;
             }
             catch (Exception ex) { Error = "修改未保存，保留原设置：" + ex.Message; }
         }
         Notify();
     }
+
+    private static bool SameReadInstance(GameInstance left, GameInstance right) =>
+        left with
+        {
+            MetadataPaths = right.MetadataPaths, ModLoaders = right.ModLoaders,
+            Warnings = right.Warnings, PreviousRootDirectories = right.PreviousRootDirectories
+        } == right && left.MetadataPaths.SequenceEqual(right.MetadataPaths, WonderPath.Comparer) &&
+        left.ModLoaders.SequenceEqual(right.ModLoaders) && left.Warnings.SequenceEqual(right.Warnings) &&
+        left.PreviousRootDirectories.SequenceEqual(right.PreviousRootDirectories, WonderPath.Comparer);
 
     public async Task LaunchSelectedAsync()
     {
@@ -198,7 +282,8 @@ public sealed partial class InstanceService
     private static InstanceCatalog Copy(InstanceCatalog c) => new()
     {
         Version = c.Version, Instances = c.Instances.Select(Copy).ToList(),
-        GameDirectories = c.GameDirectories.Concat(c.Instances.Select(x => x.RootDirectory)).Select(Full).Distinct(WonderPath.Comparer).ToList(),
-        SelectedInstanceId = c.SelectedInstanceId, OfflineUsername = c.OfflineUsername, GlobalSettings = c.GlobalSettings
+        GameDirectories = c.GameDirectories.Concat(c.Instances.Select(x => x.GameDirectoryGroup)).Select(Full).Distinct(WonderPath.Comparer).ToList(),
+        SelectedInstanceId = c.SelectedInstanceId, OfflineUsername = c.OfflineUsername, GlobalSettings = c.GlobalSettings,
+        VersionIsolationEnabled = c.VersionIsolationEnabled
     };
 }

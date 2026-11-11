@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 [CmdletBinding()]
-param([ValidateSet('all', 'linux-x64', 'win-x64', 'osx-x64', 'osx-arm64')][string]$Runtime = 'all')
+param([ValidateSet('all', 'linux-x64', 'win-x64', 'osx-x64', 'osx-arm64')][string[]]$Runtime = 'all')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.Formats.Tar
@@ -11,7 +11,7 @@ $version = ([xml](Get-Content -LiteralPath (Join-Path $root 'Directory.Build.pro
 $artifactRoot = Join-Path $root 'artifacts'
 $stage = Join-Path $artifactRoot ('Wonder-package-staging-' + [guid]::NewGuid().ToString('N'))
 $source = Join-Path $stage 'source'
-$runtimes = if ($Runtime -eq 'all') { @('win-x64','linux-x64','osx-x64','osx-arm64') } else { @($Runtime) }
+$runtimes = if ($Runtime -contains 'all') { @('win-x64','linux-x64','osx-x64','osx-arm64') } else { $Runtime | Select-Object -Unique }
 $sourceArchive = Join-Path $artifactRoot "Wonder-$version-source.tar.gz"
 $documents = @('README.md','Wonder.md','PRIVACY.md','LICENSE','LICENSE.zh-CN.md',
     'ADDITIONAL_TERMS.md','BRANDING.md','NOTICE','THIRD-PARTY-NOTICES.md','CONTRIBUTING.md')

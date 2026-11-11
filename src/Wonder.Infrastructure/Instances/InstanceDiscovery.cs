@@ -31,6 +31,10 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         if (nativeRoot is not null)
         {
             Add(() => WonderInstanceConfigurationStore.Read(nativeRoot));
+            if (WonderPath.Comparer.Equals(selected, nativeRoot) && Directory.Exists(Path.Combine(selected, "instances")))
+                foreach (var directory in Directory.EnumerateDirectories(Path.Combine(selected, "instances")).Take(1024))
+                    if (!directory.EndsWith(".wonder-install", WonderPath.Comparison) && NativeRoot(directory) is { } child)
+                        Add(() => WonderInstanceConfigurationStore.Read(child));
             return new(found, diagnostics);
         }
         string? prism = null;
@@ -68,7 +72,8 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
                     if (!profiles.Contains(Path.GetFileName(dir))) Add(() => ReadStandard(root, dir));
             var instances = Directory.Exists(Path.Combine(selected, "instances")) ? Path.Combine(selected, "instances") : selected;
             foreach (var dir in Directory.EnumerateDirectories(instances).Take(1024))
-                if (NativeRoot(dir) is { } native) Add(() => WonderInstanceConfigurationStore.Read(native));
+                if (dir.EndsWith(".wonder-install", WonderPath.Comparison)) continue;
+                else if (NativeRoot(dir) is { } native) Add(() => WonderInstanceConfigurationStore.Read(native));
                 else if (File.Exists(Path.Combine(dir, "mmc-pack.json"))) Add(() => ReadPrism(dir));
         }
         if (found.Count == 0 && diagnostics.Count == 0) diagnostics.Add("未找到 versions/<版本>/<版本>.json 或 Prism/MultiMC 的 mmc-pack.json。");

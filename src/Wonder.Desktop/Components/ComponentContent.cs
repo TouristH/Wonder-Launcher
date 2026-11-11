@@ -2,7 +2,10 @@
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Wonder.Extensibility.Contracts;
 
@@ -34,6 +37,44 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         body.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 15, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
         body.Children.Add(new TextBlock { Text = text, FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Palette.Text });
         return Card(body);
+    }
+
+    public static ComponentContent ActionCard(ComponentPresentationContext context, Control body, string label, string action,
+        Action refresh, Func<bool>? enabled = null, Func<string>? description = null)
+    {
+        body.IsHitTestVisible = false;
+        var surface = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(22, 18), ClipToBounds = true, Child = body };
+        var button = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
+            Template = new FuncControlTemplate<Button>((_, _) => surface)
+        };
+        AutomationProperties.SetName(button, label);
+        button.Click += (_, _) => context.Invoke(action);
+        var selected = false;
+        void Paint()
+        {
+            surface.Background = button.IsPressed ? Palette.Pressed : button.IsPointerOver ? Palette.Hover : Palette.Active;
+            surface.BorderBrush = selected || button.IsFocused ? Palette.Emphasis : Palette.Accent;
+            surface.BorderThickness = new Thickness(selected || button.IsFocused ? 2.6 : 1);
+            body.Opacity = button.IsEnabled || context.IsPreview ? 1 : .55;
+        }
+        button.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == Button.IsPressedProperty || args.Property == Button.IsPointerOverProperty ||
+                args.Property == Button.IsFocusedProperty || args.Property == Button.IsEnabledProperty) Paint();
+        };
+        void Update()
+        {
+            refresh();
+            button.IsEnabled = !context.IsPreview && (enabled?.Invoke() ?? true);
+            var help = description?.Invoke() ?? context.Definition.Description;
+            AutomationProperties.SetHelpText(button, help);
+            ToolTip.SetTip(button, help);
+            Paint();
+        }
+        Update();
+        return new ComponentContent(button, Update, value => { selected = value; Paint(); });
     }
 
     internal static ComponentContent Card(Control body, Action? refresh = null, Func<Point, bool>? canStartDrag = null, Action? dispose = null)

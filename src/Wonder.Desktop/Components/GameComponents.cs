@@ -30,8 +30,8 @@ internal static class GameComponents
             statusWindow.Closed += (_, _) => statusWindow = null;
             if (owner is null) statusWindow.Show(); else statusWindow.Show(owner);
         }
-        registry.Register(new(ComponentIds.Instances, "实例管理", "读取已有游戏目录与启动器配置，管理实例并细调启动设置。", 320, 240),
-            _ => new Runtime(service, openManager, accounts), PresentInstances);
+        registry.Register(new(ComponentIds.Instances, "实例管理", "切换当前游戏目录内的实例，管理目录与启动设置。", 320, 128),
+            _ => new Runtime(service, openManager, accounts), context => PresentInstances(context, service));
         registry.Register(new(ComponentIds.Launch, "启动游戏", "点击整个组件启动当前选中的实例；长按可移动，启动详情见启动日志组件。", 300, 160),
             _ => new Runtime(service, openManager, accounts), context => PresentLaunch(context, accounts is not null));
         registry.Register(new(ComponentIds.LaunchLog, "启动日志", "查看实时启动状态和最近 200 行日志，取消启动准备或打开完整状态窗口。", 480, 300),
@@ -48,27 +48,6 @@ internal static class GameComponents
         var launchHeading = new Grid { ColumnDefinitions = new ColumnDefinitions("38,10,*") };
         launchHeading.Children.Add(icon); Grid.SetColumn(action, 2); action.VerticalAlignment = VerticalAlignment.Center; launchHeading.Children.Add(action);
         body.Children.Add(launchHeading); body.Children.Add(name); body.Children.Add(detail);
-        var surface = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(22, 18), Child = body };
-        var button = new Button
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
-            Template = new FuncControlTemplate<Button>((_, _) => surface)
-        };
-        AutomationProperties.SetName(button, accountAware ? "启动所选账户游戏" : "离线启动游戏");
-        button.Click += (_, _) => context.Invoke("launch");
-        var selected = false;
-        void Paint()
-        {
-            surface.Background = button.IsPressed ? Palette.Pressed : button.IsPointerOver ? Palette.Hover : Palette.Active;
-            surface.BorderBrush = selected || button.IsFocused ? Palette.Emphasis : Palette.Accent;
-            surface.BorderThickness = new Thickness(selected || button.IsFocused ? 2.6 : 1);
-            body.Opacity = button.IsEnabled || context.IsPreview ? 1 : .55;
-        }
-        button.PropertyChanged += (_, args) =>
-        {
-            if (args.Property == Button.IsPressedProperty || args.Property == Button.IsPointerOverProperty ||
-                args.Property == Button.IsFocusedProperty || args.Property == Button.IsEnabledProperty) Paint();
-        };
         void Refresh()
         {
             name.Text = context.Get("name", "尚未选择实例");
@@ -76,13 +55,9 @@ internal static class GameComponents
             detail.Text = context.Get("version", "请先在实例管理中选择实例") + "\n" +
                 context.Get("account-kind", "离线模式") + " · " + context.Get("username", "Player");
             action.Text = context.Get("phase") switch { "Preparing" => "正在准备…", "Running" => "游戏运行中", _ => "▶  启动游戏" };
-            button.IsEnabled = !context.IsPreview && context.Get("can-launch") == "true";
-            ToolTip.SetTip(button, name.Text + "\n" + detail.Text);
-            AutomationProperties.SetHelpText(button, name.Text + " · " + action.Text);
-            Paint();
         }
-        Refresh();
-        return new ComponentContent(button, Refresh, value => { selected = value; Paint(); });
+        return ComponentContent.ActionCard(context, body, accountAware ? "启动所选账户游戏" : "离线启动游戏", "launch",
+            Refresh, () => context.Get("can-launch") == "true", () => name.Text + "\n" + detail.Text);
     }
 
     private static ComponentContent PresentLog(ComponentPresentationContext context, Action<Window?> openStatus)
@@ -120,31 +95,82 @@ internal static class GameComponents
         Refresh(); return ComponentContent.Card(layout, Refresh, point => point.Y < 38);
     }
 
-    private static ComponentContent PresentInstances(ComponentPresentationContext context)
+    private static ComponentContent PresentInstances(ComponentPresentationContext context, InstanceService service)
     {
-        var layout = new Grid { RowDefinitions = new RowDefinitions("38,*,Auto") };
-        layout.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent, Margin = new Thickness(15, 10, 15, 0) });
-        var body = new StackPanel { Spacing = 7, Margin = new Thickness(15, 5, 15, 8) };
-        var name = new TextBlock { FontSize = 18, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
-        var detail = Label(); var status = Label(); status.MaxHeight = 36;
-        var icon = new InstanceIconView(34);
-        var identity = new Grid { ColumnDefinitions = new ColumnDefinitions("34,10,*") };
-        identity.Children.Add(icon); Grid.SetColumn(name, 2); name.VerticalAlignment = VerticalAlignment.Center; identity.Children.Add(name);
-        body.Children.Add(identity); body.Children.Add(detail); body.Children.Add(status); Grid.SetRow(body, 1); layout.Children.Add(body);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(15, 0, 15, 14) };
-        var primary = new Button { Content = "管理实例", MinHeight = 34, IsEnabled = !context.IsPreview };
+        var layout = new Grid { RowDefinitions = new RowDefinitions("30,*,Auto") };
+        var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(14, 7, 14, 0) };
+        heading.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
+        var count = Label();
+        Grid.SetColumn(count, 1); heading.Children.Add(count); layout.Children.Add(heading);
+        var choices = new ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0), MinHeight = 34,
+            ItemTemplate = new FuncDataTemplate<GameInstance>((item, _) => InstanceChoice(item))
+        };
+        AutomationProperties.SetName(choices, "切换当前目录实例");
+        var refreshing = false;
+        GameInstance[] current = [];
+        choices.SelectionChanged += (_, _) =>
+        {
+            if (!refreshing && choices.SelectedItem is GameInstance item) context.Invoke("select", item.Id);
+        };
+        Grid.SetRow(choices, 1); layout.Children.Add(choices);
+        var primary = new Button
+        {
+            Content = "管理实例", Margin = new Thickness(14, 0, 14, 9), MinWidth = 182, MinHeight = 32,
+            HorizontalAlignment = HorizontalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, IsEnabled = !context.IsPreview
+        };
         AutomationProperties.SetName(primary, "打开实例管理");
-        primary.Click += (_, _) => context.Invoke("manage"); actions.Children.Add(primary);
-        Grid.SetRow(actions, 2); layout.Children.Add(actions);
+        primary.Click += (_, _) => context.Invoke("manage");
+        Grid.SetRow(primary, 2); layout.Children.Add(primary);
         void Refresh()
         {
-            name.Text = context.Get("name", "尚未选择实例"); ToolTip.SetTip(name, name.Text);
-            icon.SetIcon(context.Get("icon-path"), context.Get("icon-key", "minecraft"));
-            detail.Text = context.Get("count", "0") + " 个实例 · " + context.Get("version", "选择已有游戏目录");
-            detail.MaxLines = 3; ToolTip.SetTip(detail, detail.Text);
-            status.Text = "在实例列表中选择启动目标或打开设置。";
+            var catalog = service.Catalog;
+            var directory = service.SelectedGameDirectory;
+            var available = catalog.Instances.Where(item => WonderPath.Comparer.Equals(item.GameDirectoryGroup, directory)).ToArray();
+            count.Text = directory is null ? "" : $"{available.Length} 个实例";
+            ToolTip.SetTip(count, directory);
+            choices.PlaceholderText = directory is null ? "尚未选择游戏目录" : available.Length == 0 ? "此目录没有实例" : "选择此目录中的实例";
+            refreshing = true;
+            try
+            {
+                if (!current.Select(ChoiceKey).SequenceEqual(available.Select(ChoiceKey)))
+                {
+                    current = available;
+                    choices.ItemsSource = current;
+                }
+                choices.SelectedIndex = Array.FindIndex(current, item => item.Id == catalog.SelectedInstanceId);
+                ToolTip.SetTip(choices, choices.SelectedItem is GameInstance item ? item.Name + " · " + item.VersionLabel : choices.PlaceholderText);
+                choices.IsEnabled = !context.IsPreview && !service.IsBusy && !service.IsReadBlocked && current.Length > 0;
+            }
+            finally { refreshing = false; }
         }
-        Refresh(); return ComponentContent.Card(layout, Refresh, point => point.Y < 38);
+        Refresh(); return ComponentContent.Card(layout, Refresh, point => point.Y < 30);
+    }
+
+    private static (string Id, string Name, string Version, string Root, string? Icon) ChoiceKey(GameInstance item) =>
+        (item.Id, item.Name, item.VersionLabel, item.RootDirectory, item.PresetIconPath);
+
+    private static Control InstanceChoice(GameInstance? item)
+    {
+        if (item is null) return new TextBlock();
+        var icon = new InstanceIconView(23);
+        icon.SetIcon(InstanceIcons.FindPreset(item), InstanceIcon.DefaultKey(item));
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("23,8,*") };
+        row.Children.Add(icon);
+        var caption = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock { Text = item.Name, FontSize = 12, LineHeight = 16, TextTrimming = TextTrimming.CharacterEllipsis },
+                new TextBlock { Text = item.VersionLabel, FontSize = 11, LineHeight = 14, Foreground = Palette.Muted, TextTrimming = TextTrimming.CharacterEllipsis }
+            }
+        };
+        ToolTip.SetTip(row, item.Name + " · " + item.VersionLabel);
+        Grid.SetColumn(caption, 2); row.Children.Add(caption);
+        return row;
     }
     private static TextBlock Label() => new() { FontSize = 11, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis };
 
@@ -185,6 +211,7 @@ internal static class GameComponents
         public void Invoke(string actionId, string? value)
         {
             if (actionId == "manage") openManager();
+            else if (actionId == "select" && value is not null) service.Select(value);
             else if (actionId == "launch") _ = service.LaunchSelectedAsync();
             else if (actionId == "cancel") service.CancelPreparation();
         }

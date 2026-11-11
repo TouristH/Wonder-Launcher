@@ -4,6 +4,7 @@
 using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
@@ -35,12 +36,17 @@ internal sealed class ComponentView : Viewbox, IDisposable
     private Size NativeSize => new(_definition.Width, _definition.Height);
     public Size Footprint => new(_definition.Width * _scale, _definition.Height * _scale);
 
-    public ComponentView(ComponentItem item, ComponentHost host, bool preview = false)
+    public ComponentView(ComponentItem item, ComponentHost host, bool preview = false, bool livePreview = false)
     {
         Item = item;
         _host = host;
         _preview = preview;
         _definition = host.GetDefinition(item);
+        if (preview)
+        {
+            IsHitTestVisible = false;
+            KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.None);
+        }
         Stretch = Stretch.Uniform;
         StretchDirection = StretchDirection.Both;
         HorizontalAlignment = HorizontalAlignment.Left;
@@ -49,14 +55,15 @@ internal sealed class ComponentView : Viewbox, IDisposable
         BuildContent();
         AttachedToVisualTree += (_, _) =>
         {
-            if (_disposed || _preview) return;
+            if (_disposed || _preview && !livePreview) return;
             _attached = true;
-            _inViewport = false;
+            _inViewport = _preview;
             _visibilityAncestors.AddRange(this.GetVisualAncestors().Prepend(this));
             foreach (var ancestor in _visibilityAncestors) ancestor.PropertyChanged += AncestorVisibilityChanged;
             // Layout supplies the first effective viewport; an offscreen catalogue card never starts eagerly.
             _session = _host.Attach(Item, visible: false);
             _session.Changed += RuntimeChanged;
+            UpdateVisibility();
             Refresh();
         };
         DetachedFromVisualTree += (_, _) =>
@@ -68,6 +75,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
         };
         EffectiveViewportChanged += (_, args) =>
         {
+            if (_preview) return;
             _inViewport = args.EffectiveViewport.Intersects(new Rect(Bounds.Size));
             UpdateVisibility();
         };
@@ -197,7 +205,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
 
     private void FailPresentation(Exception exception)
     {
-        _session?.Fail(exception);
+        if (!_preview) _session?.Fail(exception);
         BuildFailure(exception.Message);
     }
 

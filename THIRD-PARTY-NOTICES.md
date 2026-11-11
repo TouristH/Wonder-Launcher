@@ -52,7 +52,9 @@ Linux x64 0.7.2 试发行包另附 `.NET runtime linux-x64 10.0.13`、`SkiaSharp
 
 下载中心独立实现了多连接传输、安装任务与分类浏览，参考 PCL、HMCL、Axolotl 的公开下载机制与交互设计，未纳入其源代码、图标或布局素材。具体参考链接见[下载帮助](Guides/33-download-center.md#参考与许可)。BMCLAPI、Mojang、Modrinth 及加载器官方服务提供下载元数据；服务内容、游戏、Java、加载器和用户下载资源各自的版权、许可及通知继续适用，不受 Wonder 品牌附加条款重新授权。
 
-实例类型默认图标原样取自 Minecraft、FabricMC、Minecraft Forge 和 NeoForged 官方站点；不使用自行绘制的替代标志。各图标的来源、校验值、作者与原始许可/使用规则见[实例图标来源记录](ThirdPartyLicenses/InstanceIcons/SOURCE.md)。这些素材属于原权利人，不因随 Wonder 分发而改为 Wonder 原创或受其 GPL 品牌附加条款控制。整合包预设图标只读取用户本地文件，不随项目分发。
+实例类型与加载器图标来自 Minecraft Java 稳定版官方资产和 FabricMC、Quilt、Minecraft Forge、NeoForged 官方站点。来源、校验值、作者与原始许可见[实例图标来源记录](ThirdPartyLicenses/InstanceIcons/SOURCE.md)。这些素材属于原权利人。整合包预设图标读取用户本地文件，Modrinth 浏览图标来自对应发布项目。
+
+OptiFine 安装时从[官方目录](https://optifine.net/downloads)获取文件，适用 [OptiFine 版权规则](https://optifine.net/copyright)。Fabric API、QFAPI/QSL 及其他可下载内容各自适用发布方许可。
 
 Minecraft、Mojang、Microsoft、Xbox、Java 及其他名称属于各自权利人。游戏客户端、资产、模组、存档、账号凭据和第三方启动器均不因本项目源码可见而取得任何额外授权。
 

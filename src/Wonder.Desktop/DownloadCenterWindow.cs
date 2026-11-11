@@ -63,7 +63,7 @@ internal sealed partial class DownloadCenterWindow : Window
         Closed += (_, _) =>
         {
             _closed = true; downloads.Changed -= OnDownloadsChanged; instances.Changed -= OnInstancesChanged;
-            _lifetime.Cancel(); _lifetime.Dispose(); _loaderRequest?.Cancel(); _resourceRequest?.Cancel(); _versionRequest?.Cancel();
+            _lifetime.Cancel(); _lifetime.Dispose();
         };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { Close(); e.Handled = true; } };
         SelectPage(0); RefreshDownloads();
@@ -100,7 +100,12 @@ internal sealed partial class DownloadCenterWindow : Window
         if (Interlocked.Exchange(ref _refreshPending, 1) != 0) return;
         Dispatcher.UIThread.Post(() => { Interlocked.Exchange(ref _refreshPending, 0); if (!_closed) RefreshDownloads(); });
     }
-    private void OnInstancesChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() => { if (!_closed) RefreshInstances(); });
+    private void OnInstancesChanged(object? sender, EventArgs e) => Dispatcher.UIThread.Post(() =>
+    {
+        if (_closed) return;
+        RefreshInstances();
+        RefreshGameInstallDirectory();
+    });
     private void RefreshDownloads()
     {
         _source.Text = "下载源：" + SourceLabel(_downloads.Options.Source) + $" · {_downloads.Options.ConcurrentFiles} 文件并发 · {_downloads.Options.ConnectionsPerFile} 连接/文件";
@@ -157,5 +162,14 @@ internal sealed partial class DownloadCenterWindow : Window
         var path = Path.Combine(Path.GetFullPath(parent), name);
         if (File.Exists(path) || Directory.Exists(path)) throw new IOException("同名目录已存在，请换一个实例名称；现有内容不会被覆盖。");
         return path;
+    }
+
+    private string DefaultGameInstallDirectory() => _instances.SelectedGameDirectory ??
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Games", "Wonder");
+
+    private static string NewGameInstallPath(string? parent, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(parent) || !Path.IsPathFullyQualified(parent.Trim())) throw new ArgumentException("请选择完整的游戏目录。");
+        return NewInstancePath(Path.Combine(parent.Trim(), "instances"), name);
     }
 }

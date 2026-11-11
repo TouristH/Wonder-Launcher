@@ -54,5 +54,6 @@ public sealed partial class MainWindow
             _instances.UpdateInstance(installed.Id, name ?? installed.Name, installed.Overrides with { JavaPath = java ?? installed.Overrides.JavaPath });
             if (_instances.Error is { } updateError) throw new InvalidOperationException(updateError);
         }
+        if (installed.CollectionDirectory is { } collection) await _instances.ReadGameDirectoryAsync(collection);
     }
 }

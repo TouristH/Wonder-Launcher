@@ -59,7 +59,7 @@ internal sealed class ComponentHost : IDisposable
         {
             // An observer belongs to one view; it cannot interrupt delivery to other views or cleanup.
             try { handler(sender, EventArgs.Empty); }
-            catch { }
+            catch (Exception error) { Wonder.Core.LauncherDiagnostics.Warn("NotifyComponentChanged", error); }
         }
     }
 
@@ -146,6 +146,7 @@ internal sealed class ComponentHost : IDisposable
         public void Fail(Exception exception)
         {
             if (_disposed) return;
+            Wonder.Core.LauncherDiagnostics.Warn("ComponentFailed", exception);
             ReleaseRuntime();
             Status = ComponentRunStatus.Faulted;
             Error = exception.Message;
@@ -178,14 +179,14 @@ internal sealed class ComponentHost : IDisposable
             _state = null;
             if (runtime is null) return;
             try { if (_runtimeChanged is not null) runtime.Changed -= _runtimeChanged; }
-            catch { }
+            catch (Exception error) { Wonder.Core.LauncherDiagnostics.Warn("UnsubscribeComponent", error); }
             _runtimeChanged = null;
             // A broken component must not prevent the rest of the workspace from closing.
             try { if (_running) runtime.Suspend(); }
-            catch { }
+            catch (Exception error) { Wonder.Core.LauncherDiagnostics.Warn("SuspendComponent", error); }
             _running = false;
             try { runtime.Dispose(); }
-            catch { }
+            catch (Exception error) { Wonder.Core.LauncherDiagnostics.Warn("DisposeComponent", error); }
         }
 
         public void Dispose()

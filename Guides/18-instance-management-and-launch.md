@@ -4,6 +4,8 @@ Wonder 可通过[下载中心](33-download-center.md)安装游戏，也可登记
 
 启动器启动时自动读取已登记的游戏目录。添加或移动目录、保存实例的游戏目录、关闭实例设置详情以及下载完成时，会重新读取对应目录。自动读取会加入发现的新实例，并保留已有实例的独立参数。
 
+实例索引的读取和保存在后台进行。保存完成后，列表使用新设置。保存失败时可查看提示并重试。
+
 ## 添加与选择实例
 
 1. 从组件库或桌面快捷方式打开“实例管理”。
@@ -28,7 +30,13 @@ Wonder 可通过[下载中心](33-download-center.md)安装游戏，也可登记
 
 ## 刷新与目录管理
 
-“重新读取来源”重新计算来源配置和版本信息，保留 Wonder 名称、实例 ID、覆盖设置及当前选择。官方固定版本 profile 更换版本后，刷新或再次导入会更新同一条登记；不同 profile 即使共用一个版本，也分别保留。
+### 官方 profile 导入
+
+固定版本 profile 使用指定的本地版本。`latest-release` 和 `latest-snapshot` 分别按版本描述的发布时间选择已安装的最新正式版和快照版。Wonder 保留各 profile 的独立 `gameDir`、Java 和启动参数。对应版本尚未安装时，读取诊断会提示去原启动器安装。 [Mojang 版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
+
+“重新读取来源”重新计算来源配置和版本信息，保留 Wonder 名称、实例 ID、覆盖设置及当前选择。官方 profile 更换版本后，刷新或再次导入会更新同一条登记。不同 profile 即使共用一个版本，也分别保留。
+
+单个 Wonder 实例的 `.minecraft/wonder.instance.json` 缺失、损坏或身份不符时，实例详情显示诊断，索引保留原登记，其余实例可继续使用。恢复匹配原实例 ID 的配置后，在目录设置中重新读取该目录。
 
 再次导入按来源路径和官方 profile 标识识别已有登记。遇到历史重复登记而无法唯一匹配时会提示，不自动删除条目；先核对覆盖设置，再使用“移除登记”清理不需要的条目。
 
@@ -48,11 +56,31 @@ Wonder 可通过[下载中心](33-download-center.md)安装游戏，也可登记
 
 实例登记、全局游戏设置和实例覆盖保存在 `WonderData/instances.json`。保存失败保留旧索引，残留临时文件不会被当作正式索引读取。数据保存及错误处理见[便携数据](15-portable-data-and-motion.md)。
 
+### 启动与 Java
+
+自动选择在实例没有指定或继承 Java 路径时生效。Wonder 先读取 Minecraft 版本及其继承链中的 Java 主版本要求。Prism/MultiMC 组件声明多个兼容主版本时，自动选择优先使用其中较低的可用版本。已知的 Minecraft 正式版本和预发行版缺少 Java 声明时，Wonder 按该游戏版本推断。 [Mojang 版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) · [Prism 组件元数据示例](https://raw.githubusercontent.com/PrismLauncher/meta-launcher/master/net.minecraft/1.17.1.json)
+
+Wonder 检查实例附带的运行时、`JAVA_HOME`、`PATH` 和常见的系统 Java 安装目录。找不到匹配版本时，启动提示会列出所需版本。可以安装相应的 Java，或在实例详情的「Java 与内存」中指定可执行文件。启动日志会显示实际选中的 Java 版本和路径。
+
+### 资源索引兼容
+
+Wonder 优先使用 `assets/indexes/` 下与 `assetIndex.id` 同名的 JSON。找不到标准文件时，会尝试旧 `assets` 字段声明的名称或 `1.x` 对应的数字文件名。候选文件须与元数据声明的 SHA‑1 一致。匹配后，Wonder 将实际索引名传给游戏，无需重命名。校验不匹配时，启动提示会列出期望的索引和已找到的候选文件。
+
+### 保存崩溃诊断包
+
+启动失败或游戏异常退出时，Wonder 会自动询问是否保存诊断包。游戏返回非零退出码或生成新的 Minecraft/JVM 崩溃报告时会触发提示。正常退出或主动取消启动准备时无需处理。提示独立于“启动日志”组件和启动状态窗口。
+
+点击“保存错误日志”后，Wonder 在当前数据目录的 `CrashReports/` 下生成 ZIP，通常位于程序旁的 `WonderData/CrashReports/`。保存成功后可点击“打开保存目录”查看。诊断包汇总本次启动的启动器记录、游戏标准输出和错误输出、可读取的 Minecraft 日志和崩溃报告、JVM 致命错误日志，以及实例、游戏版本、加载器、Java、模组和退出情况等排查信息。
+
+启动记录保留最多 32 MiB，并另附界面中的最近日志。游戏诊断文件有数量和体积上限，截断或跳过原因记录在包内的 `summary.json`。
+
+ZIP 仅保存在本地。打包时会对诊断文本中的当前游戏访问令牌进行过滤。日志仍可能含有用户名、本地路径、服务器地址或模组记录的内容，分享前请先解压检查。
+
 ## 来源兼容范围
 
 | 来源 | 可读取的主要内容 | 使用限制 |
 | --- | --- | --- |
-| 官方目录 | 本地版本描述、固定版本 profile 的名称、独立游戏目录、Java、内存、JVM 参数及分辨率 | `latest-release` 和 `latest-snapshot` 不作为固定 profile 导入；目录中的本地版本仍会列出。不导入账号对象。 |
+| 官方目录 | 本地版本描述、固定版本和 `latest-*` profile 的名称、独立游戏目录、Java、内存、JVM 参数及分辨率 | 自动版本 profile 使用已安装的对应版本。不导入账号对象。 |
 | HMCL | 旧版 `hmclversion.cfg`、相关全局配置；新版实例设置、覆盖清单与父预设 | 找不到预设时显示诊断；自动 Java、自动内存等策略不完整复刻。 |
 | PCL | 版本目录中的 `PCL/Setup.ini`、`PCL/config.json` 及相关配置；显式 Java、内存、参数和隔离设置 | 注册表全局项、自动内存/隔离、Java 范围选择及窗口策略不完整复刻，请核对来源诊断并设置 Wonder 覆盖值。 |
 | Prism / MultiMC | `instance.cfg`、全局配置和覆盖开关、`mmc-pack.json`、本地 patches 与共享元数据缓存 | 支持相关本地库与 tweakers；最大化窗口不等同全屏。元数据缺失时可登记，但不能启动残缺组合。 |

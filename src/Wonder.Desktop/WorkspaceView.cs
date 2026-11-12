@@ -42,6 +42,7 @@ public sealed partial class WorkspaceView : Panel
     private Point _libraryPointer;
     private string? _hoveredSplitId;
     private bool _finishing;
+    private bool _disposed;
     private AreaRenameWindow? _renameDialog;
     private LauncherSettings _settings = new();
     private double ComponentScale => _settings.ComponentScalePercent / 100d;
@@ -109,6 +110,7 @@ public sealed partial class WorkspaceView : Panel
 
     internal void DisposeComponents()
     {
+        _disposed = true;
         CancelGesture();
         ClearLibraryDrop();
         foreach (var area in _areas.Values) area.Dispose();
@@ -191,7 +193,7 @@ public sealed partial class WorkspaceView : Panel
         }
         if (area != null)
         {
-            items.Add(Menu("重命名功能区…", () => RenameArea(area)));
+            items.Add(Menu("重命名功能区…", () => UiOperation.Start(() => RenameAreaAsync(area), () => _disposed)));
             items.Add(Menu("整理组件到可见范围", () => RecoverComponents(area)));
             items.Add(Menu(_centerAreaId == area.Id ? "结束中心拖动" : "拖动工作区中心", () => EditCenter(_centerAreaId == area.Id ? null : area)));
             items.Add(Menu("重置工作区中心", () => ResetCenter(area)));
@@ -225,7 +227,7 @@ public sealed partial class WorkspaceView : Panel
         ReplaceDocument(document);
     }
 
-    private async void RenameArea(Area area)
+    private async Task RenameAreaAsync(Area area)
     {
         if (_renameDialog != null) { _renameDialog.Activate(); return; }
         if (TopLevel.GetTopLevel(this) is not Window owner || Document.FindArea(area.Id) != area) return;
@@ -237,7 +239,7 @@ public sealed partial class WorkspaceView : Panel
         try
         {
             var title = await dialog.ShowDialog<string?>(owner);
-            if (title == null || title == area.Title || Document != document || Document.FindArea(area.Id) != area) return;
+            if (_disposed || title == null || title == area.Title || Document != document || Document.FindArea(area.Id) != area) return;
             area.Title = title;
             CommitStructure();
         }
@@ -649,7 +651,7 @@ public sealed partial class WorkspaceView : Panel
             }
             else if (library != null)
             {
-                StartNativeShortcutDrag(gesture);
+                UiOperation.Start(() => StartNativeShortcutDragAsync(gesture), () => _disposed);
                 return;
             }
             gesture.TargetAreaId = library == null ? AreaAt(gesture.Last) : null;
@@ -682,7 +684,7 @@ public sealed partial class WorkspaceView : Panel
         return target;
     }
 
-    private async void StartNativeShortcutDrag(Gesture gesture)
+    private async Task StartNativeShortcutDragAsync(Gesture gesture)
     {
         using var preview = _floatingPreview;
         _floatingPreview = null;

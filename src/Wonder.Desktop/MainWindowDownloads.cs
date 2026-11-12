@@ -13,6 +13,18 @@ public sealed partial class MainWindow
     private readonly DownloadEngine _downloadEngine;
     private readonly DownloadService _downloads;
     private DownloadCenterWindow? _downloadCenter;
+    private string? _curseForgeSessionKey;
+
+    private string? GetCurseForgeApiKey() => Volatile.Read(ref _curseForgeSessionKey) ?? Environment.GetEnvironmentVariable("WONDER_CURSEFORGE_API_KEY");
+
+    private bool SetCurseForgeSessionKey(string? value)
+    {
+        var key = value?.Trim();
+        if (key is not null && (key.Length is 0 or > 1024 || key.Any(ch => ch is < '!' or > '~')))
+            throw new ArgumentException("请输入有效的 CurseForge API 密钥。");
+        Volatile.Write(ref _curseForgeSessionKey, key);
+        return !string.IsNullOrWhiteSpace(GetCurseForgeApiKey());
+    }
 
     private void OpenDownloadCenter()
     {
@@ -22,7 +34,7 @@ public sealed partial class MainWindow
             if (_downloadCenter.WindowState == WindowState.Minimized) _downloadCenter.WindowState = WindowState.Normal;
             _downloadCenter.Activate(); return;
         }
-        _downloadCenter = new DownloadCenterWindow(_downloads, _instances, OpenDownloadSettings) { FontFamily = FontFamily };
+        _downloadCenter = new DownloadCenterWindow(_downloads, _instances, OpenDownloadSettings, _settings.DefaultResourceProvider) { FontFamily = FontFamily };
         _downloadCenter.Closed += (_, _) => _downloadCenter = null;
         _downloadCenter.Show(this);
     }
@@ -51,8 +63,9 @@ public sealed partial class MainWindow
             var data = marker.RootElement;
             var name = data.TryGetProperty("instanceName", out var title) ? title.GetString() : null;
             var java = data.TryGetProperty("javaPath", out var javaPath) ? javaPath.GetString() : null;
-            _instances.UpdateInstance(installed.Id, name ?? installed.Name, installed.Overrides with { JavaPath = java ?? installed.Overrides.JavaPath });
-            if (_instances.Error is { } updateError) throw new InvalidOperationException(updateError);
+            var updateError = await _instances.UpdateInstanceAsync(installed.Id, name ?? installed.Name,
+                installed.Overrides with { JavaPath = java ?? installed.Overrides.JavaPath });
+            if (updateError is not null) throw new InvalidOperationException(updateError);
         }
         if (installed.CollectionDirectory is { } collection) await _instances.ReadGameDirectoryAsync(collection);
     }

@@ -8,6 +8,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Wonder.Core;
+using ResourceProvider = Wonder.Core.ResourceProvider;
 
 namespace Wonder.Desktop;
 
@@ -22,6 +23,7 @@ internal sealed class ResourceIconView : Border
     private readonly Image _image = new() { Stretch = Stretch.Uniform };
     private readonly TextBlock _fallback = new() { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = Palette.Accent };
     private string? _url;
+    private ResourceProvider _provider;
     private Bitmap? _bitmap;
     private CancellationTokenSource? _loading;
     private bool _attached;
@@ -42,8 +44,10 @@ internal sealed class ResourceIconView : Border
     public void SetProject(ResourceProject? project)
     {
         _fallback.Text = project?.Kind switch { DownloadResourceKind.Modpack => "包", DownloadResourceKind.ResourcePack => "纹", DownloadResourceKind.Shader => "光", _ => "模" };
-        if (_url == project?.IconUrl) return;
+        var provider = project?.Provider ?? ResourceProvider.Modrinth;
+        if (_url == project?.IconUrl && _provider == provider) return;
         _url = project?.IconUrl;
+        _provider = provider;
         Refresh();
     }
 
@@ -53,15 +57,23 @@ internal sealed class ResourceIconView : Border
         _image.Source = null;
         _bitmap?.Dispose(); _bitmap = null;
         _fallback.IsVisible = true;
-        if (_attached && TryGetIconUri(_url, out var uri)) _ = LoadAsync(uri);
+        if (_attached && TryGetIconUri(_provider, _url, out var uri)) UiOperation.Start(() => LoadAsync(uri), () => !_attached);
     }
 
-    internal static bool TryGetIconUri(string? url, out Uri uri)
+    internal static bool TryGetIconUri(ResourceProvider provider, string? url, out Uri uri)
     {
-        if (Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Scheme == "https" && parsed.IsDefaultPort && parsed.UserInfo.Length == 0 &&
-            parsed.Host is "cdn.modrinth.com" or "cdn-raw.modrinth.com")
-        { uri = parsed; return true; }
-        uri = null!; return false;
+        uri = null!;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) || parsed.Scheme != Uri.UriSchemeHttps ||
+            !parsed.IsDefaultPort || parsed.UserInfo.Length != 0) return false;
+        var allowed = provider switch
+        {
+            ResourceProvider.Modrinth => parsed.Host is "cdn.modrinth.com" or "cdn-raw.modrinth.com",
+            ResourceProvider.CurseForge => parsed.Host is "media.forgecdn.net" or "mediafilez.forgecdn.net" or "mediafiles.forgecdn.net",
+            _ => false
+        };
+        if (!allowed) return false;
+        uri = parsed;
+        return true;
     }
 
     private async Task LoadAsync(Uri uri)

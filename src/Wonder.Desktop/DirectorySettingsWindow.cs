@@ -36,13 +36,18 @@ internal sealed class DirectorySettingsWindow : Window
             if (!Path.IsPathFullyQualified(parentPath)) throw new ArgumentException("父目录必须填写完整路径。");
             return Path.GetFullPath(Path.Combine(parentPath, folderName));
         }
-        void Preview() { try { preview.Text = "修改后：" + Target(); } catch { preview.Text = "请填写有效的目录路径和昵称。"; } }
+        void Preview()
+        {
+            try { preview.Text = "修改后：" + Target(); }
+            catch (Exception error) when (error is ArgumentException or PathTooLongException or NotSupportedException)
+            { preview.Text = "请填写有效的目录路径和昵称。"; }
+        }
         parent.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) Preview(); }; name.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) Preview(); }; Preview();
         layout.Children.Add(new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 10, Margin = new Thickness(0, 16, 0, 0) };
         var cancel = new Button { Content = "取消" }; AutomationProperties.SetName(cancel, "取消目录修改"); cancel.Click += (_, _) => Close(false);
         var save = new Button { Content = "保存并修改文件夹" }; AutomationProperties.SetName(save, "保存目录设置");
-        save.Click += async (_, _) =>
+        save.Click += (_, _) => UiOperation.Start(async () =>
         {
             if (_working) return;
             _working = true; save.IsEnabled = cancel.IsEnabled = parent.IsEnabled = name.IsEnabled = false;
@@ -54,7 +59,7 @@ internal sealed class DirectorySettingsWindow : Window
             }
             catch (Exception ex) { error.Text = ex.Message; }
             finally { _working = false; save.IsEnabled = cancel.IsEnabled = parent.IsEnabled = name.IsEnabled = true; }
-        };
+        });
         actions.Children.Add(cancel); actions.Children.Add(save); Grid.SetRow(actions, 1); layout.Children.Add(actions); Content = layout;
         Closing += (_, e) => { if (_working) e.Cancel = true; };
         KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape && !_working) { Close(false); e.Handled = true; } };

@@ -20,6 +20,8 @@ public sealed record LauncherSettings
     public bool ShowAreaNumbers { get; init; }
     public InstanceLayout InstanceLayout { get; init; } = InstanceLayout.Grid;
     public DownloadSource DownloadSource { get; init; } = DownloadSource.Automatic;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public ResourceProvider DefaultResourceProvider { get; init; } = ResourceProvider.Modrinth;
     public int ConcurrentDownloads { get; init; } = 8;
     public int DownloadConnections { get; init; } = 4;
     public int DownloadRetries { get; init; } = 3;
@@ -35,7 +37,7 @@ public sealed record LauncherSettings
             throw new InvalidDataException("设置中的主题或强调色无效。");
         if (!Enum.IsDefined(InstanceLayout))
             throw new InvalidDataException("实例排列方式无效。");
-        if (!Enum.IsDefined(DownloadSource) || ConcurrentDownloads is < 1 or > 32 ||
+        if (!Enum.IsDefined(DownloadSource) || !Enum.IsDefined(DefaultResourceProvider) || ConcurrentDownloads is < 1 or > 32 ||
             DownloadConnections is < 1 or > 16 || DownloadRetries is < 0 or > 8)
             throw new InvalidDataException("下载源或下载并发参数无效。");
         if (ComponentScalePercent is < 50 or > 200)

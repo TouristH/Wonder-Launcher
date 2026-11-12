@@ -18,7 +18,7 @@ internal sealed partial class AccountManagerWindow
         _count.Text = "我的账户  /  " + _service.Accounts.Count;
         var query = _search.Text?.Trim() ?? "";
         var profiles = _service.Accounts.ToArray();
-        var key = query + "|" + _mode + "|" + _viewId + "|" + _service.SelectedAccount?.Id + "|" + _service.IsReadBlocked;
+        var key = query + "|" + _mode + "|" + _viewId + "|" + _service.SelectedAccount?.Id + "|" + _service.IsReadBlocked + "|" + _service.IsBusy;
         if (_cardKey == key && profiles.SequenceEqual(_cardProfiles)) return;
         _cardKey = key; _cardProfiles = profiles;
         var visible = profiles.Where(x => (x.Username + " " + x.ServerUrl + " " + AccountService.KindLabel(x.Kind)).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -44,8 +44,9 @@ internal sealed partial class AccountManagerWindow
                 account.Id == _viewId && _mode == "details", account.ServerUrl is { } url ? ServerName(url) : null);
             children.Add(card.Button);
         }
-        if (children.Count == 0) children.Add(PageStyles.Hint(_service.IsReadBlocked ? "账户库暂不可用。" : profiles.Length == 0 ? "还没有账户，先添加一个吧。" : "没有匹配的账户。"));
-        if (_service.IsReadBlocked) children.Add(Button("重新读取账户库", "重新读取账户库", _service.Reload));
+        if (children.Count == 0) children.Add(PageStyles.Hint(_service.IsReadBlocked ? _service.IsBusy ? "正在读取账户库…" : "账户库暂不可用。" : profiles.Length == 0 ? "还没有账户，先添加一个吧。" : "没有匹配的账户。"));
+        if (_service.IsReadBlocked && !_service.IsBusy)
+            children.Add(Button("重新读取账户库", "重新读取账户库", async () => await Run(_service.ReloadAsync)));
         foreach (var child in _accounts.Children.Where(x => !children.Contains(x)).ToArray()) _accounts.Children.Remove(child);
         for (var i = 0; i < children.Count; i++)
         {
@@ -94,7 +95,7 @@ internal sealed partial class AccountManagerWindow
             var avatar = new AccountSkinPreview(download) { Width = 40, Height = 40, HeadOnly = true, VerticalAlignment = VerticalAlignment.Center };
             _avatar = avatar; _content.Children.Insert(0, avatar);
             avatar.LoadedTexture += () => ToolTip.SetTip(avatar, avatar.Description);
-            _ = AccountAvatarLoader.LoadAsync(avatar, account, instance, alternatives);
+            UiOperation.Start(() => AccountAvatarLoader.LoadAsync(avatar, account, instance, alternatives));
         }
 
         public void Dispose() => _avatar?.Dispose();

@@ -211,8 +211,8 @@ internal static class GameComponents
         public void Invoke(string actionId, string? value)
         {
             if (actionId == "manage") openManager();
-            else if (actionId == "select" && value is not null) service.Select(value);
-            else if (actionId == "launch") _ = service.LaunchSelectedAsync();
+            else if (actionId == "select" && value is not null) UiOperation.Start(() => service.SelectAsync(value));
+            else if (actionId == "launch") UiOperation.Start(() => service.LaunchSelectedAsync());
             else if (actionId == "cancel") service.CancelPreparation();
         }
         public void Dispose() { Suspend(); Changed = null; }

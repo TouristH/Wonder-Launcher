@@ -2,6 +2,7 @@
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Wonder.Application;
@@ -20,12 +21,18 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         if (!Directory.Exists(selected)) throw new DirectoryNotFoundException("所选目录不存在：" + selected);
         var found = new List<GameInstance>();
         var diagnostics = new List<string>();
-        void Add(Func<GameInstance> create)
+        bool Add(Func<GameInstance?> create)
         {
             ct.ThrowIfCancellationRequested();
-            try { var instance = create(); instance.Validate(); if (found.All(x => x.Id != instance.Id)) found.Add(instance); }
+            try
+            {
+                if (create() is not { } instance) return false;
+                instance.Validate();
+                if (found.All(x => x.Id != instance.Id)) found.Add(instance);
+                return true;
+            }
             catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or ArgumentException or UnauthorizedAccessException or InvalidOperationException)
-            { if (diagnostics.Count < 100) diagnostics.Add(ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message); }
+            { if (diagnostics.Count < 100) diagnostics.Add(ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message); return false; }
         }
         var nativeRoot = NativeRoot(selected);
         if (nativeRoot is not null)
@@ -45,8 +52,12 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
             Add(() => ReadStandard(Path.GetDirectoryName(Path.GetDirectoryName(selected))!, selected));
         else
         {
-            var root = Directory.Exists(Path.Combine(selected, "versions")) ? selected : Directory.Exists(Path.Combine(selected, ".minecraft", "versions")) ? Path.Combine(selected, ".minecraft") : Path.GetFileName(selected) == "versions" ? Path.GetDirectoryName(selected)! : selected;
+            var nested = Path.Combine(selected, ".minecraft");
+            var root = Directory.Exists(Path.Combine(selected, "versions")) ? selected
+                : Directory.Exists(Path.Combine(nested, "versions")) || File.Exists(Path.Combine(nested, "launcher_profiles.json")) ? nested
+                : Path.GetFileName(selected) == "versions" ? Path.GetDirectoryName(selected)! : selected;
             var versions = Path.Combine(root, "versions");
+            var versionDirectories = Directory.Exists(versions) ? Directory.EnumerateDirectories(versions).Take(1024).ToArray() : [];
             var profiles = new HashSet<string>(WonderPath.Comparer);
             var profilePath = Path.Combine(root, "launcher_profiles.json");
             if (File.Exists(profilePath))
@@ -54,22 +65,36 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
                 try
                 {
                     var entries = Json(profilePath).Get("profiles");
+                    Dictionary<string, string>? latest = null;
                     if (entries.ValueKind == JsonValueKind.Object)
                         foreach (var profile in entries.EnumerateObject().Take(1024))
                         {
-                            var id = profile.Value.Get("lastVersionId").Text();
+                            ct.ThrowIfCancellationRequested();
+                            var id = NonEmpty(profile.Value.Get("lastVersionId").Text());
+                            var alias = id ?? profile.Value.Get("type").Text();
+                            var channel = alias switch { "latest-release" => "release", "latest-snapshot" => "snapshot", _ => null };
+                            if (channel is not null)
+                            {
+                                latest ??= LatestInstalledVersions(versionDirectories, ct);
+                                if (!latest.TryGetValue(channel, out id))
+                                {
+                                    if (diagnostics.Count < 100) diagnostics.Add($"官方 profile {profile.Name}（{alias}）没有对应的已安装版本。请在原启动器安装后重新读取。");
+                                    continue;
+                                }
+                            }
                             if (id is null || id.StartsWith("latest-", StringComparison.Ordinal)) continue;
-                            var dir = Under(versions, Segment(id));
-                            if (!File.Exists(Path.Combine(dir, id + ".json"))) continue;
-                            Add(() => ReadStandard(root, dir, profile.Value, profile.Name));
-                            profiles.Add(id);
+                            if (Add(() =>
+                            {
+                                var directory = Under(versions, Segment(id));
+                                return File.Exists(Path.Combine(directory, id + ".json"))
+                                    ? ReadStandard(root, directory, profile.Value, profile.Name, channel) : null;
+                            })) profiles.Add(id);
                         }
                 }
                 catch (Exception ex) when (ex is IOException or JsonException or ArgumentException) { diagnostics.Add("官方配置读取失败：" + ex.Message); }
             }
-            if (Directory.Exists(versions))
-                foreach (var dir in Directory.EnumerateDirectories(versions).Take(1024))
-                    if (!profiles.Contains(Path.GetFileName(dir))) Add(() => ReadStandard(root, dir));
+            foreach (var dir in versionDirectories)
+                if (!profiles.Contains(Path.GetFileName(dir))) Add(() => ReadStandard(root, dir));
             var instances = Directory.Exists(Path.Combine(selected, "instances")) ? Path.Combine(selected, "instances") : selected;
             foreach (var dir in Directory.EnumerateDirectories(instances).Take(1024))
                 if (dir.EndsWith(".wonder-install", WonderPath.Comparison)) continue;
@@ -90,7 +115,33 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         return candidates.FirstOrDefault(path => File.Exists(Path.Combine(path, WonderInstanceConfigurationStore.FileName)));
     }
 
-    private static GameInstance ReadStandard(string root, string versionDirectory, JsonElement profile = default, string? profileId = null)
+    private static Dictionary<string, string> LatestInstalledVersions(string[] versionDirectories, CancellationToken ct)
+    {
+        var latest = new Dictionary<string, (string Id, DateTimeOffset Time)>(StringComparer.Ordinal);
+        foreach (var directory in versionDirectories)
+        {
+            ct.ThrowIfCancellationRequested();
+            var id = Path.GetFileName(directory);
+            if (InstanceVersionMetadata.VanillaVersion(id).Length == 0 || !File.Exists(Path.Combine(directory, id + ".jar"))) continue;
+            try
+            {
+                var metadata = Json(Path.Combine(directory, id + ".json"));
+                var type = metadata.Get("type").Text();
+                if (metadata.Get("id").Text() != id || NonEmpty(metadata.Get("inheritsFrom").Text()) is not null ||
+                    type is not ("release" or "snapshot") || !DateTimeOffset.TryParse(metadata.Get("releaseTime").Text(),
+                        CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var time)) continue;
+                if (!latest.TryGetValue(type, out var previous) || time > previous.Time ||
+                    time == previous.Time && StringComparer.Ordinal.Compare(id, previous.Id) > 0) latest[type] = (id, time);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or JsonException or UnauthorizedAccessException)
+            {
+                // Standard discovery reports unreadable version files separately.
+            }
+        }
+        return latest.ToDictionary(item => item.Key, item => item.Value.Id, StringComparer.Ordinal);
+    }
+
+    private static GameInstance ReadStandard(string root, string versionDirectory, JsonElement profile = default, string? profileId = null, string? latestChannel = null)
     {
         var id = Path.GetFileName(versionDirectory);
         var metadataPath = Path.Combine(versionDirectory, id + ".json");
@@ -115,12 +166,12 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         var pcl = Path.Combine(versionDirectory, "PCL", "Setup.ini");
         try
         {
-            if (File.Exists(hmclNew) || File.Exists(hmcl))
+            if (latestChannel is null && (File.Exists(hmclNew) || File.Exists(hmcl)))
             {
                 source = InstanceSource.Hmcl; config = File.Exists(hmclNew) ? hmclNew : hmcl;
                 (settings, gameDir) = LauncherSettings.Hmcl(Json(config), config == hmclNew, root, versionDirectory, warnings);
             }
-            else if (File.Exists(pcl) || File.Exists(Path.Combine(versionDirectory, "PCL", "config.json")))
+            else if (latestChannel is null && (File.Exists(pcl) || File.Exists(Path.Combine(versionDirectory, "PCL", "config.json"))))
             {
                 source = InstanceSource.Pcl; config = pcl;
                 (settings, gameDir) = LauncherSettings.Pcl(root, versionDirectory, warnings);
@@ -131,9 +182,9 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         settings = Normalize(settings, warnings);
         return new()
         {
-            Id = Identity(versionDirectory + (profileId is null ? "" : "|profile:" + profileId)),
+            Id = latestChannel is null ? Identity(versionDirectory + (profileId is null ? "" : "|profile:" + profileId)) : Identity(root, "|profile:" + profileId),
             SourceProfileId = profileId,
-            Name = NonEmpty(profile.Get("name").Text()) ?? id, SourcePath = profileId is null ? versionDirectory : root,
+            Name = NonEmpty(profile.Get("name").Text()) ?? (latestChannel switch { "release" => "最新正式版", "snapshot" => "最新快照版", _ => id }), SourcePath = profileId is null ? versionDirectory : root,
             RootDirectory = root, DefaultGameDirectory = gameDir, VersionId = id, Source = source,
             GameVersion = InstanceVersionMetadata.ReadStandard(metadataPath, Path.Combine(root, "versions")),
             ModLoaders = InstanceVersionMetadata.ReadModLoaders([metadataPath], Path.Combine(root, "versions")),
@@ -203,7 +254,7 @@ public sealed class InstanceDiscovery : IInstanceDiscovery
         catch (ArgumentException ex) { warnings.Add("来源设置无效，使用 Wonder 默认值；请细调后再启动。" + ex.Message); return new(); }
     }
     internal static string? ResolveDirectory(string? path, string root) => NonEmpty(path) is null ? null : Path.GetFullPath(path!, root);
-    private static string Identity(string path) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path)))[..32].ToLowerInvariant();
+    private static string Identity(string path, string suffix = "") => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes((OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path) + suffix)))[..32].ToLowerInvariant();
     internal static int? MemoryArgument(string? arguments, string kind)
     {
         var match = System.Text.RegularExpressions.Regex.Matches(arguments ?? "", @"(?:^|\s)-X" + kind + @"(\d+)([mMgG])(?=\s|$)").LastOrDefault();

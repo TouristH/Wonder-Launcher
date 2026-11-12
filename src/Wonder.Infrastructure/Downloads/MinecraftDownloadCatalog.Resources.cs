@@ -9,10 +9,14 @@ namespace Wonder.Infrastructure;
 
 public sealed partial class MinecraftDownloadCatalog
 {
-    public async Task<ResourceSearchResult> SearchResourcesAsync(DownloadResourceKind kind, string query, string? minecraftVersion, string? loader, int offset, DownloadOptions options, CancellationToken ct = default)
+    public Task<ResourceSearchResult> SearchResourcesAsync(DownloadResourceKind kind, string query, string? minecraftVersion, string? loader, int offset, DownloadOptions options, CancellationToken ct = default) =>
+        SearchResourcesAsync(ResourceProvider.Modrinth, kind, query, minecraftVersion, loader, offset, options, ct);
+
+    public async Task<ResourceSearchResult> SearchResourcesAsync(ResourceProvider provider, DownloadResourceKind kind, string query, string? minecraftVersion, string? loader, int offset, DownloadOptions options, CancellationToken ct = default)
     {
         options.Validate();
-        if (!Enum.IsDefined(kind) || offset < 0 || offset > 1_000_000) throw new ArgumentException("搜索类型或页码无效。");
+        if (!Enum.IsDefined(provider) || !Enum.IsDefined(kind) || offset < 0 || offset > 1_000_000) throw new ArgumentException("资源平台、搜索类型或页码无效。");
+        if (provider == ResourceProvider.CurseForge) return await SearchCurseForgeAsync(kind, query, minecraftVersion, loader, offset, ct);
         var type = ResourceType(kind);
         var facets = new List<string[]> { new[] { "project_type:" + type } };
         if (!string.IsNullOrWhiteSpace(minecraftVersion)) facets.Add(["versions:" + minecraftVersion]);
@@ -31,6 +35,8 @@ public sealed partial class MinecraftDownloadCatalog
 
     public async Task<ResourceProject> GetResourceProjectAsync(ResourceProject project, DownloadOptions options, CancellationToken ct = default)
     {
+        if (!Enum.IsDefined(project.Provider)) throw new ArgumentException("资源平台无效。");
+        if (project.Provider == ResourceProvider.CurseForge) return await GetCurseForgeProjectAsync(project, ct);
         var endpoint = $"{Modrinth}/project/{Escape(project.Id)}";
         var projectTask = GetJson(endpoint, options, ct);
         var teamTask = GetJson(endpoint + "/members", options, ct);
@@ -60,8 +66,13 @@ public sealed partial class MinecraftDownloadCatalog
 
     private static string ResourcePage(DownloadResourceKind kind, string slug) => $"https://modrinth.com/{ResourceType(kind)}/{Escape(slug)}";
 
-    public async Task<IReadOnlyList<ResourceVersion>> GetResourceVersionsAsync(string projectId, string? minecraftVersion, string? loader, DownloadOptions options, CancellationToken ct = default)
+    public Task<IReadOnlyList<ResourceVersion>> GetResourceVersionsAsync(string projectId, string? minecraftVersion, string? loader, DownloadOptions options, CancellationToken ct = default) =>
+        GetResourceVersionsAsync(ResourceProvider.Modrinth, projectId, minecraftVersion, loader, options, ct);
+
+    public async Task<IReadOnlyList<ResourceVersion>> GetResourceVersionsAsync(ResourceProvider provider, string projectId, string? minecraftVersion, string? loader, DownloadOptions options, CancellationToken ct = default)
     {
+        if (!Enum.IsDefined(provider)) throw new ArgumentException("资源平台无效。");
+        if (provider == ResourceProvider.CurseForge) return await GetCurseForgeVersionsAsync(projectId, minecraftVersion, loader, ct);
         var query = new List<string> { "include_changelog=false" };
         if (!string.IsNullOrWhiteSpace(minecraftVersion)) query.Add("game_versions=" + Escape(JsonSerializer.Serialize(new[] { minecraftVersion })));
         if (!string.IsNullOrWhiteSpace(loader) && loader != "vanilla") query.Add("loaders=" + Escape(JsonSerializer.Serialize(new[] { loader })));
@@ -76,7 +87,7 @@ public sealed partial class MinecraftDownloadCatalog
         if (selected.Length == 0) selected = allFiles.Take(1).ToArray();
         return new ResourceVersion(value.Get("id").Text() ?? "", value.Get("project_id").Text() ?? "", value.Get("name").Text() ?? "", value.Get("version_number").Text() ?? "",
             value.Get("game_versions").Items().Select(x => x.Text() ?? "").ToArray(), value.Get("loaders").Items().Select(x => x.Text() ?? "").ToArray(),
-            selected.Select(x => new DownloadFile(RequiredUrl(x.Get("url").Text()), StrictSegment(x.Get("filename").Text() ?? ""),
+            selected.Select(x => new DownloadFile(RequiredUrl(x.Get("url").Text(), "cdn.modrinth.com"), StrictSegment(x.Get("filename").Text() ?? ""),
                 x.Get("hashes").Get("sha512").Text() ?? x.Get("hashes").Get("sha1").Text(), x.Get("hashes").Get("sha512").Text() is not null ? "SHA512" : "SHA1", Long(x.Get("size")))).ToArray(),
             value.Get("dependencies").Items().Select(x => new ResourceDependency(x.Get("project_id").Text(), x.Get("version_id").Text(), x.Get("dependency_type").Text() ?? "")).ToArray())
         {
@@ -88,15 +99,19 @@ public sealed partial class MinecraftDownloadCatalog
     public async Task<string> InstallResourceAsync(ResourceInstallRequest request, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         options.Validate();
+        var provider = request.Project.Provider;
+        if (!Enum.IsDefined(provider)) throw new ArgumentException("资源平台无效。");
         if (request.Project.Id != request.Version.ProjectId) throw new InvalidDataException("资源版本不属于所选项目。");
+        EnsureDownloadable(request.Version, provider);
         if (request.DownloadOnly) return await DownloadResourceFilesAsync(request, options, progress, ct);
-        if (request.Project.Kind == DownloadResourceKind.Modpack) return await InstallModpack(request, options, progress, ct);
+        if (request.Project.Kind == DownloadResourceKind.Modpack)
+            return provider == ResourceProvider.CurseForge ? await InstallCurseForgeModpack(request, options, progress, ct) : await InstallModpack(request, options, progress, ct);
         var steps = new InstallSteps(progress, 2);
         steps.Begin("检查版本与依赖");
         if (!Path.IsPathFullyQualified(request.TargetDirectory) || !Directory.Exists(request.TargetDirectory)) throw new DirectoryNotFoundException("请先选择已存在的实例游戏目录。");
-        var folder = request.Project.Kind switch { DownloadResourceKind.Mod => "mods", DownloadResourceKind.ResourcePack => "resourcepacks", DownloadResourceKind.Shader => "shaderpacks", _ => throw new ArgumentException("资源类型无效。") };
+        var resultDirectory = Path.Combine(request.TargetDirectory, ResourceDirectory(request.Project.Kind));
         var files = new Dictionary<string, DownloadFile>(WonderPath.Comparer); var visited = new HashSet<string>(); var projects = new Dictionary<string, string>();
-        async Task Resolve(ResourceVersion version)
+        async Task Resolve(ResourceVersion version, DownloadResourceKind kind)
         {
             ct.ThrowIfCancellationRequested();
             if (!visited.Add(version.Id)) return;
@@ -104,17 +119,15 @@ public sealed partial class MinecraftDownloadCatalog
             if (projects.TryGetValue(version.ProjectId, out var prior) && prior != version.Id) throw new InvalidDataException("所选资源需要互相冲突的依赖版本。");
             projects[version.ProjectId] = version.Id;
             if (!string.IsNullOrWhiteSpace(request.MinecraftVersion) && !version.GameVersions.Contains(request.MinecraftVersion)) throw new InvalidDataException("资源版本不兼容所选 Minecraft 版本。");
-            if (request.Project.Kind == DownloadResourceKind.Mod && (string.IsNullOrWhiteSpace(request.Loader) || request.Loader == "vanilla" || !version.Loaders.Contains(request.Loader)))
+            if (kind == DownloadResourceKind.Mod && (string.IsNullOrWhiteSpace(request.Loader) || request.Loader == "vanilla" || !version.Loaders.Contains(request.Loader)))
                 throw new InvalidDataException("模组需要兼容的已安装加载器，请选择 Fabric、Quilt、Forge 或 NeoForge 实例。");
+            EnsureDownloadable(version, provider);
             foreach (var dependency in version.Dependencies.Where(x => x.Type == "required"))
             {
-                ResourceVersion resolved;
-                if (dependency.VersionId is { } id) resolved = ParseResourceVersion(await GetJson($"{Modrinth}/version/{Escape(id)}", options, ct));
-                else if (dependency.ProjectId is { } project) resolved = (await GetResourceVersionsAsync(project, request.MinecraftVersion, request.Project.Kind == DownloadResourceKind.Mod ? request.Loader : null, options, ct)).FirstOrDefault() ?? throw new InvalidDataException("必需依赖没有兼容版本：" + project);
-                else throw new InvalidDataException("必需依赖缺少项目与版本 ID。");
-                await Resolve(resolved);
+                var (resolved, dependencyKind) = await ResolveResourceDependency(dependency, provider, kind, request, options, ct);
+                await Resolve(resolved, dependencyKind);
             }
-            if (version.Files.Count == 0) throw new InvalidDataException("资源版本没有可下载的文件。");
+            var folder = ResourceDirectory(kind);
             foreach (var file in version.Files)
             {
                 var destination = SafePath(request.TargetDirectory, folder + "/" + StrictSegment(file.Destination));
@@ -123,18 +136,64 @@ public sealed partial class MinecraftDownloadCatalog
                 files[destination] = download;
             }
         }
-        await Resolve(request.Version);
+        await Resolve(request.Version, request.Project.Kind);
         // Existing resource files belong to the player. Only an identical hash permits reuse.
         foreach (var file in files.Values)
             if (File.Exists(file.Destination) && !await MatchesHash(file, ct)) throw new IOException("目标已存在不同文件，未覆盖：" + Path.GetFileName(file.Destination));
         await engine.DownloadManyAsync(files.Values.ToArray(), options, steps.Begin("下载并校验资源"), ct);
-        return Path.Combine(request.TargetDirectory, folder);
+        return resultDirectory;
     }
+
+    private async Task<(ResourceVersion Version, DownloadResourceKind Kind)> ResolveResourceDependency(ResourceDependency dependency, ResourceProvider provider,
+        DownloadResourceKind kind, ResourceInstallRequest request, DownloadOptions options, CancellationToken ct)
+    {
+        if (provider == ResourceProvider.CurseForge && dependency.ProjectId is { } curseForgeId)
+        {
+            var project = await GetCurseForgeProjectDataAsync(curseForgeId, ct);
+            var dependencyKind = CurseForgeProjectKind(project.Get("classId").Number());
+            _ = ResourceDirectory(dependencyKind);
+            if (dependency.VersionId is { } pinned)
+                return (await GetCurseForgeVersionAsync(project, pinned, ct), dependencyKind);
+            var versions = await GetCurseForgeVersionsAsync(project, request.MinecraftVersion,
+                dependencyKind == DownloadResourceKind.Mod ? request.Loader : null, ct);
+            var version = versions.FirstOrDefault(candidate => candidate.Files.Count > 0) ?? versions.FirstOrDefault();
+            return (version ?? throw new InvalidDataException("必需依赖没有兼容版本：" + curseForgeId), dependencyKind);
+        }
+        if (provider == ResourceProvider.Modrinth && dependency.VersionId is { } versionId)
+            return (ParseResourceVersion(await GetJson($"{Modrinth}/version/{Escape(versionId)}", options, ct)), kind);
+        if (provider == ResourceProvider.Modrinth && dependency.ProjectId is { } projectId)
+        {
+            var versions = await GetResourceVersionsAsync(projectId, request.MinecraftVersion,
+                kind == DownloadResourceKind.Mod ? request.Loader : null, options, ct);
+            return (versions.FirstOrDefault() ?? throw new InvalidDataException("必需依赖没有兼容版本：" + projectId), kind);
+        }
+        throw new InvalidDataException("必需依赖缺少项目或版本 ID。");
+    }
+
+    private static void EnsureDownloadable(ResourceVersion version, ResourceProvider provider)
+    {
+        if (version.Files.Count == 0)
+            throw new InvalidDataException(version.DownloadUnavailableReason ?? "资源版本没有可下载的文件。");
+        foreach (var file in version.Files)
+        {
+            DownloadEngine.ValidateHash(file);
+            var uri = DownloadSourceResolver.RequireUrl(file.Url);
+            if (provider == ResourceProvider.Modrinth ? uri.IdnHost != "cdn.modrinth.com" : !DownloadSourceResolver.IsCurseForgeCdn(uri.IdnHost))
+                throw new InvalidDataException("资源文件的下载主机与来源平台不匹配。");
+        }
+    }
+
+    private static string ResourceDirectory(DownloadResourceKind kind) => kind switch
+    {
+        DownloadResourceKind.Mod => "mods",
+        DownloadResourceKind.ResourcePack => "resourcepacks",
+        DownloadResourceKind.Shader => "shaderpacks",
+        _ => throw new InvalidDataException("资源类型不能安装到现有实例。")
+    };
 
     private async Task<string> DownloadResourceFilesAsync(ResourceInstallRequest request, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         if (!Path.IsPathFullyQualified(request.TargetDirectory)) throw new ArgumentException("请选择完整的下载目录。");
-        if (request.Version.Files.Count == 0) throw new InvalidDataException("所选版本没有可下载的文件。");
         var steps = new InstallSteps(progress, 2);
         steps.Begin("检查下载文件与目录");
         var root = Path.GetFullPath(request.TargetDirectory);
@@ -159,8 +218,8 @@ public sealed partial class MinecraftDownloadCatalog
         await engine.DownloadAsync(file with { Destination = archivePath }, options, steps.Begin("下载并读取整合包"), ct);
         using var archive = ZipFile.OpenRead(archivePath);
         var indexEntry = archive.GetEntry("modrinth.index.json") ?? throw new InvalidDataException("整合包缺少 modrinth.index.json。");
-        if (indexEntry.Length > 16 * 1024 * 1024) throw new InvalidDataException("整合包索引过大。");
-        using var stream = indexEntry.Open(); using var document = await JsonDocument.ParseAsync(stream, new() { MaxDepth = 64 }, ct);
+        using var indexStream = new MemoryStream(await ArchiveEntryContent.ReadAsync(indexEntry, 16 * 1024 * 1024, ct));
+        using var document = JsonDocument.Parse(indexStream, new() { MaxDepth = 64 });
         var index = document.RootElement;
         if (index.Get("formatVersion").Number() != 1 || index.Get("game").Text() != "minecraft") throw new InvalidDataException("不支持的整合包格式。");
         var dependencies = index.Get("dependencies"); var minecraft = dependencies.Get("minecraft").Text() ?? throw new InvalidDataException("整合包缺少 Minecraft 版本。");
@@ -174,25 +233,28 @@ public sealed partial class MinecraftDownloadCatalog
             if (item.Get("env").Get("client").Text() == "unsupported") continue;
             var path = SafePackPath(root, item.Get("path").Text() ?? "");
             var hash = item.Get("hashes").Get("sha512").Text() ?? item.Get("hashes").Get("sha1").Text() ?? throw new InvalidDataException("整合包文件缺少哈希。");
-            downloads.Add(new(RequiredUrl(item.Get("downloads").Items().FirstOrDefault().Text()), path, hash, item.Get("hashes").Get("sha512").Text() is null ? "SHA1" : "SHA512", Long(item.Get("fileSize"))));
+            downloads.Add(new(RequiredUrl(item.Get("downloads").Items().FirstOrDefault().Text(),
+                "cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com"), path, hash,
+                item.Get("hashes").Get("sha512").Text() is null ? "SHA1" : "SHA512", Long(item.Get("fileSize"))));
         }
         if (downloads.Select(x => x.Destination).Distinct(WonderPath.Comparer).Count() != downloads.Count) throw new InvalidDataException("整合包包含重复文件路径。");
         var version = await InstallGameContent(new(minecraft, request.InstanceName ?? request.Project.Title, request.TargetDirectory, loader.Item2 ?? "vanilla", loader.Item1 is null ? null : dependencies.Get(loader.Item1).Text(), request.JavaPath), root, options, steps, ct);
         await engine.DownloadManyAsync(downloads, options, steps.Begin("下载整合包内容"), ct);
         steps.Begin("解压客户端配置");
-        long total = 0; int count = 0;
+        var remainingBytes = 8L * 1024 * 1024 * 1024;
+        var count = 0;
         foreach (var prefix in new[] { "overrides/", "client-overrides/" })
             foreach (var entry in archive.Entries.Where(x => x.FullName.StartsWith(prefix, StringComparison.Ordinal)))
             {
                 ct.ThrowIfCancellationRequested();
                 if (entry.FullName.EndsWith('/')) continue;
-                if (++count > 50_000 || (total += entry.Length) > 8L * 1024 * 1024 * 1024) throw new InvalidDataException("整合包解压大小超出限制。");
+                if (++count > 50_000 || entry.Length > remainingBytes) throw new InvalidDataException("整合包解压大小超出限制。");
+                remainingBytes -= entry.Length;
                 if (((entry.ExternalAttributes >> 16) & 0xf000) == 0xa000) throw new InvalidDataException("整合包不允许符号链接。");
                 var target = SafePackPath(root, entry.FullName[prefix.Length..]);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                await using var output = new FileStream(target, FileMode.Create, FileAccess.Write); using var input = entry.Open(); await input.CopyToAsync(output, ct);
+                await ArchiveEntryContent.ExtractAsync(entry, target, ct);
             }
-        stream.Dispose(); archive.Dispose(); File.Delete(archivePath);
+        archive.Dispose(); File.Delete(archivePath);
         steps.Begin("保存并登记实例");
         return CompleteInstall(transaction.Stage, request.TargetDirectory, version, ct, request.InstallInCollection);
     }

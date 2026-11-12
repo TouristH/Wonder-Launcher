@@ -194,7 +194,7 @@ internal sealed class ComponentLibraryView : Border
         {
             if (pending != null && e.Pointer.Captured == null) e.Pointer.Capture(source);
         }, RoutingStrategies.Bubble, true);
-        source.AddHandler(PointerMovedEvent, async (_, e) =>
+        source.AddHandler(PointerMovedEvent, (_, e) => UiOperation.Start(async () =>
         {
             if (_capturedDrag is { } active && active.Source == source && active.Pointer == e.Pointer)
             {
@@ -222,19 +222,20 @@ internal sealed class ComponentLibraryView : Border
                 return;
             }
             dragging = true;
-            component?.SetSelected(true);
-            using var floating = trigger.Pointer.Type == PointerType.Mouse
-                ? FloatingComponentPreview.TryShow(this, _workspace, item.Application, grabOffset)
-                : null;
-            var data = new DataTransfer();
-            data.Add(DataTransferItem.Create(LibraryComponentTransfer.Format, new LibraryComponentTransfer(item.Application, grabOffset, floating != null)));
-            _status.Text = $"正在拖动「{title}」；移到功能区后松开，Esc 取消。";
             try
             {
+                component?.SetSelected(true);
+                using var floating = trigger.Pointer.Type == PointerType.Mouse
+                    ? FloatingComponentPreview.TryShow(this, _workspace, item.Application, grabOffset)
+                    : null;
+                var data = new DataTransfer();
+                data.Add(DataTransferItem.Create(LibraryComponentTransfer.Format, new LibraryComponentTransfer(item.Application, grabOffset, floating != null)));
+                _status.Text = $"正在拖动「{title}」；移到功能区后松开，Esc 取消。";
                 using var hoverSuppression = HoverTipBehavior.SuppressForNativeDrag();
                 if (floating == null) ShowPreview(item.Application, e.GetPosition(_dragLayer), grabOffset);
                 var effect = await DragDrop.DoDragDropAsync(trigger, data, DragDropEffects.Copy);
-                _status.Text = effect == DragDropEffects.Copy ? $"已创建「{title}」的快捷方式，数据实时同步。" : "已取消放置，库中应用保留。";
+                if (TopLevel.GetTopLevel(source) is not null)
+                    _status.Text = effect == DragDropEffects.Copy ? $"已创建「{title}」的快捷方式，数据实时同步。" : "已取消放置，库中应用保留。";
             }
             finally
             {
@@ -243,7 +244,7 @@ internal sealed class ComponentLibraryView : Border
                 component?.SetSelected(false);
                 _workspace.ClearLibraryDrop();
             }
-        }, RoutingStrategies.Tunnel, true);
+        }, () => TopLevel.GetTopLevel(source) is null), RoutingStrategies.Tunnel, true);
         source.AddHandler(PointerReleasedEvent, (_, e) =>
         {
             pending = null;

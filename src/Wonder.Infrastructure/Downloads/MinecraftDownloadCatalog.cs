@@ -9,14 +9,19 @@ using static Wonder.Infrastructure.LocalFiles;
 
 namespace Wonder.Infrastructure;
 
-public sealed partial class MinecraftDownloadCatalog(IDownloadEngine engine) : IDownloadCatalog
+public sealed partial class MinecraftDownloadCatalog(IDownloadEngine engine, Func<string?>? curseForgeApiKey = null,
+    HttpClient? curseForgeHttp = null) : IDownloadCatalog
 {
     private const string Manifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     private const string Modrinth = "https://api.modrinth.com/v2";
+    private readonly HttpClient _curseForgeHttp = curseForgeHttp ?? CurseForgeHttp;
+    private readonly Func<string?> _curseForgeApiKey = curseForgeApiKey ??
+        (() => Environment.GetEnvironmentVariable("WONDER_CURSEFORGE_API_KEY"));
     private static string Escape(string value) => Uri.EscapeDataString(value);
-    private async Task<JsonElement> GetJson(string url, DownloadOptions options, CancellationToken ct)
+    private async Task<JsonElement> GetJson(string url, DownloadOptions options, CancellationToken ct, string? sha1 = null)
     {
-        var text = await engine.GetStringAsync(url, options, ct).ConfigureAwait(false);
+        var text = await engine.GetStringAsync(url, options with { Source = DownloadSource.Official }, ct).ConfigureAwait(false);
+        if (sha1 is not null) VerifyMetadata(text, sha1);
         using var document = JsonDocument.Parse(text, new() { MaxDepth = 64 });
         return document.RootElement.Clone();
     }
@@ -26,7 +31,9 @@ public sealed partial class MinecraftDownloadCatalog(IDownloadEngine engine) : I
         options.Validate();
         var manifest = await GetJson(Manifest, options, ct);
         return manifest.Get("versions").Items().Select(x => new MinecraftVersion(Segment(x.Get("id").Text() ?? ""), x.Get("type").Text() ?? "release",
-            RequiredUrl(x.Get("url").Text()), DateTimeOffset.TryParse(x.Get("releaseTime").Text(), out var time) ? time : default)).ToArray();
+            RequiredUrl(x.Get("url").Text(), "piston-meta.mojang.com", "launchermeta.mojang.com"),
+            DateTimeOffset.TryParse(x.Get("releaseTime").Text(), out var time) ? time : default)
+            { Sha1 = x.Get("sha1").Text() }).ToArray();
     }
 
     public async Task<IReadOnlyList<LoaderVersion>> GetLoaderVersionsAsync(string loader, string minecraftVersion, DownloadOptions options, CancellationToken ct = default)
@@ -42,7 +49,8 @@ public sealed partial class MinecraftDownloadCatalog(IDownloadEngine engine) : I
         {
             var legacyNeo = loader == "neoforge" && minecraftVersion == "1.20.1";
             var xml = await engine.GetStringAsync(loader == "forge" ? "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml" :
-                $"https://maven.neoforged.net/releases/net/neoforged/{(legacyNeo ? "forge" : "neoforge")}/maven-metadata.xml", options, ct);
+                $"https://maven.neoforged.net/releases/net/neoforged/{(legacyNeo ? "forge" : "neoforge")}/maven-metadata.xml",
+                options with { Source = DownloadSource.Official }, ct);
             var prefix = loader == "forge" || legacyNeo ? minecraftVersion + "-" : NeoPrefix(minecraftVersion);
             return XDocument.Parse(xml).Descendants("version").Select(x => x.Value).Where(x => x.StartsWith(prefix, StringComparison.Ordinal))
                 .Reverse().Select(x => new LoaderVersion(loader, x, minecraftVersion, !x.Contains("beta", StringComparison.OrdinalIgnoreCase))).ToArray();
@@ -59,11 +67,14 @@ public sealed partial class MinecraftDownloadCatalog(IDownloadEngine engine) : I
         return parts[1] + "." + (parts.Length > 2 ? parts[2] : "0") + ".";
     }
     private static string LoaderHost(string loader) => loader == "fabric" ? "https://meta.fabricmc.net" : "https://meta.quiltmc.org";
-    private static string RequiredUrl(string? url)
+    private static string RequiredUrl(string? url, params string[] hosts) => DownloadSourceResolver.RequireUrl(url, hosts).AbsoluteUri;
+
+    internal static void VerifyMetadata(string text, string? sha1, long? size = null)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo))
-            throw new InvalidDataException("下载元数据中的地址必须使用 HTTPS。");
-        return uri.AbsoluteUri;
+        var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+        if (size is { } expectedSize && bytes.LongLength != expectedSize || sha1 is not { Length: 40 } ||
+            !Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(bytes)).Equals(sha1, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("官方元数据的长度或 SHA-1 与上级清单不符。");
     }
     private static string StrictSegment(string value)
     {
@@ -93,6 +104,22 @@ public sealed partial class MinecraftDownloadCatalog(IDownloadEngine engine) : I
         }
         return destination;
     }
-    private static DownloadFile Descriptor(JsonElement value, string path) => new(RequiredUrl(value.Get("url").Text()), path, value.Get("sha1").Text(), "SHA1", Long(value.Get("size")));
+    private static DownloadFile Descriptor(JsonElement value, string path, params string[] hosts)
+    {
+        var url = RequiredUrl(value.Get("url").Text(), hosts);
+        return HashedFile(value, url, path) ?? throw new InvalidDataException("下载清单缺少完整性校验值：" + Path.GetFileName(path));
+    }
+
+    private static DownloadFile? HashedFile(JsonElement value, string url, string path)
+    {
+        foreach (var (key, algorithm) in new[] { ("sha512", "SHA512"), ("sha256", "SHA256"), ("sha1", "SHA1") })
+            if (value.Get(key).Text() is { Length: > 0 } hash)
+            {
+                var file = new DownloadFile(url, path, hash, algorithm, Long(value.Get("size")));
+                DownloadEngine.ValidateHash(file);
+                return file;
+            }
+        return null;
+    }
     private static long? Long(JsonElement value) => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) && number >= 0 ? number : null;
 }

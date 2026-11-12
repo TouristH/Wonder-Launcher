@@ -75,8 +75,9 @@ internal sealed class AccountSkinPreview : Control, IDisposable
                 InvalidateVisual();
             }
             catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-            catch
+            catch (Exception error)
             {
+                LauncherDiagnostics.Warn("LoadAccountTexture", error);
                 if (cape) capeFailed = true; else skinFailed = true;
             }
         }
@@ -115,7 +116,11 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             }
         }
         catch (OperationCanceledException) when (load.IsCancellationRequested) { }
-        catch { if (!_disposed && revision == _revision) Description = textureName + " · 纹理不可用，显示模型示意"; }
+        catch (Exception error)
+        {
+            LauncherDiagnostics.Warn("LoadDefaultSkin", error);
+            if (!_disposed && revision == _revision) Description = textureName + " · 纹理不可用，显示模型示意";
+        }
         finally { if (ReferenceEquals(_defaultLoad, load)) _defaultLoad = null; }
         if (!_disposed && revision == _revision) { InvalidateVisual(); LoadedTexture?.Invoke(); }
     }

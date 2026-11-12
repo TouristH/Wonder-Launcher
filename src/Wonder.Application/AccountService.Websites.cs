@@ -6,7 +6,9 @@ namespace Wonder.Application;
 
 public sealed partial class AccountService
 {
-    public void SetServerWebsite(string id, string address) => Mutate(vault =>
+    public void SetServerWebsite(string id, string address) => SetServerWebsiteAsync(id, address).GetAwaiter().GetResult();
+
+    public Task SetServerWebsiteAsync(string id, string address) => MutateAsync(vault =>
     {
         var index = vault.Servers.FindIndex(x => x.Id == id);
         if (index < 0) throw new AccountAuthenticationException("认证服务器不存在。");

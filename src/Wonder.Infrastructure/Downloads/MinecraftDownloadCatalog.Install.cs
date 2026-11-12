@@ -12,6 +12,11 @@ namespace Wonder.Infrastructure;
 
 public sealed partial class MinecraftDownloadCatalog
 {
+    private static readonly string[] MojangPayloadHosts = ["piston-data.mojang.com", "launcher.mojang.com"];
+    private static readonly string[] MojangIndexHosts = ["piston-meta.mojang.com", "launchermeta.mojang.com"];
+    private static readonly string[] MavenHosts = ["libraries.minecraft.net", "maven.fabricmc.net", "maven.quiltmc.org",
+        "maven.minecraftforge.net", "files.minecraftforge.net", "maven.neoforged.net", "repo.maven.apache.org", "repo1.maven.org"];
+
     public async Task<string> InstallGameAsync(GameInstallRequest request, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         options.Validate(); StrictSegment(request.InstanceName); StrictSegment(request.MinecraftVersion);
@@ -30,7 +35,9 @@ public sealed partial class MinecraftDownloadCatalog
         var progress = steps.Begin("读取游戏版本与准备 Java");
         var versions = await GetMinecraftVersionsAsync(options, ct);
         var selected = versions.FirstOrDefault(x => x.Id == request.MinecraftVersion) ?? throw new InvalidDataException("Minecraft 版本不存在，请刷新版本列表。");
-        var metadata = await GetJson(selected.Url, options, ct);
+        if (selected.Sha1 is not { Length: 40 } sha1 || !sha1.All(char.IsAsciiHexDigit))
+            throw new InvalidDataException("官方版本清单缺少版本描述的 SHA-1。");
+        var metadata = await GetJson(selected.Url, options, ct, sha1);
         if (metadata.Get("id").Text() != request.MinecraftVersion || metadata.Get("mainClass").Text() is null) throw new InvalidDataException("Minecraft 版本描述不匹配。");
         var javaPath = string.IsNullOrWhiteSpace(request.JavaPath)
             ? await MojangJavaInstaller.InstallAsync(engine, metadata, root, options, progress, ct)
@@ -41,7 +48,7 @@ public sealed partial class MinecraftDownloadCatalog
         progress = steps.Begin("安装客户端与依赖库");
         var versionDirectory = SafePath(root, "versions/" + StrictSegment(selected.Id)); Directory.CreateDirectory(versionDirectory);
         await WriteJson(Path.Combine(versionDirectory, selected.Id + ".json"), metadata.GetRawText(), ct);
-        await engine.DownloadAsync(Descriptor(metadata.Get("downloads").Get("client"), Path.Combine(versionDirectory, selected.Id + ".jar")), options, progress, ct);
+        await engine.DownloadAsync(Descriptor(metadata.Get("downloads").Get("client"), Path.Combine(versionDirectory, selected.Id + ".jar"), MojangPayloadHosts), options, progress, ct);
         await InstallLibraries(metadata, root, options, progress, ct);
         progress = steps.Begin("下载游戏资源与日志配置");
         var assetIndex = metadata.Get("assetIndex");
@@ -49,7 +56,7 @@ public sealed partial class MinecraftDownloadCatalog
         {
             var assetId = StrictSegment(assetIndex.Get("id").Text() ?? "");
             var indexPath = Path.Combine(root, "assets", "indexes", assetId + ".json");
-            await engine.DownloadAsync(Descriptor(assetIndex, indexPath), options, progress, ct);
+            await engine.DownloadAsync(Descriptor(assetIndex, indexPath, MojangIndexHosts), options with { Source = DownloadSource.Official }, progress, ct);
             var index = Json(indexPath); var files = new List<DownloadFile>();
             if (index.Get("objects").ValueKind != JsonValueKind.Object) throw new InvalidDataException("资源索引缺少 objects。");
             foreach (var item in index.Get("objects").EnumerateObject())
@@ -62,7 +69,7 @@ public sealed partial class MinecraftDownloadCatalog
         }
         var log = metadata.Get("logging").Get("client").Get("file");
         if (log.ValueKind == JsonValueKind.Object)
-            await engine.DownloadAsync(Descriptor(log, Path.Combine(root, "assets", "log_configs", StrictSegment(log.Get("id").Text() ?? ""))), options, progress, ct);
+            await engine.DownloadAsync(Descriptor(log, Path.Combine(root, "assets", "log_configs", StrictSegment(log.Get("id").Text() ?? "")), MojangPayloadHosts), options, progress, ct);
         progress = steps.Begin("安装模组加载器");
         var version = await InstallLoader(request, root, javaPath, metadata, options, progress, ct);
         progress = steps.Begin("安装可选组件");
@@ -91,14 +98,21 @@ public sealed partial class MinecraftDownloadCatalog
         var origin = loader == "forge" ? "https://maven.minecraftforge.net/net/minecraftforge" : "https://maven.neoforged.net/releases/net/neoforged";
         var installerUrl = $"{origin}/{artifact}/{Escape(fullVersion)}/{artifact}-{Escape(fullVersion)}-installer.jar";
         var installer = Path.Combine(root, "installer", loader + "-installer.jar");
-        var hashText = await engine.GetStringAsync(installerUrl + ".sha1", options, ct);
-        var installerHash = hashText.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
-        if (installerHash.Length != 40 || !installerHash.All(char.IsAsciiHexDigit)) throw new InvalidDataException("加载器安装器校验信息无效。");
+        var installerHash = await OfficialMavenSha1(installerUrl, options, ct);
         await engine.DownloadAsync(new(installerUrl, installer, installerHash), options, progress, ct);
         return await InstallForgeArchive(installer, root, javaPath, metadata, options, progress, ct);
     }
 
-    private async Task InstallLibraries(JsonElement metadata, string root, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct, bool deferGenerated = false)
+    private async Task<string> OfficialMavenSha1(string url, DownloadOptions options, CancellationToken ct)
+    {
+        var hashText = await engine.GetStringAsync(url + ".sha1", options with { Source = DownloadSource.Official }, ct);
+        var installerHash = hashText.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        if (installerHash.Length != 40 || !installerHash.All(char.IsAsciiHexDigit)) throw new InvalidDataException("官方 Maven 仓库未提供有效的 SHA-1。");
+        return installerHash;
+    }
+
+    private async Task InstallLibraries(JsonElement metadata, string root, DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct,
+        bool deferGenerated = false, string? embeddedLibrary = null)
     {
         var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch { System.Runtime.InteropServices.Architecture.Arm64 => "aarch64", System.Runtime.InteropServices.Architecture.X86 => "x86", _ => "amd64" };
         var os = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux";
@@ -110,20 +124,42 @@ public sealed partial class MinecraftDownloadCatalog
             if (artifact.ValueKind == JsonValueKind.Object)
             {
                 var path = SafePath(Path.Combine(root, "libraries"), artifact.Get("path").Text() ?? LaunchArguments.Maven(library.Get("name").Text() ?? ""));
-                if (!string.IsNullOrWhiteSpace(artifact.Get("url").Text())) files.Add(Descriptor(artifact, path));
-                else if (!deferGenerated && !File.Exists(path)) throw new InvalidDataException("安装器没有生成依赖库：" + Path.GetFileName(path));
+                if (!string.IsNullOrWhiteSpace(artifact.Get("url").Text())) files.Add(Descriptor(artifact, path, MavenHosts));
+                else if (!deferGenerated)
+                {
+                    if (!File.Exists(path)) throw new InvalidDataException("安装器没有生成依赖库：" + Path.GetFileName(path));
+                    if (HashedFile(artifact, "", path) is { } expected && !await MatchesHash(expected, ct))
+                        throw new InvalidDataException("安装器生成的依赖库校验失败：" + Path.GetFileName(path));
+                }
             }
             else if (downloads.ValueKind == JsonValueKind.Undefined)
             {
                 var relative = LaunchArguments.Maven(library.Get("name").Text() ?? "");
                 var destination = SafePath(Path.Combine(root, "libraries"), relative);
-                if (!File.Exists(destination)) files.Add(new(RequiredUrl((library.Get("url").Text() ?? "https://libraries.minecraft.net/").TrimEnd('/') + "/" + relative), destination));
+                // Legacy Forge stores the universal JAR inside the verified installer under an unclassified coordinate.
+                if (!WonderPath.Comparer.Equals(destination, embeddedLibrary))
+                {
+                    var repository = DownloadSourceResolver.RequireUrl(library.Get("url").Text() ?? "https://libraries.minecraft.net/", MavenHosts);
+                    if (repository.Query.Length != 0) throw new InvalidDataException("Maven 仓库地址不能包含查询参数。");
+                    var baseUri = new Uri(repository.AbsoluteUri.TrimEnd('/') + "/");
+                    var escaped = string.Join('/', relative.Split('/').Select(segment => Escape(segment).Replace("%2B", "+", StringComparison.Ordinal)));
+                    var url = new Uri(baseUri, escaped).AbsoluteUri;
+                    var descriptor = HashedFile(library, url, destination);
+                    if (descriptor is null)
+                    {
+                        // Old verified Forge profiles provide SHA-1 in checksums for libraries without sidecars.
+                        var sha1 = library.Get("checksums").Items().Select(value => value.Text())
+                            .FirstOrDefault(value => value is { Length: 40 } && value.All(char.IsAsciiHexDigit));
+                        descriptor = new(url, destination, sha1 ?? await OfficialMavenSha1(url, options, ct));
+                    }
+                    files.Add(descriptor);
+                }
             }
             var native = library.Get("natives").Get(os).Text()?.Replace("${arch}", arch.Contains("64", StringComparison.Ordinal) ? "64" : "32");
             if (native is not null)
             {
                 var classifier = downloads.Get("classifiers").Get(native);
-                files.Add(Descriptor(classifier, SafePath(Path.Combine(root, "libraries"), classifier.Get("path").Text() ?? LaunchArguments.Maven(library.Get("name").Text() ?? "", native))));
+                files.Add(Descriptor(classifier, SafePath(Path.Combine(root, "libraries"), classifier.Get("path").Text() ?? LaunchArguments.Maven(library.Get("name").Text() ?? "", native)), MavenHosts));
             }
         }
         await engine.DownloadManyAsync(files.DistinctBy(x => x.Destination).ToArray(), options, progress, ct);
@@ -134,7 +170,8 @@ public sealed partial class MinecraftDownloadCatalog
         if (!Path.IsPathFullyQualified(target)) throw new ArgumentException("安装目标必须是完整路径。");
         target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(target));
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request))));
-        var stage = target + ".wonder-install";
+        // Older stages may contain files installed before official metadata and hashes were required.
+        var stage = target + ".verified.wonder-install";
         if (Directory.Exists(target))
         {
             var marker = Path.Combine(target, ".wonder-complete.json");

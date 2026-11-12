@@ -127,10 +127,12 @@ internal sealed partial class AccountManagerWindow
         body.Children.Add(PageStyles.Hint("离线账户不验证游戏所有权，不能用于需要微软正版认证的服务。它与同名正版账户是不同身份。"));
         var name = Field(body, "玩家名", "离线玩家名", _offlineUsername, 16);
         body.Children.Add(PageStyles.Hint("3–16 位英文字母、数字或下划线。名字决定离线 UUID。"));
-        body.Children.Add(IdleButton("添加并使用", "添加离线账户", () =>
+        body.Children.Add(IdleButton("添加并使用", "添加离线账户", async () =>
         {
-            _service.AddOffline(name.Text ?? "");
-            if (_service.Error is null) { _viewId = _service.SelectedAccount?.Id; Navigate("details"); }
+            var revision = _pageRevision;
+            await Run(() => _service.AddOfflineAsync(name.Text ?? ""));
+            if (!_closed && revision == _pageRevision && _service.Error is null && _service.SelectedAccount is { } selected)
+            { _viewId = selected.Id; Navigate("details"); }
         })); return Scroll(body);
     }
     private void RefreshLogin()
@@ -170,14 +172,17 @@ internal sealed partial class AccountManagerWindow
     private void RefreshServers()
     {
         if (_serverList is null || _serverPending is null) return;
+        var editable = !_service.IsBusy && !_service.IsReadBlocked;
         _serverPending.Children.Clear();
         if (_service.PendingServer is { } pending)
         {
             var box = new StackPanel { Spacing = 10 };
             box.Children.Add(Heading("确认服务器")); box.Children.Add(PageStyles.Hint("实际认证 API：\n" + pending.ApiUrl));
             var name = new TextBox { Text = pending.Name, MaxLength = 120 }; AutomationProperties.SetName(name, "待保存服务器名称"); box.Children.Add(name);
-            box.Children.Add(Button("信任此地址并保存", "确认添加认证服务器", () => _service.ConfirmServer(name.Text)));
-            box.Children.Add(Button("取消", "取消添加认证服务器", _service.CancelServerDiscovery));
+            var confirm = Button("信任此地址并保存", "确认添加认证服务器", async () => await Run(() => _service.ConfirmServerAsync(name.Text)));
+            confirm.IsEnabled = editable; box.Children.Add(confirm);
+            var cancel = Button("取消", "取消添加认证服务器", _service.CancelServerDiscovery);
+            cancel.IsEnabled = editable; box.Children.Add(cancel);
             _serverPending.Children.Add(PageStyles.Card(box));
         }
         _serverList.Children.Clear();
@@ -192,11 +197,12 @@ internal sealed partial class AccountManagerWindow
             var count = _service.Accounts.Count(x => x.ServerUrl == server.ApiUrl);
             box.Children.Add(PageStyles.Hint(count + " 个角色正在使用"));
             var actions = new WrapPanel();
-            var rename = Button("保存名称", "重命名服务器 " + server.Id, () => _service.RenameServer(server.Id, name.Text ?? "")); rename.IsEnabled = !_service.IsBusy; actions.Children.Add(rename);
-            var saveWebsite = Button("保存网站", "保存服务器皮肤网站 " + server.Id, () => _service.SetServerWebsite(server.Id, website.Text ?? ""));
-            saveWebsite.IsEnabled = !_service.IsBusy; saveWebsite.Margin = new Thickness(8, 0, 0, 0); actions.Children.Add(saveWebsite);
-            var remove = Button("移除服务器", "移除服务器 " + server.Id, () => _service.RemoveServer(server.Id)); remove.Margin = new Thickness(8, 0, 0, 0);
-            remove.IsEnabled = !_service.IsBusy && count == 0; ToolTip.SetTip(remove, count > 0 ? "请先移除使用此服务器的账户。" : "只移除本地服务器记录。"); actions.Children.Add(remove);
+            var rename = Button("保存名称", "重命名服务器 " + server.Id, async () => await Run(() => _service.RenameServerAsync(server.Id, name.Text ?? "")));
+            rename.IsEnabled = editable; actions.Children.Add(rename);
+            var saveWebsite = Button("保存网站", "保存服务器皮肤网站 " + server.Id, async () => await Run(() => _service.SetServerWebsiteAsync(server.Id, website.Text ?? "")));
+            saveWebsite.IsEnabled = editable; saveWebsite.Margin = new Thickness(8, 0, 0, 0); actions.Children.Add(saveWebsite);
+            var remove = Button("移除服务器", "移除服务器 " + server.Id, async () => await Run(() => _service.RemoveServerAsync(server.Id))); remove.Margin = new Thickness(8, 0, 0, 0);
+            remove.IsEnabled = editable && count == 0; ToolTip.SetTip(remove, count > 0 ? "请先移除使用此服务器的账户。" : "只移除本地服务器记录。"); actions.Children.Add(remove);
             if (server.RegistrationUrl is { } register)
             { var link = Button("注册账号 ↗", "注册服务器账号 " + server.Id, () => OpenWebsite(register)); link.Margin = new Thickness(8, 0, 0, 0); actions.Children.Add(link); }
             box.Children.Add(actions); _serverList.Children.Add(PageStyles.Card(box));

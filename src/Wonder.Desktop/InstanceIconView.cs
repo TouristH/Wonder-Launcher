@@ -67,7 +67,8 @@ internal sealed class InstanceIconView : Image
                     }
                 }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or InvalidOperationException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or InvalidOperationException)
+            { LauncherDiagnostics.Warn("LoadInstanceIcon", ex); }
         }
         if (_preset is not null) Source = _preset;
         else

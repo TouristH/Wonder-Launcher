@@ -249,6 +249,6 @@ internal sealed class ComponentView : Viewbox, IDisposable
         _content = null;
         // A faulty native presenter must still release its session and leave other components usable.
         try { content?.Dispose(); }
-        catch { }
+        catch (Exception error) { Wonder.Core.LauncherDiagnostics.Warn("DisposeComponentContent", error); }
     }
 }

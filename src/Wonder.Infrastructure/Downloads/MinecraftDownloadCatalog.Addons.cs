@@ -15,6 +15,15 @@ public sealed partial class MinecraftDownloadCatalog
     private const string FabricApiProject = "P7dR8mSH";
     private const string QuiltApiProject = "qvIfYCYJ";
     private static readonly TimeSpan OptiFineParseTimeout = TimeSpan.FromSeconds(2);
+    // SHA-256 and exact lengths recorded from the official HTTPS release downloads.
+    private static readonly Dictionary<string, (string Sha256, int Size)> OptiFineReleases = new(StringComparer.Ordinal)
+    {
+        ["OptiFine_1.8.9_HD_U_M5.jar"] = ("2739760A70FCA6AE5C7DC817BCC6283F18F55E38FA23778DA7F387A6B724B2C4", 2585014),
+        ["OptiFine_1.12.2_HD_U_G5.jar"] = ("3B0006797771FEB97F2D0D2908AE7C9A78CEFB2E730AF1C2E85D08A839BA271E", 2669107),
+        ["OptiFine_1.16.5_HD_U_G8.jar"] = ("3C76BC90ED44BCE567CEE7C20EB2C4361926F23A86E5367D596F6E624D0B494F", 6046996),
+        ["OptiFine_1.20.1_HD_U_I6.jar"] = ("0B67CB670AEDF2E55A982F3D52B6D53E46791A0C984AA1D2EE58100FC9BFC650", 7145205),
+        ["OptiFine_1.21.11_HD_U_J9.jar"] = ("63A60C48B3370920E96D4C32570D7154D17B3A86654C4F1D1DF418BE668D3903", 8045116)
+    };
 
     public async Task<IReadOnlyList<GameAddonVersion>> GetGameAddonsAsync(GameAddonKind kind, string loader, string minecraftVersion,
         string? loaderVersion, DownloadOptions options, CancellationToken ct = default)
@@ -25,7 +34,8 @@ public sealed partial class MinecraftDownloadCatalog
         if (kind == GameAddonKind.OptiFine)
         {
             if (loader != "vanilla" && (loader != "forge" || string.IsNullOrWhiteSpace(loaderVersion))) return [];
-            var page = await engine.GetStringAsync(OptiFineHost + "/downloads", options, ct);
+            if (!OptiFineReleases.Keys.Any(file => file.StartsWith($"OptiFine_{minecraftVersion}_", StringComparison.Ordinal))) return [];
+            var page = await engine.GetStringAsync(OptiFineHost + "/downloads", options with { Source = DownloadSource.Official }, ct);
             return ReadOptiFineVersions(page, minecraftVersion, loader, loaderVersion);
         }
 
@@ -56,7 +66,8 @@ public sealed partial class MinecraftDownloadCatalog
         {
             var mirror = Regex.Match(row.Value, "<td\\s+class=['\"]colMirror['\"]>\\s*<a\\s+href=['\"](?<url>[^'\"]+)['\"]", RegexOptions.IgnoreCase, OptiFineParseTimeout);
             if (!mirror.Success || !TryOptiFineLink(mirror.Groups["url"].Value, "/adloadx", out var query)) continue;
-            if (!query.TryGetValue("f", out var file) || !Regex.IsMatch(file, filenamePattern, RegexOptions.CultureInvariant, OptiFineParseTimeout)) continue;
+            if (!query.TryGetValue("f", out var file) || !Regex.IsMatch(file, filenamePattern, RegexOptions.CultureInvariant, OptiFineParseTimeout) ||
+                !OptiFineReleases.ContainsKey(file)) continue;
             if (loader == "forge")
             {
                 var forge = Regex.Match(row.Value, "<td\\s+class=['\"]colForge['\"]>\\s*Forge\\s+(?<version>[^<]+)</td>", RegexOptions.IgnoreCase, OptiFineParseTimeout);
@@ -100,14 +111,15 @@ public sealed partial class MinecraftDownloadCatalog
         if (request.FabricApiVersion is { } fabric) await InstallApiAddon(GameAddonKind.FabricApi, fabric, request, root, options, progress, ct);
         if (request.QuiltApiVersion is { } quilt) await InstallApiAddon(GameAddonKind.QuiltApi, quilt, request, root, options, progress, ct);
         if (request.OptiFineVersion is not { } optiFine) return version;
+        if (!OptiFineReleases.TryGetValue(optiFine, out var trusted))
+            throw new InvalidDataException("所选 OptiFine 版本没有内置 SHA-256，无法自动安装。");
 
         var matches = await GetGameAddonsAsync(GameAddonKind.OptiFine, request.Loader, request.MinecraftVersion, request.LoaderVersion, options, ct);
         if (matches.All(item => item.Id != optiFine)) throw new InvalidDataException("所选 OptiFine 与当前游戏或加载器版本不兼容，请重新选择。");
         var url = await GetOptiFineDownloadUrl(optiFine, options, ct);
         var isForge = request.Loader == "forge";
         var installer = SafePath(root, (isForge ? "mods/" : "installer/") + optiFine);
-        await engine.DownloadAsync(new(url, installer), options, progress, ct);
-        if (new FileInfo(installer).Length > 64L * 1024 * 1024) throw new InvalidDataException("OptiFine 安装包过大。");
+        await engine.DownloadAsync(new(url, installer, trusted.Sha256, "SHA256", trusted.Size), options with { Source = DownloadSource.Official }, progress, ct);
         using var archive = ZipFile.OpenRead(installer);
         if (archive.GetEntry("optifine/Installer.class") is null) throw new InvalidDataException("OptiFine 下载文件缺少官方安装器。");
         if (isForge)
@@ -135,7 +147,7 @@ public sealed partial class MinecraftDownloadCatalog
     private async Task<string> GetOptiFineDownloadUrl(string file, DownloadOptions options, CancellationToken ct)
     {
         var escaped = Escape(file);
-        var page = await engine.GetStringAsync(OptiFineHost + "/adloadx?f=" + escaped, options, ct);
+        var page = await engine.GetStringAsync(OptiFineHost + "/adloadx?f=" + escaped, options with { Source = DownloadSource.Official }, ct);
         foreach (Match link in Regex.Matches(page, "href\\s*=\\s*['\"](?<url>[^'\"]+)['\"]", RegexOptions.IgnoreCase, OptiFineParseTimeout))
         {
             if (!TryOptiFineLink(link.Groups["url"].Value, "/downloadx", out var query) ||
@@ -184,8 +196,7 @@ public sealed partial class MinecraftDownloadCatalog
     {
         if (archive.GetEntry("launchwrapper-of.txt") is { } descriptor)
         {
-            if (descriptor.Length > 256) throw new InvalidDataException("OptiFine 启动库版本描述无效。");
-            using var reader = new StreamReader(descriptor.Open());
+            using var reader = new StreamReader(new MemoryStream(await ArchiveEntryContent.ReadAsync(descriptor, 256, ct)));
             var version = (await reader.ReadToEndAsync(ct)).Trim();
             if (!Regex.IsMatch(version, @"\A\d+(\.\d+)+\z", RegexOptions.CultureInvariant, OptiFineParseTimeout))
                 throw new InvalidDataException("OptiFine 启动库版本描述无效。");

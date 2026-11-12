@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security;
+using Wonder.Core;
 
 namespace Wonder.Desktop;
 
@@ -13,6 +14,30 @@ internal static class Program
 {
     [STAThread]
     public static int Main(string[] args)
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+        {
+            if (eventArgs.ExceptionObject is Exception error) LauncherDiagnostics.Error("AppDomain", error);
+        };
+        TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+        {
+            LauncherDiagnostics.Error("UnobservedTask", eventArgs.Exception);
+            eventArgs.SetObserved();
+        };
+        try
+        {
+            LauncherDiagnostics.Configure(LauncherDataPaths.RootDirectory);
+            return Start(args);
+        }
+        catch (Exception error)
+        {
+            LauncherDiagnostics.Error("Launcher", error);
+            ShowStartupMessage("Wonder Launcher 遇到异常并已退出。请检查 WonderData/logs/launcher.log。", isError: true);
+            return 1;
+        }
+    }
+
+    private static int Start(string[] args)
     {
         LauncherInstanceGuard? instance;
         try
@@ -26,6 +51,7 @@ internal static class Program
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or SecurityException or Win32Exception)
         {
+            LauncherDiagnostics.Error("AcquireDataDirectory", error);
             ShowStartupMessage($"无法取得 Wonder 数据目录的独占写入权限，本次启动已停止。请检查启动器所在目录、磁盘和写入权限后重试。\n\n{error.Message}", isError: true);
             return 1;
         }

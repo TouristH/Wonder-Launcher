@@ -66,7 +66,7 @@ internal static class AccountComponents
                 AutomationProperties.SetName(avatar, "当前账户皮肤头像");
                 var currentAvatar = avatar;
                 currentAvatar.LoadedTexture += () => ToolTip.SetTip(currentAvatar, currentAvatar.Description);
-                if (profile is not null) _ = AccountAvatarLoader.LoadAsync(currentAvatar, profile, instance, alternatives);
+                if (profile is not null) UiOperation.Start(() => AccountAvatarLoader.LoadAsync(currentAvatar, profile, instance, alternatives));
                 else ToolTip.SetTip(currentAvatar, context.IsPreview ? "显示当前账户的皮肤头像与头部外层" : "添加并选择账户以显示头像");
             }
             ToolTip.SetTip(name, name.Text); refreshing = true;
@@ -86,15 +86,23 @@ internal static class AccountComponents
     {
         private bool _subscribed;
         public event EventHandler? Changed;
-        public IReadOnlyDictionary<string, string> Values => new Dictionary<string, string>
+        public IReadOnlyDictionary<string, string> Values
         {
-            ["name"] = service.SelectedAccount?.Username ?? "尚未选择账户",
-            ["kind"] = service.SelectedAccount is { } account ? AccountService.KindLabel(account.Kind) : "添加账户以选择游戏身份",
-            ["selected"] = service.SelectedAccount?.Id ?? "", ["busy"] = service.IsBusy ? "true" : "false",
-            ["skin"] = service.SelectedAccount?.SkinUrl ?? "",
-            ["status"] = service.IsBusy ? "正在处理账户…" : service.Error is not null ? "账户操作未完成 · 打开账户中心查看" : service.SelectedAccount?.Kind == AccountKind.Offline ? service.SelectedAccount.OfflineSkinId is { } skinId ? "默认皮肤 · " + OfflineDefaultSkins.Get(skinId).Name : "自动分配默认皮肤" : "",
-            ["choices"] = JsonSerializer.Serialize(service.Accounts.Select(x => new Choice(x.Id, x.Username + " · " + AccountService.KindLabel(x.Kind))))
-        };
+            get
+            {
+                var account = service.SelectedAccount;
+                var busy = service.IsBusy;
+                return new Dictionary<string, string>
+                {
+                    ["name"] = account?.Username ?? "尚未选择账户",
+                    ["kind"] = account is null ? "添加账户以选择游戏身份" : AccountService.KindLabel(account.Kind),
+                    ["selected"] = account?.Id ?? "", ["busy"] = busy || service.IsReadBlocked ? "true" : "false",
+                    ["skin"] = account?.SkinUrl ?? "",
+                    ["status"] = busy ? "正在处理账户…" : service.Error is not null ? "账户操作未完成 · 打开账户中心查看" : account?.Kind == AccountKind.Offline ? account.OfflineSkinId is { } skinId ? "默认皮肤 · " + OfflineDefaultSkins.Get(skinId).Name : "自动分配默认皮肤" : "",
+                    ["choices"] = JsonSerializer.Serialize(service.Accounts.Select(x => new Choice(x.Id, x.Username + " · " + AccountService.KindLabel(x.Kind))))
+                };
+            }
+        }
         public void Resume() { if (_subscribed) return; _subscribed = true; service.Changed += OnChanged; if (instances is not null) instances.Changed += OnChanged; }
         public void Suspend() { if (!_subscribed) return; _subscribed = false; service.Changed -= OnChanged; if (instances is not null) instances.Changed -= OnChanged; }
         private void OnChanged(object? sender, EventArgs args)
@@ -102,7 +110,7 @@ internal static class AccountComponents
             if (Dispatcher.UIThread.CheckAccess()) Changed?.Invoke(this, EventArgs.Empty);
             else Dispatcher.UIThread.Post(() => { if (_subscribed) Changed?.Invoke(this, EventArgs.Empty); });
         }
-        public void Invoke(string actionId, string? value) { if (actionId == "manage") openManager(); else if (actionId == "select" && value is not null) service.Select(value); }
+        public void Invoke(string actionId, string? value) { if (actionId == "manage") openManager(); else if (actionId == "select" && value is not null) UiOperation.Start(() => service.SelectAsync(value)); }
         public void Dispose() { Suspend(); Changed = null; }
     }
 }

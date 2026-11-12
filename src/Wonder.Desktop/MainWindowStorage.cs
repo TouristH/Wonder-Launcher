@@ -3,6 +3,7 @@
 
 using Avalonia.Controls;
 using Avalonia.Threading;
+using Wonder.Core;
 using Wonder.Workspace;
 
 namespace Wonder.Desktop;
@@ -13,6 +14,9 @@ public sealed partial class MainWindow
     private WorkspaceSaveQueue _workspaceSaves = null!;
     private long _workspaceRevision;
     private bool _workspaceStorageClosed;
+    private bool _waitingToClose;
+    private bool _forceClose;
+    private string? _closeError;
 
     private void InitializeWorkspaceStorage(Action<WorkspaceDocument> saveWorkspace)
     {
@@ -49,6 +53,7 @@ public sealed partial class MainWindow
         }
         catch (Exception exception) when (IsWorkspaceStorageError(exception))
         {
+            LauncherDiagnostics.Warn("CaptureWorkspace", exception);
             _error = $"布局尚未保存。\n{exception.Message}";
             UpdateStorageStatus();
             return false;
@@ -81,7 +86,75 @@ public sealed partial class MainWindow
         UpdateStorageStatus();
     }
 
-    private void CloseWorkspace(object? sender, WindowClosingEventArgs args)
+    protected override void OnClosing(WindowClosingEventArgs args)
+    {
+        base.OnClosing(args);
+        if (args.Cancel || _forceClose) return;
+        if (_waitingToClose) { args.Cancel = true; return; }
+
+        _closeError = null;
+        try
+        {
+            var accounts = _accounts.WaitForIdleAsync();
+            var instances = _instances.WaitForPersistenceAsync();
+            if (!accounts.IsCompletedSuccessfully || !instances.IsCompletedSuccessfully)
+            {
+                args.Cancel = true;
+                _accounts.Cancel();
+                _waitingToClose = true;
+                UpdateStorageStatus();
+                UiOperation.Start(() => CloseAfterStorageAsync(accounts, instances), () => _workspaceStorageClosed);
+                return;
+            }
+            CloseWorkspace(args);
+            if (args.Cancel) SetCloseError("布局保存未完成。");
+        }
+        catch (Exception error)
+        {
+            _waitingToClose = false;
+            args.Cancel = true;
+            LauncherDiagnostics.Warn("CloseLauncher", error);
+            SetCloseError("本地存储操作异常。");
+        }
+    }
+
+    internal async Task CloseAfterStorageAsync(Task accounts, Task instances)
+    {
+        var pending = Task.WhenAll(accounts, instances);
+        try
+        {
+            await pending;
+            // The canceled closing event must finish before requesting close again.
+            await Dispatcher.Yield();
+        }
+        catch (Exception error)
+        {
+            LauncherDiagnostics.Warn("WaitForStorageOnClose", pending.Exception ?? error);
+            if (!_workspaceStorageClosed) SetCloseError("等待账户或实例存储操作时失败。");
+            return;
+        }
+        finally
+        {
+            _waitingToClose = false;
+            if (!_workspaceStorageClosed) UpdateStorageStatus();
+        }
+        if (!_workspaceStorageClosed) Close();
+    }
+
+    private void SetCloseError(string message)
+    {
+        _closeError = message + " 可以重试关闭，或强制退出。未完成保存的更改可能丢失。";
+        UpdateStorageStatus();
+    }
+
+    private void ForceClose()
+    {
+        _forceClose = true;
+        try { Close(); }
+        finally { _forceClose = false; }
+    }
+
+    private void CloseWorkspace(WindowClosingEventArgs args)
     {
         _workspace.CancelGesture();
         if (_loadFailed || args.Cancel) return;

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
+using Wonder.Core;
+
 namespace Wonder.Workspace;
 
 public readonly record struct WorkspaceSaveStatus(long RequestedRevision, long SavedRevision, bool IsSaving, Exception? Error);
@@ -66,7 +68,11 @@ public sealed class WorkspaceSaveQueue(Action<WorkspaceDocument> save) : IDispos
             }
             Exception? failure = null;
             try { save(item.Document); }
-            catch (Exception exception) { failure = exception; }
+            catch (Exception exception)
+            {
+                LauncherDiagnostics.Warn("SaveWorkspace", exception);
+                failure = exception;
+            }
             bool stop;
             lock (gate)
             {
@@ -88,7 +94,8 @@ public sealed class WorkspaceSaveQueue(Action<WorkspaceDocument> save) : IDispos
             var handlers = Changed;
             if (handlers is not null)
                 foreach (EventHandler handler in handlers.GetInvocationList())
-                    try { handler(this, EventArgs.Empty); } catch { }
+                    try { handler(this, EventArgs.Empty); }
+                    catch (Exception exception) { LauncherDiagnostics.Warn("NotifyWorkspaceSaveChanged", exception); }
             if (stop) return;
         }
     }

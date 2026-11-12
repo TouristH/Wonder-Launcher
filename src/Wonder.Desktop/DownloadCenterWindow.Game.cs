@@ -48,12 +48,12 @@ internal sealed partial class DownloadCenterWindow
         _gameStatus = PageStyles.Hint("正在准备游戏版本列表…");
         _gameType.SelectionChanged += (_, _) => FilterGameVersions();
         _gameQuery.TextChanged += (_, _) => FilterGameVersions();
-        _gameVersions.SelectionChanged += (_, _) => _ = LoadLoaderVersionsAsync();
-        _loader.SelectionChanged += (_, _) => _ = LoadLoaderVersionsAsync();
+        _gameVersions.SelectionChanged += (_, _) => UiOperation.Start(LoadLoaderVersionsAsync, () => _closed);
+        _loader.SelectionChanged += (_, _) => UiOperation.Start(LoadLoaderVersionsAsync, () => _closed);
         _loaderVersions.SelectionChanged += (_, _) =>
         {
             UpdateGameInstall();
-            _ = LoadGameAddonsAsync();
+            UiOperation.Start(LoadGameAddonsAsync, () => _closed);
         };
         var optional = Stack(Heading("可选组件"));
         foreach (var (kind, title) in new[] { (GameAddonKind.OptiFine, "OptiFine"), (GameAddonKind.FabricApi, "Fabric API"), (GameAddonKind.QuiltApi, "Quilted Fabric API / QSL") })
@@ -66,7 +66,7 @@ internal sealed partial class DownloadCenterWindow
         _addonStatus = PageStyles.Hint("选择 Minecraft 版本后查询可用组件。"); optional.Children.Add(_addonStatus);
         var versionCard = Stack(Heading("选择版本"), Field("版本分类", _gameType), _gameQuery,
             Field("Minecraft", _gameVersions), Field("加载器", _loader), Field("加载器版本", _loaderVersions), _gameStatus,
-            ActionButton("刷新游戏版本", () => _ = LoadGameVersionsAsync()));
+            ActionButton("刷新游戏版本", () => UiOperation.Start(LoadGameVersionsAsync, () => _closed)));
         _gameName = Input("新实例名称", "给这个实例取个名字");
         _defaultGameParent = DefaultGameInstallDirectory();
         _gameParent = Input("游戏安装父目录", "选择游戏目录", _defaultGameParent);
@@ -89,8 +89,8 @@ internal sealed partial class DownloadCenterWindow
             _gameStatus.Text = $"已获取 {list.Count} 个版本。";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { _gameStatus.Text = "版本列表获取失败：" + ex.Message; ShowStatus(_gameStatus.Text, true); }
-        finally { _loadingVersions = false; UpdateGameInstall(); }
+        catch (Exception ex) { if (!_closed) { _gameStatus.Text = "版本列表获取失败：" + ex.Message; ShowStatus(_gameStatus.Text, true); } }
+        finally { _loadingVersions = false; if (!_closed) UpdateGameInstall(); }
     }
     private void FilterGameVersions()
     {
@@ -113,7 +113,7 @@ internal sealed partial class DownloadCenterWindow
         if (_loader.SelectedIndex <= 0 || game < 0 || game >= _visibleGameVersions.Length)
         {
             _loaderRequest = null; request.Dispose(); UpdateGameInstall();
-            _ = LoadGameAddonsAsync();
+            UiOperation.Start(LoadGameAddonsAsync, () => _closed);
             return;
         }
         _loadingLoaders = true; UpdateGameInstall(); _gameStatus.Text = "正在获取兼容的加载器版本…";
@@ -126,8 +126,17 @@ internal sealed partial class DownloadCenterWindow
             _gameStatus.Text = versions.Count > 0 ? $"找到 {versions.Count} 个兼容版本。" : "这个 Minecraft 版本暂无该加载器，试试其他版本或加载器。";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { if (!request.IsCancellationRequested) _gameStatus.Text = "加载器列表获取失败：" + ex.Message; }
-        finally { if (ReferenceEquals(request, _loaderRequest)) { _loaderRequest = null; _loadingLoaders = false; UpdateGameInstall(); } request.Dispose(); }
+        catch (Exception ex) { if (!_closed && !request.IsCancellationRequested) _gameStatus.Text = "加载器列表获取失败：" + ex.Message; }
+        finally
+        {
+            if (ReferenceEquals(request, _loaderRequest))
+            {
+                _loaderRequest = null;
+                _loadingLoaders = false;
+                if (!_closed) UpdateGameInstall();
+            }
+            request.Dispose();
+        }
     }
 
     private async Task LoadGameAddonsAsync()

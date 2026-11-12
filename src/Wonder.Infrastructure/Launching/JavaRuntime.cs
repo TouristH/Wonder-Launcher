@@ -40,6 +40,7 @@ public sealed record JavaRuntime(string Executable, int MajorVersion, string Arc
     internal static ProcessStartInfo StartInfo(string executable, string? directory, IEnumerable<string> arguments)
     {
         var info = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
+        info.Environment.Remove("WONDER_CURSEFORGE_API_KEY");
         if (directory is not null) info.WorkingDirectory = directory;
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
         return info;

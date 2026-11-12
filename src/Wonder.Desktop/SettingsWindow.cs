@@ -11,6 +11,7 @@ using Avalonia.Media;
 using Wonder.Application;
 using Wonder.Core;
 using Wonder.Workspace;
+using ResourceProvider = Wonder.Core.ResourceProvider;
 
 namespace Wonder.Desktop;
 
@@ -23,6 +24,7 @@ internal sealed class SettingsWindow : Window
     private readonly ComboBox _theme;
     private readonly ComboBox _accent;
     private readonly ComboBox _downloadSource;
+    private readonly ComboBox? _resourceProvider;
     private readonly Slider _downloadFiles, _downloadConnections, _downloadRetries;
     private readonly ToggleSwitch _showAreaNumbers;
     private readonly Slider _padding, _componentScale, _hold, _extent, _closeDelay;
@@ -39,7 +41,8 @@ internal sealed class SettingsWindow : Window
     private readonly TextBlock _pageTitle, _pageDescription;
     private string? _storageError;
 
-    public SettingsWindow(LauncherSettings settings, string path, Action<LauncherSettings> change, Action reset, Action retry, InstanceService? instances = null)
+    public SettingsWindow(LauncherSettings settings, string path, Action<LauncherSettings> change, Action reset, Action retry, InstanceService? instances = null,
+        Func<string?, bool>? setCurseForgeKey = null, bool hasCurseForgeKey = false, bool showCurseForge = DownloadCenterWindow.ShowCurseForgeByDefault)
     {
         _settings = settings;
         _change = change;
@@ -130,8 +133,18 @@ internal sealed class SettingsWindow : Window
         var downloads = Section("下载与网络", "新下载和列表刷新使用当前策略；进行中的任务保留开始时的设置。");
         _downloadSource = Choice("下载源", ["自动（镜像优先）", "官方源", "BMCLAPI 镜像"]);
         _downloadSource.SelectionChanged += (_, _) => { if (_downloadSource.SelectedIndex >= 0) Change(_settings with { DownloadSource = (DownloadSource)_downloadSource.SelectedIndex }); };
-        downloads.Children.Add(ChoiceRow("下载源", _downloadSource));
-        downloads.Children.Add(Hint("自动与 BMCLAPI 优先使用镜像，失败后回退官方。官方源直接连接原站。模组、整合包、资源包和光影使用 Modrinth 原始下载地址。"));
+        downloads.Children.Add(ChoiceRow("游戏下载源", _downloadSource));
+        downloads.Children.Add(Hint("版本清单和校验信息始终来自官方。自动与 BMCLAPI 优先通过镜像传输受支持的文件，失败后回退官方。"));
+        if (showCurseForge)
+        {
+            _resourceProvider = Choice("默认资源平台", ["Modrinth", "CurseForge"]);
+            _resourceProvider.SelectionChanged += (_, _) =>
+            {
+                if (_resourceProvider.SelectedIndex >= 0) Change(_settings with { DefaultResourceProvider = (ResourceProvider)_resourceProvider.SelectedIndex });
+            };
+            downloads.Children.Add(ChoiceRow("默认资源平台", _resourceProvider));
+            if (setCurseForgeKey is not null) AddCurseForgeKeyField(downloads, setCurseForgeKey, hasCurseForgeKey);
+        }
         _downloadFiles = Range(downloads, "并发文件数", "同时传输的游戏依赖与资源文件数量", 1, 32, 1, "个", value => _settings with { ConcurrentDownloads = value });
         _downloadConnections = Range(downloads, "单文件连接数", "大文件支持分段时使用多个连接；服务器不支持时自动降级", 1, 16, 1, "个", value => _settings with { DownloadConnections = value });
         _downloadRetries = Range(downloads, "失败重试次数", "连接或校验失败后自动重试的次数", 0, 8, 1, "次", value => _settings with { DownloadRetries = value });
@@ -204,6 +217,7 @@ internal sealed class SettingsWindow : Window
             _extent.Value = settings.SidebarExtent;
             _closeDelay.Value = settings.SidebarCloseDelayMilliseconds;
             _downloadSource.SelectedIndex = (int)settings.DownloadSource;
+            if (_resourceProvider is not null) _resourceProvider.SelectedIndex = (int)settings.DefaultResourceProvider;
             _downloadFiles.Value = settings.ConcurrentDownloads;
             _downloadConnections.Value = settings.DownloadConnections;
             _downloadRetries.Value = settings.DownloadRetries;
@@ -225,6 +239,50 @@ internal sealed class SettingsWindow : Window
     }
 
     public void ShowLauncherSettings() => SelectCategory(2);
+
+    private void AddCurseForgeKeyField(StackPanel downloads, Func<string?, bool> setKey, bool hasKey)
+    {
+        var keyInput = new TextBox { PasswordChar = '●', PlaceholderText = "CurseForge API 密钥", MaxLength = 1024 };
+        AutomationProperties.SetName(keyInput, "CurseForge API 密钥");
+        var status = Hint("");
+        var apply = new Button { Content = "本次使用", IsEnabled = false };
+        var clear = new Button { Content = "清除本次密钥" };
+        var official = new Button { Content = "API 密钥申请说明" };
+        var closed = false;
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { apply, clear, official } };
+        void UpdateKeyStatus(bool configured) => status.Text = configured ? "已配置 CurseForge API 密钥。" : "CurseForge 官方 API 需要密钥。";
+        void SetKey(string? value)
+        {
+            try
+            {
+                UpdateKeyStatus(setKey(value));
+                keyInput.Text = "";
+            }
+            catch (ArgumentException error) { status.Text = error.Message; }
+        }
+        keyInput.TextChanged += (_, _) => apply.IsEnabled = !string.IsNullOrWhiteSpace(keyInput.Text);
+        apply.Click += (_, _) => SetKey(keyInput.Text);
+        clear.Click += (_, _) => SetKey(null);
+        official.Click += (_, _) => UiOperation.Start(async () =>
+        {
+            try
+            {
+                if (!await Launcher.LaunchUriAsync(new Uri("https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key")) && !closed)
+                    status.Text = "无法打开 CurseForge API 说明。";
+            }
+            catch (Exception error) when (error is InvalidOperationException or NotSupportedException)
+            {
+                Wonder.Core.LauncherDiagnostics.Warn("OpenCurseForgeApiHelp", error);
+                if (!closed) status.Text = "无法打开 CurseForge API 说明。";
+            }
+        }, () => closed);
+        Closed += (_, _) => { closed = true; keyInput.Text = ""; };
+        UpdateKeyStatus(hasKey);
+        downloads.Children.Add(keyInput);
+        downloads.Children.Add(buttons);
+        downloads.Children.Add(status);
+        downloads.Children.Add(Hint("输入的密钥仅用于本次启动。长期使用可在启动前设置 WONDER_CURSEFORGE_API_KEY。"));
+    }
 
     private void SelectCategory(int index)
     {

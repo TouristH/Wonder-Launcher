@@ -133,15 +133,18 @@ public sealed class DownloadService : IDisposable
             if (!WonderPath.Comparer.Equals(Destination(other.Game, other.Resource), target)) continue;
             // Installs own the entire new directory. Resource tasks are serialized and may share
             // an existing instance, but two pending versions of the same project are ambiguous.
+            var sameProject = other.Resource?.Project is { } existing && resource?.Project is { } requested &&
+                existing.Provider == requested.Provider && existing.Id == requested.Id;
             if (createsInstance || CreatesInstance(other.Game, other.Resource) ||
-                other.Resource?.Project.Id == resource?.Project.Id)
+                sameProject)
                 throw new InvalidOperationException("此目标已有相同或冲突的未结束任务，请等待完成或先取消。");
         }
     }
     private static ResourceInstallRequest? SnapshotResource(ResourceInstallRequest? request)
     {
         if (request is null) return null;
-        if (request.Project is null || request.Version is null || !Enum.IsDefined(request.Project.Kind) || string.IsNullOrWhiteSpace(request.Project.Id))
+        if (request.Project is null || request.Version is null || !Enum.IsDefined(request.Project.Kind) ||
+            !Enum.IsDefined(request.Project.Provider) || string.IsNullOrWhiteSpace(request.Project.Id))
             throw new ArgumentException("下载资源信息无效。");
         var version = request.Version;
         return request with { Version = version with { GameVersions = version.GameVersions.ToArray(), Loaders = version.Loaders.ToArray(), Files = version.Files.ToArray(), Dependencies = version.Dependencies.ToArray() } };
@@ -228,7 +231,8 @@ public sealed class DownloadService : IDisposable
     {
         if (_disposed || Changed is not { } handlers) return;
         foreach (EventHandler handler in handlers.GetInvocationList())
-            try { handler(this, EventArgs.Empty); } catch { }
+            try { handler(this, EventArgs.Empty); }
+            catch (Exception ex) { LauncherDiagnostics.Warn("NotifyDownloadsChanged", ex); }
     }
     public void Dispose()
     {

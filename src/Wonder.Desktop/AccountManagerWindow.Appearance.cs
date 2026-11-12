@@ -44,7 +44,11 @@ internal sealed partial class AccountManagerWindow
                 var bytes = memory.ToArray(); preview.SetLocal(bytes); pendingSkin = bytes;
                 caption.Text = preview.Description; fileLabel.Text = file.Name + " · 待上传";
             }
-            catch { if (!_closed) _status.Text = "无法读取此皮肤，请选择有效的 64×64 或 64×32 PNG（不超过 1 MiB）。"; }
+            catch (Exception error)
+            {
+                Wonder.Core.LauncherDiagnostics.Warn("AccountManager.ReadSkin", error);
+                if (!_closed) _status.Text = "无法读取此皮肤，请选择有效的 64×64 或 64×32 PNG（不超过 1 MiB）。";
+            }
         });
         controls.Children.Add(choose); controls.Children.Add(fileLabel);
         controls.Children.Add(IdleButton("上传到 Minecraft", "上传正版皮肤", async () =>
@@ -81,7 +85,7 @@ internal sealed partial class AccountManagerWindow
         var turn = Button("查看背面", "切换角色预览方向", () => preview.Back = !preview.Back);
         turn.Click += (_, _) => turn.Content = preview.Back ? "查看正面" : "查看背面";
         turn.HorizontalAlignment = HorizontalAlignment.Center; column.Children.Add(turn);
-        _ = preview.LoadAsync(profile);
+        UiOperation.Start(() => preview.LoadAsync(profile), () => _closed);
         return column;
     }
 
@@ -96,6 +100,6 @@ internal sealed partial class AccountManagerWindow
         preview.LoadedTexture += () => status.Text = preview.Description;
         info.Children.Add(PageStyles.Hint("角色背面同步显示当前佩戴的披风。"));
         body.Children.Add(PageStyles.Card(layout));
-        _ = preview.LoadAsync(profile);
+        UiOperation.Start(() => preview.LoadAsync(profile), () => _closed);
     }
 }

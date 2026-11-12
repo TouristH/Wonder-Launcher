@@ -5,7 +5,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
+using Wonder.Core;
 using Wonder.Workspace;
+using ResourceProvider = Wonder.Core.ResourceProvider;
 
 namespace Wonder.Desktop;
 
@@ -17,6 +19,7 @@ public sealed partial class MainWindow
     private SettingsWindow? _settingsWindow;
     private string? _settingsError;
     private bool _settingsLoadFailed;
+    private ResourceProvider _appliedResourceProvider;
 
     private void InitializeSettings()
     {
@@ -35,6 +38,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex) when (IsSettingsStorageError(ex))
         {
+            Wonder.Core.LauncherDiagnostics.Warn("ReadSettings", ex);
             _settingsLoadFailed = true;
             _settingsError = $"设置读取失败，原文件已保留。当前使用默认设置。\n{ex.Message}\n可修复文件后重试，或确认恢复默认设置。";
         }
@@ -49,7 +53,8 @@ public sealed partial class MainWindow
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(_settings, _settingsPath, ChangeSettings, ResetSettings, RetrySettings, _instances) { FontFamily = FontFamily };
+        _settingsWindow = new SettingsWindow(_settings, _settingsPath, ChangeSettings, ResetSettings, RetrySettings, _instances,
+            SetCurseForgeSessionKey, !string.IsNullOrWhiteSpace(GetCurseForgeApiKey())) { FontFamily = FontFamily };
         _settingsWindow.UpdateStatus(_settingsError, _settingsLoadFailed);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show(this);
@@ -66,11 +71,16 @@ public sealed partial class MainWindow
 
     private void ApplySettings()
     {
-        _downloads.SetOptions(new Wonder.Core.DownloadOptions
+        _downloads.SetOptions(new DownloadOptions
         {
             Source = _settings.DownloadSource, ConcurrentFiles = _settings.ConcurrentDownloads,
             ConnectionsPerFile = _settings.DownloadConnections, RetryCount = _settings.DownloadRetries
         });
+        if (_appliedResourceProvider != _settings.DefaultResourceProvider)
+        {
+            _appliedResourceProvider = _settings.DefaultResourceProvider;
+            _downloadCenter?.SetResourceProvider(_appliedResourceProvider);
+        }
         var variant = _settings.Theme switch
         {
             LauncherTheme.Light => ThemeVariant.Light,
@@ -107,6 +117,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex) when (IsSettingsStorageError(ex))
         {
+            Wonder.Core.LauncherDiagnostics.Warn("SaveSettings", ex);
             _settingsError = $"设置尚未保存。检查文件和目录的写入权限后点击重试。\n{ex.Message}";
         }
         _settingsWindow?.UpdateStatus(_settingsError, _settingsLoadFailed);

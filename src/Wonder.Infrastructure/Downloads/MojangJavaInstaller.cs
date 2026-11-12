@@ -21,11 +21,16 @@ public static class MojangJavaInstaller
             : OperatingSystem.IsMacOS() ? arch == Architecture.Arm64 ? "mac-os-arm64" : "mac-os"
             : arch == Architecture.X64 ? "linux" : arch == Architecture.X86 ? "linux-i386" : "";
         progress?.Report(new("获取适配的 Java 运行环境"));
-        using var index = JsonDocument.Parse(await engine.GetStringAsync(IndexUrl, options, ct));
+        var official = options with { Source = DownloadSource.Official };
+        using var index = JsonDocument.Parse(await engine.GetStringAsync(IndexUrl, official, ct));
         var candidate = index.RootElement.Get(platform).Get(component).Items().FirstOrDefault();
-        var url = candidate.Get("manifest").Get("url").Text();
+        var descriptor = candidate.Get("manifest");
+        var url = descriptor.Get("url").Text();
         if (url is null) throw new InvalidDataException($"Mojang 未提供当前平台所需的 {component}，请指定已安装的 Java。");
-        using var manifest = JsonDocument.Parse(await engine.GetStringAsync(url, options, ct));
+        var manifestUrl = DownloadSourceResolver.RequireUrl(url, "piston-meta.mojang.com", "launchermeta.mojang.com");
+        var manifestText = await engine.GetStringAsync(manifestUrl.AbsoluteUri, official, ct);
+        MinecraftDownloadCatalog.VerifyMetadata(manifestText, descriptor.Get("sha1").Text(), Size(descriptor));
+        using var manifest = JsonDocument.Parse(manifestText);
         var files = manifest.RootElement.Get("files");
         if (files.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Java 运行环境文件列表无效。");
         var root = Path.Combine(gameRoot, "runtime");
@@ -43,13 +48,12 @@ public static class MojangJavaInstaller
                 case "directory": directories.Add(destination); break;
                 case "file":
                     var raw = value.Get("downloads").Get("raw");
-                    var hash = raw.Get("sha1").Text(); var address = raw.Get("url").Text();
-                    if (hash is not { Length: 40 } || !hash.All(char.IsAsciiHexDigit) || !Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "https")
-                        throw new InvalidDataException("Java 文件缺少安全下载地址或完整性校验。");
-                    var sizeNode = raw.Get("size");
-                    if (sizeNode.ValueKind != JsonValueKind.Number || !sizeNode.TryGetInt64(out var size) || size < 0)
-                        throw new InvalidDataException("Java 文件缺少有效的长度。");
-                    downloads.Add(new(address!, destination, hash, "SHA1", size));
+                    var algorithm = raw.Get("sha256").Text() is null ? "SHA1" : "SHA256";
+                    var hash = raw.Get(algorithm.ToLowerInvariant()).Text();
+                    if (hash is null || hash.Length != (algorithm == "SHA256" ? 64 : 40) || !hash.All(char.IsAsciiHexDigit))
+                        throw new InvalidDataException("Java 文件缺少有效的完整性校验值。");
+                    var address = DownloadSourceResolver.RequireUrl(raw.Get("url").Text(), "piston-data.mojang.com", "launcher.mojang.com");
+                    downloads.Add(new(address.AbsoluteUri, destination, hash, algorithm, Size(raw)));
                     if (value.Get("executable").Boolean() == true) executables.Add(destination);
                     break;
                 case "link":
@@ -61,7 +65,9 @@ public static class MojangJavaInstaller
             }
         }
         foreach (var directory in directories) Directory.CreateDirectory(directory);
-        await engine.DownloadManyAsync(downloads, options, progress, ct);
+        // Mojang currently publishes SHA-1 for these files. Only SHA-256 files may use mirrors.
+        foreach (var group in downloads.GroupBy(x => x.HashAlgorithm))
+            await engine.DownloadManyAsync(group.ToArray(), group.Key == "SHA256" ? options : official, progress, ct);
         if (!OperatingSystem.IsWindows())
         {
             foreach (var path in executables) File.SetUnixFileMode(path, File.GetUnixFileMode(path) | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
@@ -78,6 +84,9 @@ public static class MojangJavaInstaller
         return downloads.Select(x => x.Destination).FirstOrDefault(x => Path.GetFileName(x) == name && Path.GetFileName(Path.GetDirectoryName(x)) == "bin")
             ?? throw new InvalidDataException("Java 运行环境缺少可执行文件。");
     }
+
+    private static long Size(JsonElement value) => value.Get("size") is { ValueKind: JsonValueKind.Number } node && node.TryGetInt64(out var size) && size >= 0
+        ? size : throw new InvalidDataException("Java 下载清单缺少有效的文件大小。");
 
     private static bool IsWithin(string root, string path) => Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, WonderPath.Comparison);
 

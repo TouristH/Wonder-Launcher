@@ -16,27 +16,32 @@ public sealed partial class MinecraftDownloadCatalog
         DownloadOptions options, IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         using var archive = ZipFile.OpenRead(installer);
-        var install = ReadArchiveJson(archive, "install_profile.json");
+        var install = await ReadArchiveJson(archive, "install_profile.json", ct);
         var version = install.Get("versionInfo");
         var legacy = version.ValueKind == JsonValueKind.Object;
-        if (!legacy) version = ReadArchiveJson(archive, (install.Get("json").Text() ?? "/version.json").TrimStart('/'));
+        if (!legacy) version = await ReadArchiveJson(archive, (install.Get("json").Text() ?? "/version.json").TrimStart('/'), ct);
         var id = StrictSegment(version.Get("id").Text() ?? "");
         var minecraftId = minecraft.Get("id").Text()!;
         if (version.Get("inheritsFrom").Text() != minecraftId || version.Get("mainClass").Text() is null)
             throw new InvalidDataException("Forge / NeoForge 安装描述与 Minecraft 版本不匹配。");
-        long extracted = 0;
-        foreach (var entry in archive.Entries.Where(x => x.FullName.StartsWith("maven/", StringComparison.Ordinal) && !x.FullName.EndsWith('/')))
+        var remainingBytes = 1024L * 1024 * 1024;
+        Task ExtractForgeEntry(ZipArchiveEntry entry, string destination)
         {
-            if ((extracted += entry.Length) > 1024L * 1024 * 1024) throw new InvalidDataException("加载器内嵌文件过大。");
-            await ExtractInstallerEntry(entry, SafePath(Path.Combine(root, "libraries"), entry.FullName[6..]), ct);
+            if (entry.Length > remainingBytes) throw new InvalidDataException("加载器内嵌文件过大。");
+            remainingBytes -= entry.Length;
+            return ExtractInstallerEntry(entry, destination, ct);
         }
+        foreach (var entry in archive.Entries.Where(x => x.FullName.StartsWith("maven/", StringComparison.Ordinal) && !x.FullName.EndsWith('/')))
+            await ExtractForgeEntry(entry, SafePath(Path.Combine(root, "libraries"), entry.FullName[6..]));
+        string? legacyLibrary = null;
         if (legacy)
         {
             var content = install.Get("install");
             var coordinate = content.Get("path").Text() ?? throw new InvalidDataException("旧式 Forge 缺少安装坐标。");
             var embedded = content.Get("filePath").Text() ?? throw new InvalidDataException("旧式 Forge 缺少内嵌文件。");
             var entry = archive.GetEntry(embedded) ?? throw new InvalidDataException("旧式 Forge 内嵌文件不存在。");
-            await ExtractInstallerEntry(entry, SafePath(Path.Combine(root, "libraries"), LaunchArguments.Maven(coordinate)), ct);
+            legacyLibrary = SafePath(Path.Combine(root, "libraries"), LaunchArguments.Maven(coordinate));
+            await ExtractForgeEntry(entry, legacyLibrary);
         }
         else
         {
@@ -62,7 +67,7 @@ public sealed partial class MinecraftDownloadCatalog
                     {
                         var entry = archive.GetEntry(value[1..]) ?? throw new InvalidDataException("安装器缺少数据文件。");
                         var destination = SafePath(Path.Combine(root, "installer", "data"), value[1..]);
-                        await ExtractInstallerEntry(entry, destination, ct); value = destination;
+                        await ExtractForgeEntry(entry, destination); value = destination;
                     }
                     variables[item.Name] = value;
                 }
@@ -108,8 +113,7 @@ public sealed partial class MinecraftDownloadCatalog
                     var jar = Library(processor.Get("jar").Text() ?? "");
                     using var jarArchive = ZipFile.OpenRead(jar);
                     var manifest = jarArchive.GetEntry("META-INF/MANIFEST.MF") ?? throw new InvalidDataException("安装处理器缺少清单。");
-                    if (manifest.Length > 1024 * 1024) throw new InvalidDataException("安装处理器清单过大。");
-                    using var reader = new StreamReader(manifest.Open());
+                    using var reader = new StreamReader(new MemoryStream(await ArchiveEntryContent.ReadAsync(manifest, 1024 * 1024, ct)));
                     var text = (await reader.ReadToEndAsync(ct)).Replace("\r\n", "\n").Replace("\n ", "");
                     var main = text.Split('\n').FirstOrDefault(x => x.StartsWith("Main-Class: ", StringComparison.OrdinalIgnoreCase))?[12..].Trim();
                     if (string.IsNullOrWhiteSpace(main) || main.Any(char.IsWhiteSpace) || main.StartsWith('-')) throw new InvalidDataException("安装处理器主类无效。");
@@ -132,24 +136,22 @@ public sealed partial class MinecraftDownloadCatalog
                     if (!File.Exists(output.Path) || !await MatchesHash(new("", output.Path, output.Hash), ct)) throw new InvalidDataException("加载器处理结果校验失败：" + Path.GetFileName(output.Path));
             }
         }
-        await InstallLibraries(version, root, options, progress, ct);
+        await InstallLibraries(version, root, options, progress, ct, embeddedLibrary: legacyLibrary);
         await WriteJson(Path.Combine(root, "versions", id, id + ".json"), version.GetRawText(), ct);
         return id;
     }
 
-    private static JsonElement ReadArchiveJson(ZipArchive archive, string name)
+    private static async Task<JsonElement> ReadArchiveJson(ZipArchive archive, string name, CancellationToken ct)
     {
         var entry = archive.GetEntry(name) ?? throw new InvalidDataException("加载器安装器缺少 " + name);
-        if (entry.Length > 16 * 1024 * 1024) throw new InvalidDataException("加载器配置过大。");
-        using var stream = entry.Open(); using var doc = JsonDocument.Parse(stream, new() { MaxDepth = 64 }); return doc.RootElement.Clone();
+        using var stream = new MemoryStream(await ArchiveEntryContent.ReadAsync(entry, 16 * 1024 * 1024, ct));
+        using var doc = JsonDocument.Parse(stream, new() { MaxDepth = 64 });
+        return doc.RootElement.Clone();
     }
-    private static async Task ExtractInstallerEntry(ZipArchiveEntry entry, string destination, CancellationToken ct)
+    private static Task ExtractInstallerEntry(ZipArchiveEntry entry, string destination, CancellationToken ct)
     {
         if (entry.Length > 512L * 1024 * 1024 || ((entry.ExternalAttributes >> 16) & 0xf000) == 0xa000) throw new InvalidDataException("加载器内嵌文件无效。");
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        await using var output = new FileStream(destination + ".tmp", FileMode.Create, FileAccess.Write);
-        using var input = entry.Open(); await input.CopyToAsync(output, ct); await output.DisposeAsync();
-        File.Move(destination + ".tmp", destination, true);
+        return ArchiveEntryContent.ExtractAsync(entry, destination, ct);
     }
     private static void EnsureWithin(string root, string path)
     {

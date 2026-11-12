@@ -31,7 +31,7 @@ internal sealed class DeleteConfirmationWindow : Window
         var cancel = new Button { Content = "取消" }; AutomationProperties.SetName(cancel, "取消删除"); cancel.Click += (_, _) => Close(false);
         var confirm = new Button { Content = "移入回收站", IsEnabled = false }; AutomationProperties.SetName(confirm, "确认移入回收站");
         word.PropertyChanged += (_, args) => { if (args.Property == TextBox.TextProperty) confirm.IsEnabled = !_working && word.Text == "sure"; };
-        confirm.Click += async (_, _) =>
+        confirm.Click += (_, _) => UiOperation.Start(async () =>
         {
             if (_working || word.Text != "sure") return;
             _working = true; confirm.IsEnabled = cancel.IsEnabled = word.IsEnabled = false;
@@ -43,7 +43,7 @@ internal sealed class DeleteConfirmationWindow : Window
             }
             catch (Exception ex) { error.Text = ex.Message; }
             finally { _working = false; cancel.IsEnabled = word.IsEnabled = true; confirm.IsEnabled = word.Text == "sure"; }
-        };
+        });
         actions.Children.Add(cancel); actions.Children.Add(confirm); Grid.SetRow(actions, 1); layout.Children.Add(actions); Content = layout;
         Closing += (_, e) => { if (_working) e.Cancel = true; };
         KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape && !_working) { Close(false); e.Handled = true; } };

@@ -21,21 +21,67 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         AccountLaunchSecurity.ValidateSession(session);
         request = request with { Session = session };
         var instance = request.Instance;
-        var settings = instance.EffectiveSettings;
-        var executable = settings.JavaPath ?? FindJava(instance.RootDirectory);
-        var java = await (javaProbe ?? JavaRuntime.Probe)(executable, ct).ConfigureAwait(false);
-        return await Task.Run(() => Build(request, java, launcherVersion ?? LauncherBuildInfo.Version, ct), ct).ConfigureAwait(false);
+        var documents = await Task.Run(() => ReadVersionDocuments(instance, ct), ct).ConfigureAwait(false);
+        var minimum = documents.Max(document => document.Get("javaVersion").Get("majorVersion").Number() ?? 0);
+        var probe = javaProbe ?? JavaRuntime.Probe;
+        JavaRuntime java;
+        if (instance.EffectiveSettings.JavaPath is { } executable)
+        {
+            java = await probe(executable, ct).ConfigureAwait(false);
+            if (minimum > java.MajorVersion)
+                throw new InvalidDataException($"此实例需要 Java {minimum} 或更新版本，当前为 Java {java.MajorVersion}。");
+        }
+        else
+        {
+            var majors = AutomaticJavaMajors(instance, documents, minimum);
+            java = await JavaRuntimeDiscovery.SelectAsync(instance, majors, probe, ct).ConfigureAwait(false);
+        }
+        return await Task.Run(() => BuildAsync(request, documents, java, launcherVersion ?? LauncherBuildInfo.Version, ct), ct).ConfigureAwait(false);
     }
 
-    private static LaunchPlan Build(LaunchRequest request, JavaRuntime java, string launcherVersion, CancellationToken ct)
+    private static int[] AutomaticJavaMajors(GameInstance instance, IReadOnlyList<JsonElement> documents, int minimum)
     {
-        var instance = request.Instance; var settings = instance.EffectiveSettings;
-        var session = request.Session!;
-        var userType = session.Kind switch { AccountKind.Microsoft => "msa", AccountKind.Yggdrasil => "mojang", _ => "legacy" };
-        var authSession = session.Kind == AccountKind.Offline ? "0" : "token:" + session.AccessToken + ":" + session.Uuid;
-        var notices = new List<string>();
-        if (session.Kind == AccountKind.Offline && session.OfflineSkinId is { } skinId)
-            notices.Add("离线默认皮肤：" + OfflineDefaultSkins.Get(skinId).Name + "。" + OfflineDefaultSkins.Get(skinId).Description + "服务器或皮肤模组可能覆盖客户端默认外观。");
+        int[]? compatible = null;
+        if (instance.Source is InstanceSource.Prism or InstanceSource.MultiMc)
+        {
+            foreach (var document in documents)
+            {
+                var majors = document.Get("compatibleJavaMajors").Items().Select(item => item.Number() ?? 0).Where(major => major > 0).Distinct().ToArray();
+                if (majors.Length == 0) continue;
+                compatible = compatible is null ? majors : compatible.Intersect(majors).ToArray();
+            }
+        }
+        if (compatible is not null)
+        {
+            var allowed = compatible.Where(major => major >= minimum).Order().ToArray();
+            if (allowed.Length == 0) throw new InvalidDataException("实例组件声明的 Java 版本不兼容，请检查组件版本或在实例设置中明确指定 Java。");
+            return allowed;
+        }
+        if (minimum > 0) return [minimum];
+        if (documents[0].Get("type").Text() is "old_alpha" or "old_beta") return [8];
+        var gameVersion = instance.GameVersion.AsSpan();
+        var separator = gameVersion.IndexOf('-');
+        if (separator >= 0)
+        {
+            var suffix = gameVersion[(separator + 1)..];
+            var prefixLength = suffix.StartsWith("pre", StringComparison.Ordinal) ? 3 : suffix.StartsWith("rc", StringComparison.Ordinal) ? 2 : 0;
+            if (prefixLength == 0 || suffix.Length <= prefixLength || !int.TryParse(suffix[prefixLength..], out _)) return [];
+            gameVersion = gameVersion[..separator];
+        }
+        if (!Version.TryParse(gameVersion, out var version) || version.Revision >= 0) return [];
+        return version.Major switch
+        {
+            1 when version.Minor < 17 => [8],
+            1 when version.Minor == 17 => [16],
+            1 when version.Minor < 20 || version.Minor == 20 && version.Build < 5 => [17],
+            1 when version.Minor <= 21 => [21],
+            26 when version.Minor is >= 1 and <= 3 => [25],
+            _ => []
+        };
+    }
+
+    private static List<JsonElement> ReadVersionDocuments(GameInstance instance, CancellationToken ct)
+    {
         var prism = instance.Source is InstanceSource.Prism or InstanceSource.MultiMc;
         var documents = new List<JsonElement>(); var seen = new HashSet<string>(WonderPath.Comparer);
         void ReadVersion(string path)
@@ -53,6 +99,7 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             var pack = Json(Path.Combine(instance.SourcePath, "mmc-pack.json"));
             foreach (var component in pack.Get("components").Items())
             {
+                ct.ThrowIfCancellationRequested();
                 if (component.Get("disabled").Boolean() == true) continue;
                 var uid = Segment(component.Get("uid").Text() ?? ""); var version = Segment(component.Get("version").Text() ?? "");
                 var patch = Path.Combine(instance.SourcePath, "patches", uid + ".json");
@@ -68,11 +115,26 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             ReadVersion(instance.MetadataPaths[0]);
         }
         if (documents.Count == 0) throw new InvalidDataException("实例缺少可用的版本元数据。");
+        return documents;
+    }
+
+    private static async Task<LaunchPlan> BuildAsync(LaunchRequest request, IReadOnlyList<JsonElement> documents, JavaRuntime java, string launcherVersion, CancellationToken ct)
+    {
+        var instance = request.Instance; var settings = instance.EffectiveSettings;
+        var session = request.Session!;
+        var userType = session.Kind switch { AccountKind.Microsoft => "msa", AccountKind.Yggdrasil => "mojang", _ => "legacy" };
+        var authSession = session.Kind == AccountKind.Offline ? "0" : "token:" + session.AccessToken + ":" + session.Uuid;
+        var notices = new List<string> { $"使用 Java {java.MajorVersion}（{java.Architecture}）：{java.Executable}" };
+        if (session.Kind == AccountKind.Offline && session.OfflineSkinId is { } skinId)
+            notices.Add("离线默认皮肤：" + OfflineDefaultSkins.Get(skinId).Name + "。" + OfflineDefaultSkins.Get(skinId).Description + "服务器或皮肤模组可能覆盖客户端默认外观。");
+        var prism = instance.Source is InstanceSource.Prism or InstanceSource.MultiMc;
         var features = new Dictionary<string, bool> { ["has_custom_resolution"] = true, ["is_demo_user"] = false };
         var libraries = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var jvm = new List<string>(); var game = new List<string>(); var tweakers = new List<string>();
         var firstThreadOnMacOS = false;
-        string? main = null, client = null, assetId = null; JsonElement logging = default; var requiredJava = 0;
+        string? main = null, client = null;
+        AssetIndexReference? assetIndex = null;
+        JsonElement logging = default;
         foreach (var document in documents)
         {
             ct.ThrowIfCancellationRequested();
@@ -83,8 +145,14 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             var unsupportedTraits = traits.Where(trait => trait != "FirstThreadOnMacOS").ToArray();
             if (unsupportedTraits.Length > 0) throw new InvalidDataException("此实例需要尚未支持的启动特性：" + string.Join(", ", unsupportedTraits));
             main = document.Get("mainClass").Text() ?? main;
-            assetId = document.Get("assetIndex").Get("id").Text() ?? document.Get("assets").Text() ?? assetId;
-            requiredJava = Math.Max(requiredJava, document.Get("javaVersion").Get("majorVersion").Number() ?? 0);
+            var descriptor = document.Get("assetIndex");
+            var legacyId = NonEmpty(document.Get("assets").Text());
+            if ((NonEmpty(descriptor.Get("id").Text()) ?? legacyId) is { } indexId)
+            {
+                var inheritedIndex = assetIndex?.Id == indexId ? assetIndex : null;
+                assetIndex = new(indexId, legacyId is null || legacyId == indexId ? inheritedIndex?.LegacyId : legacyId,
+                    descriptor.Get("sha1").Text() ?? inheritedIndex?.Sha1);
+            }
             if (document.Get("logging").Get("client").ValueKind == JsonValueKind.Object) logging = document.Get("logging").Get("client");
             if (prism && document.Get("mainJar").Get("name").Text() is { } mainJar)
                 client = LibraryPath(instance, document.Get("mainJar"), mainJar);
@@ -98,7 +166,6 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             if (document.Get("minecraftArguments").Text() is { } legacy) game = LaunchArguments.Split(legacy);
             tweakers.AddRange(document.Get("+tweakers").Items().Select(x => x.Text() ?? ""));
         }
-        if (requiredJava > java.MajorVersion) throw new InvalidDataException($"此实例需要 Java {requiredJava} 或更新版本，当前为 Java {java.MajorVersion}。");
         if (string.IsNullOrWhiteSpace(main) || main.Any(char.IsWhiteSpace) || main.StartsWith('-')) throw new InvalidDataException("实例主类缺失或无效。");
         if (client is null) throw new InvalidDataException("实例缺少客户端 JAR 描述。");
         var classPath = new List<string>();
@@ -124,9 +191,9 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         classPath.Add(Required(client));
         var nativeFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", nativeArchives.Select(x => x.Path + "|" + new FileInfo(x.Path).Length + "|" + File.GetLastWriteTimeUtc(x.Path).Ticks)))))[..16];
         var natives = Under(Path.Combine(Path.GetFullPath(request.CacheDirectory), "natives", instance.Id), nativeFingerprint);
-        if (nativeArchives.Count > 0) ExtractNatives(nativeArchives, natives, ct);
+        if (nativeArchives.Count > 0) await ExtractNativesAsync(nativeArchives, natives, ct).ConfigureAwait(false);
         else Directory.CreateDirectory(natives);
-        var assets = ValidateAssets(instance.AssetsDirectory, assetId, settings.GameDirectory!, ct);
+        var (assets, assetId) = ValidateAssets(instance.AssetsDirectory, assetIndex, settings.GameDirectory!, ct);
         var variables = new Dictionary<string, string>
         {
             ["auth_player_name"] = session.Username, ["auth_uuid"] = session.Uuid,
@@ -161,6 +228,16 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         }
         if (game.Count == 0) game.AddRange(["--username", "${auth_player_name}", "--version", "${version_name}", "--gameDir", "${game_directory}", "--assetsDir", "${assets_root}", "--assetIndex", "${assets_index_name}", "--uuid", "${auth_uuid}", "--accessToken", "0", "--userType", "legacy"]);
         game = game.Select(x => LaunchArguments.Expand(x, variables)).ToList();
+        if (assetIndex is not null && assetId is not null && assetId != assetIndex.Id)
+        {
+            for (var index = 0; index < game.Count; index++)
+            {
+                if (game[index] == "--assetIndex" && index + 1 < game.Count && game[index + 1] == assetIndex.Id)
+                    game[index + 1] = assetId;
+                else if (game[index] == "--assetIndex=" + assetIndex.Id)
+                    game[index] = "--assetIndex=" + assetId;
+            }
+        }
         foreach (var (option, value) in new[] { ("--username", session.Username), ("--uuid", session.Uuid), ("--accessToken", session.AccessToken), ("--userType", userType), ("--gameDir", settings.GameDirectory!) })
         { RemoveOption(game, option, true); game.AddRange([option, value]); }
         foreach (var (option, value) in new[] { ("--session", authSession), ("--clientId", session.ClientId), ("--xuid", session.Xuid), ("--userProperties", "{}") })
@@ -178,7 +255,11 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         ct.ThrowIfCancellationRequested();
         return new(java.Executable, settings.GameDirectory!, jvm.Concat([main]).Concat(game), instance.Id, notices,
             session.Kind == AccountKind.Offline ? [] : [session.AccessToken], session.Kind != AccountKind.Offline,
-            session.AuthlibInjectorPath, session.AuthlibInjectorSha256);
+            session.AuthlibInjectorPath, session.AuthlibInjectorSha256)
+        {
+            JavaMajorVersion = java.MajorVersion,
+            JavaArchitecture = java.Architecture
+        };
     }
 
     private static void RemoveOption(List<string> args, string option, bool value)
@@ -193,10 +274,13 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
         var relative = local ? lib.Get("MMC-filename").Text() ?? Path.GetFileName(LaunchArguments.Maven(name)) : lib.Get("downloads").Get("artifact").Get("path").Text() ?? LaunchArguments.Maven(name);
         return Under(local ? instance.LocalLibraryDirectory ?? throw new InvalidDataException("缺少本地依赖库目录。") : instance.LibraryDirectory, relative);
     }
-    private static string ValidateAssets(string root, string? id, string gameDirectory, CancellationToken ct)
+    private sealed record AssetIndexReference(string Id, string? LegacyId, string? Sha1);
+
+    private static (string Assets, string? Id) ValidateAssets(string root, AssetIndexReference? reference, string gameDirectory, CancellationToken ct)
     {
-        if (id is null) return root;
-        var index = Json(Required(Path.Combine(root, "indexes", Segment(id) + ".json")));
+        if (reference is null) return (root, null);
+        var (path, id) = ResolveAssetIndex(Path.Combine(root, "indexes"), reference);
+        var index = Json(path);
         var objects = index.Get("objects");
         if (objects.ValueKind != JsonValueKind.Object) throw new InvalidDataException("资产索引缺少 objects。");
         foreach (var item in objects.EnumerateObject())
@@ -205,11 +289,39 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
             if (hash is null || hash.Length != 40 || !hash.All(char.IsAsciiHexDigit)) throw new InvalidDataException("资产索引包含无效哈希。");
             Required(Path.Combine(root, "objects", hash[..2], hash));
         }
-        return LegacyAssetMapping.Prepare(root, id, gameDirectory, index, ct);
+        return (LegacyAssetMapping.Prepare(root, id, gameDirectory, index, ct), id);
     }
-    private static void ExtractNatives(List<(string Path, string[] Exclude)> archives, string target, CancellationToken ct)
+
+    private static (string Path, string Id) ResolveAssetIndex(string directory, AssetIndexReference reference)
     {
-        Directory.CreateDirectory(target); long total = 0; var count = 0;
+        var id = Segment(reference.Id);
+        var canonical = Path.Combine(directory, id + ".json");
+        if (File.Exists(canonical)) return (canonical, id);
+
+        // A numeric filename may also be an official index for another release.
+        var shortId = id.StartsWith("1.", StringComparison.Ordinal) && id.Length > 2 && id[2..].All(char.IsAsciiDigit) ? id[2..] : null;
+        var rejected = new List<string>();
+        foreach (var alias in new[] { reference.LegacyId, shortId }.OfType<string>().Distinct(WonderPath.Comparer))
+        {
+            var path = Path.Combine(directory, Segment(alias) + ".json");
+            if (!File.Exists(path)) continue;
+            if (reference.Sha1 is { Length: 40 } expected && expected.All(char.IsAsciiHexDigit))
+            {
+                using var stream = File.OpenRead(path);
+                if (stream.Length <= 16 * 1024 * 1024 && Convert.ToHexString(SHA1.HashData(stream)).Equals(expected, StringComparison.OrdinalIgnoreCase))
+                    return (path, alias);
+            }
+            rejected.Add(Path.GetFileName(path));
+        }
+
+        var detail = rejected.Count == 0 ? "" : $" 已找到 {string.Join("、", rejected)}，但 SHA-1 不符或无法核实。";
+        throw new FileNotFoundException($"缺少当前版本的资源索引，请在原启动器补全：{canonical}。{detail}", canonical);
+    }
+    private static async Task ExtractNativesAsync(List<(string Path, string[] Exclude)> archives, string target, CancellationToken ct)
+    {
+        Directory.CreateDirectory(target);
+        var remainingBytes = 512L * 1024 * 1024;
+        var count = 0;
         foreach (var (path, exclude) in archives)
         {
             using var archive = ZipFile.OpenRead(path);
@@ -218,21 +330,13 @@ public sealed class LocalGameLauncher(Func<string, CancellationToken, Task<JavaR
                 ct.ThrowIfCancellationRequested();
                 var destination = Under(target, entry.FullName);
                 if (entry.FullName.EndsWith('/') || entry.FullName.StartsWith("META-INF/", StringComparison.OrdinalIgnoreCase) || exclude.Any(x => entry.FullName.StartsWith(x, StringComparison.Ordinal))) continue;
-                if (++count > 10000 || (total += entry.Length) > 512L * 1024 * 1024) throw new InvalidDataException("原生库归档超过提取限制。");
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                entry.ExtractToFile(destination, true);
+                if (++count > 10000 || entry.Length > remainingBytes) throw new InvalidDataException("原生库归档超过提取限制。");
+                remainingBytes -= entry.Length;
+                await ArchiveEntryContent.ExtractAsync(entry, destination, ct, preserveFileMetadata: true).ConfigureAwait(false);
             }
         }
     }
     private static string Required(string path) => File.Exists(path) ? path : throw new FileNotFoundException("缺少本地文件，请在原启动器补全：" + path, path);
-    private static string FindJava(string root)
-    {
-        var home = Environment.GetEnvironmentVariable("JAVA_HOME");
-        var name = OperatingSystem.IsWindows() ? "java.exe" : "java";
-        foreach (var candidate in new[] { home is null ? "" : Path.Combine(home, "bin", name), Path.Combine(root, "runtime", "bin", name) })
-            if (File.Exists(candidate)) return candidate;
-        return name;
-    }
     private static GameSession CreateOfflineSession(string username)
     {
         InstanceCatalog.ValidateOfflineUsername(username);

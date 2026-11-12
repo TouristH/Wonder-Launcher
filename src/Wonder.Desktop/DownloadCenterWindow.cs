@@ -11,13 +11,17 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Wonder.Application;
 using Wonder.Core;
+using ResourceProvider = Wonder.Core.ResourceProvider;
 
 namespace Wonder.Desktop;
 
 internal sealed partial class DownloadCenterWindow : Window
 {
+    internal const bool ShowCurseForgeByDefault = false;
+
     private readonly DownloadService _downloads;
     private readonly InstanceService _instances;
+    private readonly bool _showCurseForge;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<Button> _navigation = [];
     private readonly Control _gamePage, _resourcesPage, _tasksPage;
@@ -26,9 +30,11 @@ internal sealed partial class DownloadCenterWindow : Window
     private int _page, _refreshPending;
     private bool _closed;
 
-    public DownloadCenterWindow(DownloadService downloads, InstanceService instances, Action openSettings)
+    public DownloadCenterWindow(DownloadService downloads, InstanceService instances, Action openSettings,
+        ResourceProvider resourceProvider = ResourceProvider.Modrinth, bool showCurseForge = ShowCurseForgeByDefault)
     {
         _downloads = downloads; _instances = instances;
+        _showCurseForge = showCurseForge;
         Title = "下载 · Wonder Launcher"; Width = 1120; Height = 810; MinWidth = 860; MinHeight = 580;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Palette.Background; Foreground = Palette.Text;
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
@@ -51,7 +57,7 @@ internal sealed partial class DownloadCenterWindow : Window
         content.Children.Add(new ScrollViewer { Content = nav, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         var body = new StackPanel { Spacing = 15, Margin = new Thickness(0, 0, 6, 18) };
         _title = Heading("", 23); _subtitle = PageStyles.Hint(""); body.Children.Add(_title); body.Children.Add(_subtitle);
-        _gamePage = BuildGamePage(); _resourcesPage = BuildResourcesPage(); _tasksPage = BuildTasksPage();
+        _gamePage = BuildGamePage(); _resourcesPage = BuildResourcesPage(resourceProvider); _tasksPage = BuildTasksPage();
         body.Children.Add(_gamePage); body.Children.Add(_resourcesPage); body.Children.Add(_tasksPage);
         _scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetColumn(_scroll, 2); content.Children.Add(_scroll); Grid.SetRow(content, 1); layout.Children.Add(content);
@@ -59,7 +65,7 @@ internal sealed partial class DownloadCenterWindow : Window
         _status.Margin = new Thickness(0, 15, 0, 0); AutomationProperties.SetName(_status, "下载中心状态");
         Grid.SetRow(_status, 2); layout.Children.Add(_status); Content = layout;
         downloads.Changed += OnDownloadsChanged; instances.Changed += OnInstancesChanged;
-        Opened += async (_, _) => { RefreshInstances(); await LoadGameVersionsAsync(); };
+        Opened += (_, _) => UiOperation.Start(() => { RefreshInstances(); return LoadGameVersionsAsync(); }, () => _closed);
         Closed += (_, _) =>
         {
             _closed = true; downloads.Changed -= OnDownloadsChanged; instances.Changed -= OnInstancesChanged;
@@ -78,19 +84,19 @@ internal sealed partial class DownloadCenterWindow : Window
         _subtitle.Text = page switch
         {
             0 => "选择游戏版本和加载器，创建独立实例；安装完成后自动加入实例管理。",
-            2 => "从 Modrinth 选择整合包，在新目录中安装游戏、加载器和资源。",
+            2 => "选择整合包，在新目录中安装游戏、加载器和资源。",
             5 => "查看每一步的进度。暂停和继续复用已下载文件，失败后可以重试。",
-            _ => "从 Modrinth 搜索资源，按 Minecraft 版本与加载器筛选并安装到指定实例。"
+            _ => "按来源、Minecraft 版本与加载器筛选资源，可安装到实例或单独下载。"
         };
         _scroll.Offset = default;
-        if (page is >= 1 and <= 4 && changed)
+        if (changed)
         {
-            _resourceRequest?.Cancel(); _versionRequest?.Cancel(); _offset = 0; _selectedProject = null;
-            ShowResourceResults();
-            _resourceResults.Children.Clear(); _resourceDetails.IsVisible = false;
-            _packDestination.IsVisible = page == 2; _targetInstanceRow.IsVisible = page != 2;
-            _resourceLoader.IsVisible = page is 1 or 2;
-            _ = SearchResourcesAsync(0);
+            _resourceRequest?.Cancel(); _versionRequest?.Cancel();
+            if (page is >= 1 and <= 4)
+            {
+                _targetInstanceRow.IsVisible = page != 2;
+                UiOperation.Start(() => SearchResourcesAsync(0), () => _closed);
+            }
         }
         if (page == 5) RefreshTasks();
     }
@@ -141,7 +147,7 @@ internal sealed partial class DownloadCenterWindow : Window
     private Control DirectoryField(string label, TextBox field)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,10,Auto") }; row.Children.Add(field);
-        var choose = ActionButton("选择" + label, () => _ = PickDirectoryAsync(field)); Grid.SetColumn(choose, 2); row.Children.Add(choose);
+        var choose = ActionButton("选择" + label, () => UiOperation.Start(() => PickDirectoryAsync(field), () => _closed)); Grid.SetColumn(choose, 2); row.Children.Add(choose);
         return Field(label, row);
     }
     private async Task PickDirectoryAsync(TextBox input)

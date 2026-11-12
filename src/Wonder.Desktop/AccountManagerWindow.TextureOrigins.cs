@@ -19,12 +19,12 @@ internal sealed partial class AccountManagerWindow
         {
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             row.Children.Add(new SelectableTextBlock { Text = origin, TextWrapping = TextWrapping.Wrap, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center });
-            var remove = IdleButton("移除许可", "移除纹理来源 " + origin, () => _service.SetPrivateTextureOrigin(profile.Id, origin, false));
+            var remove = IdleButton("移除许可", "移除纹理来源 " + origin, async () => await Run(() => _service.SetPrivateTextureOriginAsync(profile.Id, origin, false)));
             remove.Margin = new Thickness(8, 0, 0, 0); Grid.SetColumn(remove, 1); row.Children.Add(remove); section.Children.Add(row);
         }
         var input = Field(section, "明确的 HTTPS 来源（不含路径）", "当前账户纹理 HTTPS 来源", "", 2048);
         input.PlaceholderText = "https://textures.example:443";
-        section.Children.Add(IdleButton("允许当前账户使用此来源连接内网", "允许当前账户纹理来源", () => _service.SetPrivateTextureOrigin(profile.Id, (input.Text ?? "").Trim(), true)));
+        section.Children.Add(IdleButton("允许当前账户使用此来源连接内网", "允许当前账户纹理来源", async () => await Run(() => _service.SetPrivateTextureOriginAsync(profile.Id, (input.Text ?? "").Trim(), true))));
         body.Children.Add(PageStyles.Card(section, new Thickness(16, 12)));
     }
 }

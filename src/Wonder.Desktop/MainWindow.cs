@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
         {
+            LauncherDiagnostics.Warn("CreateDataDirectory", ex);
             _error = $"数据目录创建失败。请检查启动器所在目录和写入权限后重启。\n{ex.Message}";
             _loadFailed = true;
         }
@@ -65,6 +66,7 @@ public sealed partial class MainWindow : Window
         try { document = _store.Load(); }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or ArgumentException)
         {
+            LauncherDiagnostics.Warn("ReadWorkspace", ex);
             document = WorkspaceDocument.CreateEmpty();
             _error = $"布局读取失败，原文件保留。\n{ex.Message}";
             _loadFailed = true;
@@ -73,11 +75,18 @@ public sealed partial class MainWindow : Window
         var dataDirectory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspacePath))!;
         var accountStore = AccountStoreFactory.Create(dataDirectory);
         _accounts = new AccountService(accountStore, new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
-            new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")));
-        _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(), new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"), new InstanceFileOperations(), _accounts);
-        Opened += (_, _) => _ = _instances.ReadRegisteredDirectoriesAsync();
+            new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")), loadImmediately: false);
+        Opened += (_, _) => UiOperation.Start(_accounts.ReloadAsync, () => _workspaceStorageClosed);
+        _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(),
+            new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"),
+            new InstanceFileOperations(), _accounts, offerCrashReport: report => LaunchCrashWindow.OfferAsync(this, report), loadImmediately: false);
+        Opened += (_, _) => UiOperation.Start(async () =>
+        {
+            await _instances.ReloadAsync();
+            if (IsVisible && !_waitingToClose && !_workspaceStorageClosed) await _instances.ReadRegisteredDirectoriesAsync();
+        }, () => _workspaceStorageClosed);
         _downloadEngine = new DownloadEngine();
-        _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine), System.IO.Path.Combine(dataDirectory, "downloads.json"), ImportDownloadedInstanceAsync);
+        _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine, GetCurseForgeApiKey), System.IO.Path.Combine(dataDirectory, "downloads.json"), ImportDownloadedInstanceAsync);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
         GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
         AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);
@@ -85,11 +94,10 @@ public sealed partial class MainWindow : Window
         _workspace = new WorkspaceView(document, dataDirectory, registry) { Margin = new Thickness(22, 20, 22, 22) };
         InitializeWorkspaceStorage(saveWorkspace ?? _store.Save);
         _workspace.Changed += WorkspaceChanged;
-        _workspace.HelpRequested += (_, _) => ShowHelp();
+        _workspace.HelpRequested += (_, _) => UiOperation.Start(ShowHelpAsync, () => _workspaceStorageClosed);
         _workspace.ComponentLibraryRequested += OpenComponentLibrary;
         _workspace.SettingsRequested += OpenSettings;
         Deactivated += (_, _) => _workspace.CancelGesture();
-        Closing += CloseWorkspace;
         Closed += (_, _) => { DisposeWorkspaceStorage(); _accounts.Cancel(); _downloadCenter?.Close(); _downloads.Dispose(); _downloadEngine.Dispose(); _workspace.DisposeComponents(); };
         PropertyChanged += (_, e) =>
         {
@@ -121,7 +129,13 @@ public sealed partial class MainWindow : Window
         };
         top.Children.Add(dragSpace);
         _saveStatus = new Button { Foreground = Palette.Muted, Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 18, 0) };
-        _saveStatus.Click += (_, _) => { if (_settingsError != null) OpenSettings(); else if (_error != null) ShowStorageError(); else ShowHelp(); };
+        _saveStatus.Click += (_, _) =>
+        {
+            if (_closeError != null) UiOperation.Start(ShowCloseErrorAsync, () => _workspaceStorageClosed);
+            else if (_settingsError != null) OpenSettings();
+            else if (_error != null) UiOperation.Start(ShowStorageErrorAsync, () => _workspaceStorageClosed);
+            else UiOperation.Start(ShowHelpAsync, () => _workspaceStorageClosed);
+        };
         ToolTip.SetTip(_saveStatus, "点击查看操作说明或存储状态");
         Grid.SetColumn(_saveStatus, 2);
         top.Children.Add(_saveStatus);
@@ -202,11 +216,14 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStorageStatus()
     {
-        _saveStatus.Content = _settingsError != null ? "设置存储异常 · 点击查看" : _error != null ? "工作区未保存 · 点击查看" : "WONDER  /  " + LauncherBuildInfo.Version;
-        _saveStatus.Foreground = _error == null && _settingsError == null ? Palette.Muted : Palette.Error;
+        _saveStatus.Content = _waitingToClose ? "等待本地操作完成…" :
+            _closeError != null ? _error != null ? "工作区未保存 · 点击查看" : "关闭未完成 · 点击查看" :
+            _settingsError != null ? "设置存储异常 · 点击查看" :
+            _error != null ? "工作区未保存 · 点击查看" : "WONDER  /  " + LauncherBuildInfo.Version;
+        _saveStatus.Foreground = _error == null && _settingsError == null && _closeError == null ? Palette.Muted : Palette.Error;
     }
 
-    private async void ShowHelp()
+    private Task ShowHelpAsync()
     {
         var text = "框架只保留顶栏，其余内容都可自由布置。\n\n" +
             $"功能区：长按顶边栏 {_settings.HoldDelayMilliseconds} 毫秒后拖动；目标区四边用于上下左右摆放，中央用于交换，按预览松开确认。\n" +
@@ -226,15 +243,15 @@ public sealed partial class MainWindow : Window
             "Tab 切换按钮，Enter / 空格操作，F1 打开说明，Shift+F10 打开菜单。\n\n" +
             "设置：通过桌面快捷方式、组件库或工作区菜单打开；外观和交互修改即时生效、自动保存。\n\n" +
             "布局文件：\n" + _workspacePath + "\n\n设置文件：\n" + _settingsPath;
-        await ShowMessage("工作区操作", text);
+        return ShowMessage("工作区操作", text);
     }
 
-    private async void ShowStorageError()
-    {
-        await ShowMessage("布局存储", (_error ?? "布局已保存。") + "\n\n" + _workspacePath + (_loadFailed ? "\n\n当前会话允许体验，但不会写回原文件。请备份并移走该文件后重启，重新创建布局。" : "\n\n检查目录写入权限后点击重试保存，或继续编辑后自动重试。"), _loadFailed ? null : RetryWorkspaceSave);
-    }
+    private Task ShowStorageErrorAsync() => ShowMessage("布局存储", (_error ?? "布局已保存。") + "\n\n" + _workspacePath + (_loadFailed ? "\n\n当前会话允许体验，但不会写回原文件。请备份并移走该文件后重启，重新创建布局。" : "\n\n检查目录写入权限后点击重试保存，或继续编辑后自动重试。"), _loadFailed ? null : RetryWorkspaceSave);
 
-    private async Task ShowMessage(string title, string message, Action? retry = null)
+    private Task ShowCloseErrorAsync() => ShowMessage("关闭未完成", _closeError + "\n\n" + _error,
+        Close, "重试关闭", ForceClose);
+
+    private async Task ShowMessage(string title, string message, Action? retry = null, string retryLabel = "重试保存", Action? forceClose = null)
     {
         var dialog = new Window { Title = title, Width = 570, Height = 470, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Palette.Background, Foreground = Palette.Text, FontFamily = FontFamily };
         var stack = new StackPanel { Margin = new Thickness(28), Spacing = 18 };
@@ -242,9 +259,15 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = 13, LineHeight = 23, Foreground = Palette.Muted });
         if (retry is not null)
         {
-            var retryButton = new Button { Content = "重试保存", HorizontalAlignment = HorizontalAlignment.Right };
-            retryButton.Click += (_, _) => { retry(); dialog.Close(); };
+            var retryButton = new Button { Content = retryLabel, HorizontalAlignment = HorizontalAlignment.Right };
+            retryButton.Click += (_, _) => { dialog.Close(); retry(); };
             stack.Children.Add(retryButton);
+        }
+        if (forceClose is not null)
+        {
+            var forceButton = new Button { Content = "强制退出", HorizontalAlignment = HorizontalAlignment.Right, Foreground = Palette.Error };
+            forceButton.Click += (_, _) => { dialog.Close(); forceClose(); };
+            stack.Children.Add(forceButton);
         }
         var close = new Button { Content = "知道了", HorizontalAlignment = HorizontalAlignment.Right };
         close.Click += (_, _) => dialog.Close();

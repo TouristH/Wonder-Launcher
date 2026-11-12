@@ -6,16 +6,18 @@
 
 打开 **设置 → 启动器设置**，或在下载中心点击“下载设置”：
 
-- 自动：对受支持的 Minecraft 文件优先使用 BMCLAPI，失败后尝试官方地址。
+- 自动：对有可信校验值且支持镜像的 Minecraft 文件优先使用 BMCLAPI，失败后尝试官方地址。
 - 官方：使用发布方原始地址。
 - BMCLAPI：优先使用 BMCLAPI 镜像，失败后回退官方。
 
-Modrinth 和未提供镜像的服务保留原始地址。切换设置影响后续查询和新任务，已入队任务保留创建时的配置。默认同时下载 8 个文件，每个大文件最多 4 个连接，重试 3 次，可按网络情况调整。小文件或不支持 HTTP Range 的服务器使用单连接。
+游戏版本清单、资源索引、Java 清单、加载器元数据和 Maven 校验值始终从官方端点读取。Java 文件优先校验官方 SHA-256，只有 SHA-1 时直接从 Mojang 下载。Modrinth 资源文件使用该平台提供的地址。下载仅连接受支持的公开 HTTPS 主机和默认端口，逐跳检查重定向。下载连接直接访问这些端点，绕过系统代理。
+
+切换游戏下载策略影响新任务，已入队任务保留创建时的配置。默认同时下载 8 个文件，每个大文件最多 4 个连接，重试 3 次，可按网络情况调整。小文件或不支持 HTTP Range 的服务器使用单连接。
 
 ## 安装游戏
 
 1. 选择 Minecraft 版本，可搜索版本号并筛选正式版或快照。
-2. 用官方图标识别原版、Fabric、Quilt、Forge 或 NeoForge，选择相应版本。可选组件按游戏和加载器版本显示。Fabric 提供 Fabric API，Quilt 提供兼容的 QFAPI/QSL。原版和 OptiFine 官网列出的兼容 Forge 版本可安装 OptiFine。
+2. 用官方图标识别原版、Fabric、Quilt、Forge 或 NeoForge，选择相应版本。Fabric 提供 Fabric API，Quilt 提供兼容的 QFAPI/QSL。OptiFine 自动安装只显示已内置 SHA-256 且兼容的正式包，当前覆盖 1.8.9、1.12.2、1.16.5、1.20.1、1.21.11 的指定版本。Forge 还需匹配 OptiFine 官网列出的加载器版本。 [OptiFine 官方下载](https://optifine.net/downloads)
 3. 实例名称默认由游戏版本和加载器版本生成，例如 `Minecraft 1.21.1 - Fabric 0.16.0`。可以手动改名。游戏目录默认使用实例管理中选中的目录，首次使用时为用户目录下的 `Games/Wonder`。也可选择其他已有目录或空文件夹，版本会安装到其中的 `instances/<实例名称>/.minecraft`。
 4. 加入任务，获取游戏、依赖库、资源、日志配置和适配的 Mojang Java；也可指定已有 Java。
 5. 完成后自动登记，并重新读取所属游戏目录。若索引暂不可写，任务会提示可从实例管理导入结果目录。
@@ -26,22 +28,24 @@ Modrinth 和未提供镜像的服务保留原始地址。切换设置影响后�
 
 ## 模组、整合包、资源包和光影
 
-资源目录使用 Modrinth。浏览列表显示线上项目图标，可按游戏版本和加载器搜索、翻页。详情顶部显示图标、简介、作者、来源和适配范围，中间可选择下载目标。底部横向选择 `26.X`、`1.20.X` 等大版本，再展开具体游戏版本和加载器查看发布包。圆形、三角形和菱形分别标记稳定版、测试版和早期版。已选实例或明确的版本筛选会自动定位对应分组。
+资源目录使用 Modrinth。浏览列表显示线上项目图标，支持游戏版本筛选、关键词搜索和翻页，支持加载器筛选的分类也会显示加载器选项。详情顶部显示图标、简介、作者、来源和适配范围，中间可选择下载目标。底部横向选择 `26.X`、`1.20.X` 等大版本，再展开具体游戏版本和加载器查看发布包。圆形、三角形和菱形分别标记稳定版、测试版和早期版。已选实例或明确的版本筛选会自动定位对应分组。
+
+CurseForge 入口暂时隐藏。此前选择 CurseForge 的用户打开资源目录时会看到 Modrinth，已有任务仍可在任务管理中查看和继续。
 
 - 模组：选择兼容的已安装实例，下载到 `mods`，自动解析必需依赖；不能将需要加载器的模组装到原版实例。
 - 资源包：下载到 `resourcepacks`，进入游戏后启用。
 - 光影：下载到 `shaderpacks`，需要实例已有适配的光影模组，进入游戏后启用。
-- 整合包：安装 Modrinth `.mrpack` 到新实例，读取包中游戏与加载器版本、文件哈希和客户端覆盖文件。服务端专用文件不会装入客户端。
+- Modrinth `.mrpack` 整合包可安装为新实例。安装会读取包中游戏与加载器版本、获取清单中的必需文件并应用客户端覆盖文件。
 
 四类资源都能在下载菜单选择“仅下载文件”，指定保存目录后直接保存所选发布包。此方式可在还没有实例时使用，也适合单独保存 `.mrpack` 或资源压缩包。
 
-已有同名且内容不同的资源文件不会被静默覆盖。更新或替换时先处理旧文件，避免多个版本并存冲突。当前目录不包含 CurseForge，也不使用其他启动器的 API 密钥。
+资源缺少有效校验值时，任务会报错。已有同名且内容不同的资源文件会保留。更新或替换时先处理旧文件，避免多个版本并存冲突。
 
 ## Wonder 原生实例配置
 
 Wonder 下载的游戏和整合包会在实例的 `.minecraft/wonder.instance.json` 中生成原生配置，包含格式版本、稳定实例 ID、实例名称、Minecraft/加载器版本、创建时间、`createdBy` 中的 Wonder 名称与程序版本，以及 Java、内存、窗口、JVM 和游戏参数等 `launchSettings`。这是来源署名，不是密码学数字签名，也不改变游戏与模组的版权归属。
 
-这份配置随实例保存，不依赖原来的 `WonderData/instances.json`。重新导入实例目录、`.minecraft` 或版本目录时优先读取 Wonder 配置；损坏的 Wonder 配置会报错，不伪装为普通官方实例。内部 Java 和游戏目录使用相对路径，整体移动实例后可以重新解析。外部 Java 绝对路径仍需目标电脑存在对应文件。
+这份配置随实例保存，可在另一份 `WonderData` 中重新导入。导入实例目录、`.minecraft` 或版本目录时优先读取 Wonder 配置。已登记实例的配置缺失、损坏或身份不符时，其详情显示诊断并保留原登记，其余实例可继续使用。恢复原配置后重新读取所属目录。内部 Java 和游戏目录使用相对路径，整体移动实例后可以重新解析。外部 Java 绝对路径仍需目标电脑存在对应文件。
 
 在实例设置中保存名称或参数时，同时更新此文件与本地索引。未填写的启动项继续继承全局设置；实例明确设置的值优先。配置不保存账户、访问令牌、布局或其他启动器凭据。读取失败保留原文件，保存失败尝试回滚。手动编辑前请关闭启动器并备份。
 
@@ -49,12 +53,12 @@ Wonder 下载的游戏和整合包会在实例的 `.minecraft/wonder.instance.js
 
 任务管理显示当前步骤、总步骤数和当前文件进度。可确定下载量时显示百分比、速度和文件数。任务可暂停、继续、取消、重试和打开结果目录。安装任务顺序执行，任务内并发下载文件。
 
-文件校验成功后才提交最终路径。游戏与整合包先安装到 `.wonder-install` 临时目录，全部成功后变为正式目录。取消保留可复用片段，清除任务记录不会删除游戏或临时文件。
+文件校验成功后才提交最终路径，下载和解压均有实际字节上限。新游戏与整合包使用以 `.verified.wonder-install` 结尾的临时目录，全部成功后变为正式目录。升级前未完成的 `.wonder-install` 目录会保留，继续任务会在新暂存目录重新下载。取消保留当前任务可复用的片段，清除任务记录不会删除游戏或临时文件。
 
 退出整个启动器时暂停任务，下次打开后手动继续。任务历史位于 `WonderData/downloads.json`，包含目标路径和资源元数据，不含账户令牌。记录损坏时保留原文件并显示错误。
 
 ## 参考与许可
 
-参考 [PCL 多连接、重试与任务机制](https://github.com/Meloong-Git/PCL/blob/main/Plain%20Craft%20Launcher%202/Modules/Base/ModNet.vb)、[HMCL 安装选择](https://github.com/HMCL-dev/HMCL/blob/main/HMCL/src/main/java/org/jackhuang/hmcl/ui/download/InstallersPage.java)和 [Axolotl 下载界面](https://github.com/Axolotl-Launcher/Axolotl/blob/main/apps/app-frontend/src/pages/Downloads.vue)，由 Wonder 独立实现，未复制其源码或素材。使用 [Modrinth API](https://docs.modrinth.com/api/)、Mojang 元数据和 [BMCLAPI](https://bmclapidoc.bangbang93.com/) 公开服务。
+参考 [PCL 多连接、重试与任务机制](https://github.com/Meloong-Git/PCL/blob/main/Plain%20Craft%20Launcher%202/Modules/Base/ModNet.vb)、[HMCL 安装选择](https://github.com/HMCL-dev/HMCL/blob/main/HMCL/src/main/java/org/jackhuang/hmcl/ui/download/InstallersPage.java)和 [Axolotl 下载界面](https://github.com/Axolotl-Launcher/Axolotl/blob/main/apps/app-frontend/src/pages/Downloads.vue)，由 Wonder 独立实现，未复制其源码或素材。使用 [Modrinth API](https://docs.modrinth.com/api/)、[CurseForge 官方 API](https://docs.curseforge.com/rest-api/)、Mojang 元数据和 [BMCLAPI](https://bmclapidoc.bangbang93.com/) 服务。
 
 下载的 Java、游戏、加载器和资源仍适用各自许可；保留随包许可文件，不将这些内容归为 Wonder 原创。上游可用性、速度和第三方整合包实际兼容性取决于服务及用户环境。

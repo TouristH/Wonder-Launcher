@@ -136,10 +136,10 @@ internal static partial class InstanceVersionMetadata
     }
 
     private static string ExplicitVersion(string? value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 200 && !value.Any(char.IsControl) ? value.Trim() : "";
-    private static string VanillaVersion(string? value) => value is { Length: > 0 and <= 200 } && VanillaId().IsMatch(value) ? value : "";
+    internal static string VanillaVersion(string? value) => value is { Length: > 0 and <= 200 } && VanillaId().IsMatch(value) ? value : "";
 
     // Never infer a version from a prefix of a user-named pack or loader ID.
-    [GeneratedRegex(@"\A(?:[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-(?:pre|rc)[0-9]+)?|[0-9]{2}w[0-9]{2}[a-z]|[ab][0-9]+\.[0-9]+(?:\.[0-9]+)?(?:_[0-9]+)?)\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A(?:[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:-(?:(?:pre|rc)-?|snapshot-)[0-9]+)?|[0-9]{2}w[0-9]{2}[a-z]|[ab][0-9]+\.[0-9]+(?:\.[0-9]+)?(?:_[0-9]+)?)\z", RegexOptions.CultureInvariant)]
     private static partial Regex VanillaId();
 
     private static string TryRead(Func<string> read)

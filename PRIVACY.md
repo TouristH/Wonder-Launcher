@@ -17,6 +17,8 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 | `accounts.linux.dat` | Linux 使用 AES-GCM 加密的同类账户资料；随机密钥保存在桌面 Secret Service 密钥环，文件内仅含密文和解密所需的非秘密标识、随机数及验证标签 |
 | `accounts.macos.dat` | macOS 使用同一 AES-GCM 库格式的账户资料；随机密钥通过系统 Security.framework API 存入当前用户钥匙串，不以命令行参数或明文文件传递 |
 | 缓存与运行日志 | 本地启动所需临时内容与诊断；日志可能含用户名、路径和游戏输出 |
+| `logs/` | 本地轮转的启动器异常诊断，记录异常类型、错误码和调用方法，省略异常原文和源文件路径 |
+| `CrashReports/` | 经用户确认保存的本地 ZIP，汇总启动与游戏诊断日志、崩溃报告和运行信息 |
 
 用户主动选择游戏目录后，程序读取与实例发现和启动相关的版本元数据、库和已有启动设置。官方 profile 的账号字段不作为登录凭据导入；其他启动器的账号令牌也不在适配范围内。程序不递归扫描整个磁盘寻找个人信息。
 
@@ -24,9 +26,13 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 
 启动后的 Java 游戏进程、用户安装的模组和所连接的服务器可能独立访问网络、处理账号或产生游戏日志；这些行为不由本声明代表。程序默认不上传本地设置或日志。向 Issues 或邮箱发送诊断信息属于用户主动分享，应先移除令牌、私人路径、存档与个人信息。
 
+启动和运行期间，Wonder 会过滤启动记录中的当前游戏访问令牌，将记录写入系统临时目录，并在本次启动流程结束后移除临时文件。保存崩溃诊断包需确认。ZIP 仅保存在本地，打包时会过滤诊断文本中的当前游戏访问令牌。游戏或模组记录的用户名、路径、服务器地址及其他敏感信息仍可能出现在包内。诊断包可以从 `WonderData/CrashReports/` 单独删除。
+
 ## 登录与凭据
 
-用户打开下载列表、搜索资源或创建安装任务时，启动器访问 Mojang/Microsoft、BMCLAPI、Fabric、Quilt、Forge、NeoForge、OptiFine、Modrinth 及元数据指定的 HTTPS 文件地址。Modrinth 项目图标从其 CDN 加载并缓存在内存中。这些服务可收到来源 IP、搜索词和所请求的版本，不接收 Wonder 账户令牌。镜像选择和并发参数保存在本地设置。Java、游戏、资源和未完成片段保存在用户选定的安装或下载目录附近。
+用户打开下载列表、搜索资源或创建安装任务时，启动器访问 Mojang/Microsoft、BMCLAPI、Fabric、Quilt、Forge、NeoForge、OptiFine、Modrinth、CurseForge 及元数据指定的 HTTPS 文件地址。项目图标从对应平台 CDN 加载并缓存在内存中。这些下载服务可收到来源 IP、搜索词和所请求的版本，下载请求不携带 Wonder 账户令牌。镜像选择、默认资源平台和并发参数保存在本地设置。Java、游戏、资源和未完成片段保存在用户选定的安装或下载目录附近。
+
+CurseForge 入口暂时隐藏。继续旧的 CurseForge 任务时，所需的 API 密钥仅随请求发送到 `api.curseforge.com`。环境变量提供的密钥由用户管理。下载和图标请求不携带该密钥，下载任务记录也不保存该密钥。
 
 微软登录使用设备码授权，权限为 Xbox 登录和离线刷新，使用启动器内置的公开 Wonder Client ID，玩家无需填写。密码与多因素验证仅在微软官方网页填写。Wonder 向 Microsoft、Xbox、Minecraft Services 交换本次用户会话并查询 entitlement/角色，不向第三方服务器发送微软令牌。用户点击登录后会打开微软官方页面；设备码只在当前窗口显示，不写入布局或日志，点击“复制设备码”时才写入系统剪贴板。登录可取消，关闭账户窗口取消正在等待的登录。
 
@@ -59,3 +65,5 @@ Linux/macOS 删除账户条目或 `WonderData/` 不会自动删除系统密钥�
 Version 0.7.2 stores local settings and an account vault in WonderData beside the application; on macOS this folder is outside and beside the .app bundle. Windows uses CurrentUser DPAPI. Linux and macOS share an AES-GCM vault implementation with separate platform files. Linux keys are held by the desktop Secret Service via secret-tool; macOS keys are held by the current user Keychain via native Security.framework APIs. An unavailable or denied key store blocks account operations rather than allowing plaintext storage. Copying the data folder does not copy system keys. Removing the vault does not automatically remove its keyring or Keychain entry. Microsoft device-code authentication uses the built-in public application ID and sends no Microsoft password to Wonder. Yggdrasil discovery sends no credentials and requires confirmation of the actual HTTPS API address; login passwords go only to that service and are not persisted. Official texture downloads carry no bearer token. Skin uploads, reset, and owned-cape changes require explicit actions and use fixed Minecraft Services endpoints. Third-party launch downloads and verifies the pinned authlib-injector from its official host without account credentials. These hosts can receive ordinary network metadata such as the source IP. Online launch refreshes the selected identity; failures do not fall back to offline. Local deletion removes stored credentials, but Microsoft cloud consent must be revoked separately. Game access tokens necessarily reach the game process; same-user malware, untrusted mods, and external game logs are outside at-rest encryption and launcher-output redaction guarantees. No project telemetry, cloud account service, or token-import feature is implemented. Live authentication and AppID approval are not asserted by synthetic tests.
 
 Third-party appearance lookup sends the selected UUID to that authentication service's public session-profile endpoint without account credentials. Its declared HTTPS texture hosts receive image requests without tokens or redirects. Texture metadata stays in the encrypted vault; decoded images remain in view memory and are not persisted in workspace layout.
+
+After a launch failure or game crash, Wonder asks before saving a diagnostic ZIP under `WonderData/CrashReports/`. The ZIP stays local and may contain paths, usernames, and data recorded by the game or mods. Review the contents before sharing.

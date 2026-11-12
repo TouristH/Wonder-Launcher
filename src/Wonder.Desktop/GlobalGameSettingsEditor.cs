@@ -30,7 +30,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     private readonly Button _retry = new() { Content = "重试读取实例设置", HorizontalAlignment = HorizontalAlignment.Left };
     private readonly StackPanel _actions = new() { Orientation = Orientation.Horizontal, Spacing = 10 };
     public Control Footer { get; }
-    private bool _updating = true, _dirty, _disposed;
+    private bool _updating = true, _dirty, _disposed, _saving;
     private InstanceSettings _loaded = new();
     private bool _loadedIsolation = true;
 
@@ -45,13 +45,12 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         AutomationProperties.SetName(_saveUsername, "保存离线用户名");
         AutomationProperties.SetName(_usernameStatus, "离线用户名保存状态");
         _username.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty && !_updating) { _usernameDirty = true; _usernameStatus.Text = "用户名尚未保存"; } };
-        _saveUsername.Click += (_, _) =>
+        _saveUsername.Click += (_, _) => UiOperation.Start(() => ApplyAsync(() => _service.SetOfflineUsernameAsync(_username.Text ?? ""), error =>
         {
-            _service.SetOfflineUsername(_username.Text ?? "");
-            _usernameStatus.Foreground = _service.Error is null ? Palette.Muted : Palette.Error;
-            if (_service.Error is { } error) _usernameStatus.Text = error;
+            _usernameStatus.Foreground = error is null ? Palette.Muted : Palette.Error;
+            if (error is not null) _usernameStatus.Text = error;
             else { _loadedUsername = _service.Catalog.OfflineUsername; _usernameDirty = false; _usernameStatus.Text = "离线用户名已保存"; }
-        };
+        }), () => _disposed);
         identity.Children.Add(_username); identity.Children.Add(_saveUsername); identity.Children.Add(_usernameStatus);
         _form.Children.Add(PageStyles.Card(identity));
         var isolation = Section("版本隔离", "为新安装的普通游戏实例分别保存存档、模组和配置。关闭后，新实例共用安装时所选的游戏目录。整合包使用自己的游戏目录。");
@@ -81,19 +80,18 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         _form.Children.Add(PageStyles.Card(arguments));
         var save = new Button { Content = "保存全局设置" };
         AutomationProperties.SetName(save, "保存全局设置");
-        save.Click += (_, _) => Save();
+        save.Click += (_, _) => UiOperation.Start(SaveAsync, () => _disposed);
         var reset = new Button { Content = "恢复继承设置" };
         AutomationProperties.SetName(reset, "恢复全局继承设置");
-        reset.Click += (_, _) =>
+        reset.Click += (_, _) => UiOperation.Start(() => ApplyAsync(() => _service.UpdateGlobalSettingsAsync(new(), true), error =>
         {
-            _service.ResetGlobalSettings();
-            if (_service.Error is { } error) Report(error, true);
+            if (error is not null) Report(error, true);
             else { LoadValues(); Report("已恢复继承 · 实例的独立设置保持不变", false); }
-        };
+        }), () => _disposed);
         _actions.Children.Add(save); _actions.Children.Add(reset);
         _status.Name = "GlobalSettingsStatus";
         AutomationProperties.SetName(_retry, "重试全局设置读取");
-        _retry.Click += (_, _) => _service.Reload();
+        _retry.Click += (_, _) => UiOperation.Start(_service.ReloadAsync, () => _disposed);
         var footer = new StackPanel { Spacing = 10, Margin = new Thickness(26, 14, 26, 18) };
         footer.Children.Add(_status); footer.Children.Add(_retry); footer.Children.Add(_actions);
         Footer = new Border { Background = Palette.Header, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 1, 0, 0), Child = footer };
@@ -103,7 +101,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         RefreshAvailability();
     }
 
-    private void Save()
+    private async Task SaveAsync()
     {
         try
         {
@@ -116,11 +114,30 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
                 GameArguments = _clearGame.IsChecked == true ? "" : Optional("game")
             };
             settings.Validate();
-            _service.UpdateGlobalSettings(settings, _versionIsolation.IsChecked == true);
-            if (_service.Error is { } error) Report(error, true);
-            else { LoadValues(); Report("已保存 · 下次启动游戏时生效", false); }
+            await ApplyAsync(() => _service.UpdateGlobalSettingsAsync(settings, _versionIsolation.IsChecked == true), error =>
+            {
+                if (error is not null) Report(error, true);
+                else { LoadValues(); Report("已保存 · 下次启动游戏时生效", false); }
+            });
         }
         catch (ArgumentException ex) { Report(ex.Message, true); }
+    }
+
+    private async Task ApplyAsync(Func<Task<string?>> save, Action<string?> showResult)
+    {
+        if (_saving) return;
+        _saving = true;
+        RefreshAvailability();
+        try
+        {
+            var error = await save();
+            if (!_disposed) showResult(error);
+        }
+        finally
+        {
+            _saving = false;
+            RefreshAvailability();
+        }
     }
 
     private void LoadValues()
@@ -154,9 +171,9 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     {
         if (_disposed) return;
         var wasBlocked = !_form.IsEnabled;
-        _form.IsEnabled = !_service.IsReadBlocked;
-        _actions.IsEnabled = !_service.IsReadBlocked;
-        _saveUsername.IsEnabled = !_service.IsReadBlocked;
+        _form.IsEnabled = !_service.IsReadBlocked && !_service.IsLoading && !_saving;
+        _actions.IsEnabled = _form.IsEnabled;
+        _saveUsername.IsEnabled = _form.IsEnabled;
         if (!_usernameDirty && _loadedUsername != _service.Catalog.OfflineUsername)
         {
             var updating = _updating; _updating = true;
@@ -164,7 +181,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         }
         _retry.IsVisible = _service.IsReadBlocked;
         if (_service.IsReadBlocked) Report(_service.Error ?? "实例设置读取失败。原文件已保留。", true);
-        else if (!_dirty && (wasBlocked || _loaded != _service.Catalog.GlobalSettings || _loadedIsolation != _service.Catalog.VersionIsolationEnabled)) LoadValues();
+        else if (!_dirty && !_saving && (wasBlocked || _loaded != _service.Catalog.GlobalSettings || _loadedIsolation != _service.Catalog.VersionIsolationEnabled)) LoadValues();
     }
 
     private void MarkDirty() { if (!_updating) { _dirty = true; Report("尚未保存 · 点击保存后应用于下次启动", false); } }

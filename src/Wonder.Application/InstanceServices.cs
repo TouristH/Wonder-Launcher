@@ -14,6 +14,7 @@ public interface IInstanceStore
 {
     InstanceCatalog Load();
     void Save(InstanceCatalog catalog);
+    void Save(InstanceCatalog catalog, InstanceCatalog? previous) => Save(catalog);
 }
 
 public interface IGameLauncher

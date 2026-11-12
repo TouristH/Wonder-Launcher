@@ -12,22 +12,30 @@ public sealed partial class AccountService
     public AuthenticationServer? PendingServer { get; private set; }
     public IReadOnlyList<AuthenticationServer> Servers { get { lock (_gate) return _vault.Servers.ToArray(); } }
 
-    public Task DiscoverServerAsync(string address) => Operate(async ct =>
+    public Task DiscoverServerAsync(string address)
     {
-        if (_directory is null) throw new AccountAuthenticationException("此版本未配置认证服务器目录服务。");
         long revision;
-        lock (_gate) { PendingServer = null; revision = ++_discoveryRevision; }
-        Status = "正在读取认证服务器信息…"; Notify();
-        var server = await _directory.DiscoverAsync(address, ct).ConfigureAwait(false);
-        ValidateServers([server]);
-        lock (_gate)
+        lock (_gate) revision = _discoveryRevision;
+        return Operate(async ct =>
         {
-            ct.ThrowIfCancellationRequested();
-            if (_discoveryRevision != revision) throw new OperationCanceledException();
-            PendingServer = server with { ApiUrl = NormalizeServer(server.ApiUrl) };
-            Status = "请核对认证服务器名称和实际 API 地址，然后确认添加。";
-        }
-    });
+            if (_directory is null) throw new AccountAuthenticationException("此版本未配置认证服务器目录服务。");
+            lock (_gate)
+            {
+                if (_discoveryRevision != revision) throw new OperationCanceledException();
+                PendingServer = null; revision = ++_discoveryRevision;
+            }
+            Status = "正在读取认证服务器信息…"; Notify();
+            var server = await _directory.DiscoverAsync(address, ct).ConfigureAwait(false);
+            ValidateServers([server]);
+            lock (_gate)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (_discoveryRevision != revision) throw new OperationCanceledException();
+                PendingServer = server with { ApiUrl = NormalizeServer(server.ApiUrl) };
+                Status = "请核对认证服务器名称和实际 API 地址，然后确认添加。";
+            }
+        });
+    }
 
     public void CancelServerDiscovery()
     {
@@ -35,28 +43,34 @@ public sealed partial class AccountService
         Notify();
     }
 
-    public void ConfirmServer(string? name = null)
+    public void ConfirmServer(string? name = null) => ConfirmServerAsync(name).GetAwaiter().GetResult();
+
+    public Task ConfirmServerAsync(string? name = null)
     {
-        Mutate(vault =>
+        AuthenticationServer? pending;
+        lock (_gate) pending = PendingServer;
+        return MutateAsync(vault =>
         {
-            var pending = PendingServer ?? throw new AccountAuthenticationException("请先读取认证服务器信息。");
+            if (pending is null) throw new AccountAuthenticationException("请先读取认证服务器信息。");
             var candidate = pending with { Name = ServerName(name ?? pending.Name) };
             var existing = vault.Servers.FindIndex(x => NormalizeServer(x.ApiUrl) == NormalizeServer(candidate.ApiUrl));
             if (existing >= 0) vault.Servers[existing] = candidate with { Id = vault.Servers[existing].Id };
             else vault.Servers.Add(candidate);
-        });
-        lock (_gate) { if (Error is null && !IsBusy && !IsReadBlocked) PendingServer = null; }
-        Notify();
+        }, afterSave: () => PendingServer = null);
     }
 
-    public void RenameServer(string id, string name) => Mutate(vault =>
+    public void RenameServer(string id, string name) => RenameServerAsync(id, name).GetAwaiter().GetResult();
+
+    public Task RenameServerAsync(string id, string name) => MutateAsync(vault =>
     {
         var index = vault.Servers.FindIndex(x => x.Id == id);
         if (index < 0) throw new AccountAuthenticationException("认证服务器不存在。");
         vault.Servers[index] = vault.Servers[index] with { Name = ServerName(name) };
     });
 
-    public void RemoveServer(string id) => Mutate(vault =>
+    public void RemoveServer(string id) => RemoveServerAsync(id).GetAwaiter().GetResult();
+
+    public Task RemoveServerAsync(string id) => MutateAsync(vault =>
     {
         var server = vault.Servers.FirstOrDefault(x => x.Id == id) ?? throw new AccountAuthenticationException("认证服务器不存在。");
         if (vault.Accounts.Any(x => x.Profile.Kind == AccountKind.Yggdrasil && ServersEqual(x.Profile.ServerUrl, server.ApiUrl)))
@@ -64,7 +78,9 @@ public sealed partial class AccountService
         vault.Servers.Remove(server);
     });
 
-    public void RenameOffline(string id, string username) => Mutate(vault =>
+    public void RenameOffline(string id, string username) => RenameOfflineAsync(id, username).GetAwaiter().GetResult();
+
+    public Task RenameOfflineAsync(string id, string username) => MutateAsync(vault =>
     {
         var index = vault.Accounts.FindIndex(x => x.Profile.Id == id && x.Profile.Kind == AccountKind.Offline);
         if (index < 0) throw new AccountAuthenticationException("只能修改离线账户的玩家名。");
@@ -82,7 +98,9 @@ public sealed partial class AccountService
         return OfflineDefaultSkins.CreateUuid(current.Profile.Username, skinId);
     }
 
-    public void SetOfflineSkin(string id, string? skinId) => Mutate(vault =>
+    public void SetOfflineSkin(string id, string? skinId) => SetOfflineSkinAsync(id, skinId).GetAwaiter().GetResult();
+
+    public Task SetOfflineSkinAsync(string id, string? skinId) => MutateAsync(vault =>
     {
         var index = vault.Accounts.FindIndex(x => x.Profile.Id == id && x.Profile.Kind == AccountKind.Offline);
         if (index < 0) throw new AccountAuthenticationException("只能为离线账户选择默认皮肤。");

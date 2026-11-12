@@ -15,14 +15,16 @@ public sealed partial class AccountService : ILaunchAccountProvider
     private readonly IAuthenticationAdapterProvider? _adapter;
     private AccountVault _vault = new();
     private CancellationTokenSource? _operation;
+    private TaskCompletionSource? _operationCompleted;
     private bool _operationIsLogin;
+    private volatile bool _readBlocked = true;
     private ThirdPartyLogin? _pendingLogin;
     private string? _pendingReauthenticateId;
     private AuthenticatedAccount? _pendingCredentialSave;
     public event EventHandler? Changed;
     public string? Error { get; private set; }
-    public string Status { get; private set; } = "添加账户后即可选择启动身份。";
-    public bool IsReadBlocked { get; private set; }
+    public string Status { get; private set; } = "正在读取账户库…";
+    public bool IsReadBlocked => _readBlocked;
     public bool IsBusy { get { lock (_gate) return _operation is not null; } }
     public bool IsLoggingIn { get { lock (_gate) return _operation is not null && _operationIsLogin; } }
     public DeviceCodePrompt? DevicePrompt { get; private set; }
@@ -33,24 +35,51 @@ public sealed partial class AccountService : ILaunchAccountProvider
     public string? AuthlibInjectorPath { get { lock (_gate) return _vault.AuthlibInjectorPath; } }
 
     public AccountService(IAccountStore store, IMicrosoftAuthenticator microsoft, IYggdrasilAuthenticator yggdrasil,
-        IAuthenticationServerDirectory? directory = null, IAuthenticationAdapterProvider? adapter = null)
-    { _store = store; _microsoft = microsoft; _yggdrasil = yggdrasil; _directory = directory; _adapter = adapter; Reload(); }
-
-    public void Reload()
+        IAuthenticationServerDirectory? directory = null, IAuthenticationAdapterProvider? adapter = null, bool loadImmediately = true)
     {
-        lock (_gate)
-        {
-            if (IsBusy) return;
-            try { RetryPendingCredentialSave(); var vault = _store.Load(); Validate(vault); _vault = Copy(vault); ImportAccountServers(_vault); IsReadBlocked = false; Error = null; }
-            catch (AccountAuthenticationException ex) when (_pendingCredentialSave is not null) { Error = ex.Message; }
-            catch (AccountAuthenticationException ex) { IsReadBlocked = true; Error = ex.Message; }
-            catch (AccountLimitException ex) { IsReadBlocked = true; Error = ex.Message + "原账户库已保留，请修复后重新读取。"; }
-            catch { IsReadBlocked = true; Error = "账户库读取或解密失败，原文件已保留。请使用原系统用户，并检查系统凭据保护、桌面密钥环或 macOS 钥匙串，或修复文件后重新读取。"; }
-        }
-        Notify();
+        _store = store; _microsoft = microsoft; _yggdrasil = yggdrasil; _directory = directory; _adapter = adapter;
+        if (loadImmediately) Reload();
     }
 
-    public void AddOffline(string username) => Mutate(vault =>
+    public void Reload() => ReloadAsync().GetAwaiter().GetResult();
+
+    public Task ReloadAsync()
+    {
+        var operation = TryBeginLocal(allowBlocked: true);
+        if (operation is null) return Task.CompletedTask;
+        Status = "正在读取账户库…";
+        Error = null;
+        Notify();
+        return Task.Run(() =>
+        {
+            try
+            {
+                RetryPendingCredentialSave();
+                var loaded = _store.Load(); Validate(loaded);
+                var vault = Copy(loaded); ImportAccountServers(vault);
+                lock (_gate)
+                {
+                    _vault = vault;
+                    _readBlocked = false;
+                    Status = vault.Accounts.Count == 0 ? "添加账户后即可选择启动身份。" : "账户库已读取。";
+                }
+            }
+            catch (AccountAuthenticationException ex) when (_pendingCredentialSave is not null) { Error = ex.Message; }
+            catch (AccountAuthenticationException ex) { LauncherDiagnostics.Warn("ReadAccounts", ex); _readBlocked = true; Error = ex.Message; }
+            catch (AccountLimitException ex) { LauncherDiagnostics.Warn("ReadAccounts", ex); _readBlocked = true; Error = ex.Message + "原账户库已保留，请修复后重新读取。"; }
+            catch (Exception ex)
+            {
+                LauncherDiagnostics.Warn("ReadAccounts", ex);
+                _readBlocked = true;
+                Error = "账户库读取或解密失败，原文件已保留。请使用原系统用户，并检查系统凭据保护、桌面密钥环或 macOS 钥匙串，或修复文件后重新读取。";
+            }
+            finally { End(operation); }
+        });
+    }
+
+    public void AddOffline(string username) => AddOfflineAsync(username).GetAwaiter().GetResult();
+
+    public Task AddOfflineAsync(string username) => MutateAsync(vault =>
     {
         username = username.Trim(); AccountLimits.ValidateUsernameLength(username); InstanceCatalog.ValidateOfflineUsername(username);
         var uuid = OfflineUuid(username);
@@ -60,19 +89,21 @@ public sealed partial class AccountService : ILaunchAccountProvider
         vault.SelectedAccountId = account.Profile.Id;
     });
 
-    public void Select(string id) => Mutate(vault =>
+    public void Select(string id) => SelectAsync(id).GetAwaiter().GetResult();
+
+    public Task SelectAsync(string id) => MutateAsync(vault =>
     {
         if (!vault.Accounts.Any(x => x.Profile.Id == id)) throw new AccountAuthenticationException("账户不存在。");
         vault.SelectedAccountId = id;
     });
 
-    public void ConfigureInjector(string path, string sha256) => Mutate(vault =>
+    public void ConfigureInjector(string path, string sha256) => MutateAsync(vault =>
     {
         if (!Path.IsPathFullyQualified(path) || !path.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) ||
             sha256.Length != 64 || !sha256.All(char.IsAsciiHexDigit))
             throw new AccountAuthenticationException("请选择可信来源的 authlib-injector JAR 文件。");
         vault.AuthlibInjectorPath = path; vault.AuthlibInjectorSha256 = sha256.ToUpperInvariant();
-    });
+    }).GetAwaiter().GetResult();
 
     public Task SignInMicrosoftAsync(string? reauthenticateId = null) => Operate(async ct =>
     {
@@ -139,55 +170,68 @@ public sealed partial class AccountService : ILaunchAccountProvider
     public Task RemoveAsync(string id) => Operate(async ct =>
     {
         AuthenticatedAccount account;
+        AccountVault next;
         lock (_gate)
         {
             account = _vault.Accounts.FirstOrDefault(x => x.Profile.Id == id) ?? throw new AccountAuthenticationException("账户不存在。");
-            var next = Copy(_vault); next.Accounts.RemoveAll(x => x.Profile.Id == id);
+            next = Copy(_vault); next.Accounts.RemoveAll(x => x.Profile.Id == id);
             if (next.SelectedAccountId == id) next.SelectedAccountId = next.Accounts.FirstOrDefault()?.Profile.Id;
-            Persist(next); Status = "账户和本机保存的凭据已移除。";
         }
+        Persist(next); Status = "账户和本机保存的凭据已移除。";
         if (account.Profile.Kind == AccountKind.Yggdrasil)
         {
             try { await _yggdrasil.InvalidateAsync(account.Profile, account.Credentials, ct).ConfigureAwait(false); }
-            catch { Status = "本机账户已移除；服务器会话注销未确认，可在第三方网站撤销会话。"; }
+            catch (Exception ex)
+            {
+                if (ex is not OperationCanceledException) LauncherDiagnostics.Warn("InvalidateAccountSession", ex);
+                Status = "本机账户已移除；服务器会话注销未确认，可在第三方网站撤销会话。";
+            }
         }
-    });
+    }, finishLocalChange: true);
 
     public async Task<GameSession> GetSelectedSessionAsync(CancellationToken ct = default)
     {
         var operation = Begin(ct);
+        Notify();
         try
         {
-            AuthenticatedAccount current;
-            lock (_gate) current = _vault.Accounts.FirstOrDefault(x => x.Profile.Id == _vault.SelectedAccountId)
-                ?? throw new AccountAuthenticationException("请先在账户管理中添加并选择账户。");
-            if (current.Profile.Kind != AccountKind.Offline)
-            {
-                Status = "正在验证所选账户…"; Notify();
-                current = await RefreshAccount(current, operation.Token).ConfigureAwait(false);
-            }
-            if (current.Profile.Kind == AccountKind.Yggdrasil && _adapter is not null)
-            {
-                Status = "正在准备第三方认证适配器…"; Notify();
-                var adapter = await _adapter.EnsureAsync(operation.Token).ConfigureAwait(false);
-                lock (_gate)
-                {
-                    operation.Token.ThrowIfCancellationRequested();
-                    var next = Copy(_vault); next.AuthlibInjectorPath = adapter.Path; next.AuthlibInjectorSha256 = adapter.Sha256; Persist(next);
-                }
-            }
-            operation.Token.ThrowIfCancellationRequested();
-            var p = current.Profile; var c = current.Credentials;
-            if (p.Kind != AccountKind.Offline && (string.IsNullOrEmpty(c.AccessToken) || c.ExpiresAt <= DateTimeOffset.UtcNow))
-                throw new AccountAuthenticationException("账户会话已过期，请重新登录。");
-            lock (_gate) return new(p.Kind, p.Username, p.Uuid, p.Kind == AccountKind.Offline ? "0" : c.AccessToken,
-                p.ClientId ?? "", c.Xuid, p.ServerUrl,
-                p.Kind == AccountKind.Yggdrasil ? _vault.AuthlibInjectorPath : null,
-                p.Kind == AccountKind.Yggdrasil ? _vault.AuthlibInjectorSha256 : null, p.OfflineSkinId);
+            return await Task.Run(() => GetSelectedSession(operation.Token)).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) { Error = SafeError(ex); throw new AccountAuthenticationException(Error); }
         finally { End(operation); }
+    }
+
+    private async Task<GameSession> GetSelectedSession(CancellationToken ct)
+    {
+        RetryPendingCredentialSave();
+        ct.ThrowIfCancellationRequested();
+        AuthenticatedAccount current;
+        lock (_gate) current = _vault.Accounts.FirstOrDefault(x => x.Profile.Id == _vault.SelectedAccountId)
+            ?? throw new AccountAuthenticationException("请先在账户管理中添加并选择账户。");
+        if (current.Profile.Kind != AccountKind.Offline)
+        {
+            Status = "正在验证所选账户…"; Notify();
+            current = await RefreshAccount(current, ct).ConfigureAwait(false);
+        }
+        if (current.Profile.Kind == AccountKind.Yggdrasil && _adapter is not null)
+        {
+            Status = "正在准备第三方认证适配器…"; Notify();
+            var adapter = await _adapter.EnsureAsync(ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            AccountVault next;
+            lock (_gate) next = Copy(_vault);
+            next.AuthlibInjectorPath = adapter.Path; next.AuthlibInjectorSha256 = adapter.Sha256;
+            Persist(next);
+        }
+        ct.ThrowIfCancellationRequested();
+        var p = current.Profile; var c = current.Credentials;
+        if (p.Kind != AccountKind.Offline && (string.IsNullOrEmpty(c.AccessToken) || c.ExpiresAt <= DateTimeOffset.UtcNow))
+            throw new AccountAuthenticationException("账户会话已过期，请重新登录。");
+        lock (_gate) return new(p.Kind, p.Username, p.Uuid, p.Kind == AccountKind.Offline ? "0" : c.AccessToken,
+            p.ClientId ?? "", c.Xuid, p.ServerUrl,
+            p.Kind == AccountKind.Yggdrasil ? _vault.AuthlibInjectorPath : null,
+            p.Kind == AccountKind.Yggdrasil ? _vault.AuthlibInjectorSha256 : null, p.OfflineSkinId);
     }
 
     public void Cancel()
@@ -206,13 +250,26 @@ public sealed partial class AccountService : ILaunchAccountProvider
         Notify();
     }
 
-    private async Task Operate(Func<CancellationToken, Task> action, bool login = false)
+    public Task WaitForIdleAsync()
+    {
+        lock (_gate) return _operationCompleted?.Task ?? Task.CompletedTask;
+    }
+
+    private async Task Operate(Func<CancellationToken, Task> action, bool login = false, bool finishLocalChange = false)
     {
         CancellationTokenSource operation;
         try { operation = Begin(login: login); }
         catch (AccountAuthenticationException ex) { Error = ex.Message; Notify(); return; }
         Notify();
-        try { await action(operation.Token).ConfigureAwait(false); }
+        try
+        {
+            await Task.Run(async () =>
+            {
+                RetryPendingCredentialSave();
+                if (!finishLocalChange) operation.Token.ThrowIfCancellationRequested();
+                await action(operation.Token).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
         catch (OperationCanceledException) { Status = "操作已取消。"; }
         catch (Exception ex) { Error = SafeError(ex); }
         finally { End(operation); }
@@ -223,24 +280,46 @@ public sealed partial class AccountService : ILaunchAccountProvider
         {
             if (IsReadBlocked) throw new AccountAuthenticationException("账户库不可读取，已阻止修改与启动。");
             if (_operation is not null) throw new AccountAuthenticationException("账户操作正在进行，请稍后重试。");
-            RetryPendingCredentialSave();
-            Error = null; _operationIsLogin = login; return _operation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            Error = null; _operationIsLogin = login;
+            _operationCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _operation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        }
+    }
+
+    private CancellationTokenSource? TryBeginLocal(bool allowBlocked = false)
+    {
+        lock (_gate)
+        {
+            if (_operation is not null || !allowBlocked && IsReadBlocked) return null;
+            _operationCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            return _operation = new CancellationTokenSource();
         }
     }
     private void End(CancellationTokenSource operation)
     {
-        lock (_gate) { if (_operation == operation) { _operation = null; _operationIsLogin = false; } DevicePrompt = null; }
+        TaskCompletionSource? completed = null;
+        lock (_gate)
+        {
+            if (_operation == operation)
+            {
+                _operation = null; _operationIsLogin = false;
+                completed = _operationCompleted; _operationCompleted = null;
+            }
+            DevicePrompt = null;
+        }
         operation.Dispose(); Notify();
+        completed?.TrySetResult();
     }
     private void ClearPending() { lock (_gate) { _pendingLogin = null; _pendingReauthenticateId = null; DevicePrompt = null; } }
     private void SaveAccount(AuthenticatedAccount account, CancellationToken ct, bool select = true, bool preserveCredentialsOnFailure = false)
     {
+        AccountVault next;
         lock (_gate)
         {
             ct.ThrowIfCancellationRequested();
             if (account.Profile.Kind != AccountKind.Offline)
                 account = new(account.Profile with { LastValidatedAt = DateTimeOffset.UtcNow }, account.Credentials);
-            var next = Copy(_vault);
+            next = Copy(_vault);
             var index = next.Accounts.FindIndex(x => x.Profile.Kind == account.Profile.Kind &&
                 string.Equals(x.Profile.Uuid, account.Profile.Uuid, StringComparison.OrdinalIgnoreCase) && ServersEqual(x.Profile.ServerUrl, account.Profile.ServerUrl));
             // Permissions belong to this local identity; authentication and appearance results cannot grant them.
@@ -256,20 +335,33 @@ public sealed partial class AccountService : ILaunchAccountProvider
                 next.Accounts.Add(account);
             }
             if (select) next.SelectedAccountId = account.Profile.Id;
-            ImportAccountServers(next);
-            Persist(next, preserveCredentialsOnFailure ? account : null);
-            Status = (select ? "已选择 " : "已更新 ") + account.Profile.Username + " · " + KindLabel(account.Profile.Kind);
         }
+        ImportAccountServers(next);
+        ct.ThrowIfCancellationRequested();
+        Persist(next, preserveCredentialsOnFailure ? account : null);
+        Status = (select ? "已选择 " : "已更新 ") + account.Profile.Username + " · " + KindLabel(account.Profile.Kind);
     }
-    private void Mutate(Action<AccountVault> change)
+    private Task MutateAsync(Action<AccountVault> change, Action? afterSave = null)
     {
-        lock (_gate)
-        {
-            if (IsReadBlocked || IsBusy) return;
-            try { RetryPendingCredentialSave(); var next = Copy(_vault); change(next); Persist(next); Error = null; Status = "账户设置已保存。"; }
-            catch (Exception ex) { Error = SafeError(ex); }
-        }
+        var operation = TryBeginLocal();
+        if (operation is null) return Task.CompletedTask;
+        Status = "正在保存账户库…";
+        Error = null;
         Notify();
+        return Task.Run(() =>
+        {
+            try
+            {
+                RetryPendingCredentialSave();
+                AccountVault next;
+                lock (_gate) { next = Copy(_vault); change(next); }
+                Persist(next);
+                lock (_gate) { afterSave?.Invoke(); Status = "账户设置已保存。"; }
+            }
+            catch (OperationCanceledException) { Status = "操作已取消。"; }
+            catch (Exception ex) { Error = SafeError(ex); }
+            finally { End(operation); }
+        });
     }
     private void RetryPendingCredentialSave()
     {
@@ -280,13 +372,19 @@ public sealed partial class AccountService : ILaunchAccountProvider
     {
         Validate(vault);
         try { _store.Save(Copy(vault)); }
-        catch when (rotatedAccount is not null)
+        catch (Exception ex)
         {
+            LauncherDiagnostics.Warn("SaveAccounts", ex);
+            if (rotatedAccount is null) throw;
             _pendingCredentialSave = rotatedAccount;
             throw new AccountAuthenticationException("新账户凭据已在服务器生效，但本机保存失败。请不要退出启动器，修复数据目录权限或磁盘空间后刷新账户或重试启动；将先重试保存。若已退出，请重新登录。");
         }
-        _vault = Copy(vault);
-        if (rotatedAccount is not null) _pendingCredentialSave = null;
+        // The reserved operation serializes persistence. UI readers keep the last committed snapshot.
+        lock (_gate)
+        {
+            _vault = vault;
+            if (rotatedAccount is not null) _pendingCredentialSave = null;
+        }
     }
     private static string SafeError(Exception ex) => ex is AccountAuthenticationException or AccountLimitException ? ex.Message :
         ex is ArgumentException ? "输入无效，请检查用户名或服务器地址。" :
@@ -334,6 +432,8 @@ public sealed partial class AccountService : ILaunchAccountProvider
     private void Notify()
     {
         if (Changed is not { } handlers) return;
-        foreach (EventHandler handler in handlers.GetInvocationList()) try { handler(this, EventArgs.Empty); } catch { }
+        foreach (EventHandler handler in handlers.GetInvocationList())
+            try { handler(this, EventArgs.Empty); }
+            catch (Exception ex) { LauncherDiagnostics.Warn("NotifyAccountChanged", ex); }
     }
 }

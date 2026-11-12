@@ -42,8 +42,18 @@ public static class WonderInstanceConfigurationStore
         document.GameVersion = instance.GameVersion; document.ModLoaders = instance.ModLoaders;
         var bytes = JsonSerializer.SerializeToUtf8Bytes(document, Options);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { File.WriteAllBytes(temporary, bytes); File.Move(temporary, path, false); }
-        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        var ownsTemporary = false;
+        try
+        {
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                ownsTemporary = true;
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, path, false);
+        }
+        finally { if (ownsTemporary && File.Exists(temporary)) File.Delete(temporary); }
     }
 
     public static GameInstance Read(string gameRoot)

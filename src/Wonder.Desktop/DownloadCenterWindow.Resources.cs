@@ -10,18 +10,20 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Wonder.Core;
+using ResourceProvider = Wonder.Core.ResourceProvider;
 
 namespace Wonder.Desktop;
 
 internal sealed partial class DownloadCenterWindow
 {
     private TextBox _resourceQuery = null!, _resourceGame = null!, _packParent = null!, _packName = null!, _resourceFileDirectory = null!;
-    private ComboBox _resourceLoader = null!, _targetInstance = null!, _detailTargetInstance = null!, _resourceDownloadMode = null!;
+    private ComboBox _resourceProvider = null!, _resourceLoader = null!, _targetInstance = null!, _detailTargetInstance = null!, _resourceDownloadMode = null!;
     private TextBlock _resourceStatus = null!, _projectTitle = null!, _projectDescription = null!, _projectAuthor = null!, _projectCoverage = null!,
         _versionDetails = null!, _installTargetDescription = null!, _selectedRelease = null!;
     private StackPanel _resourceResults = null!, _versionFamilies = null!, _versionGroups = null!;
     private Control _resourceDetails = null!, _packDestination = null!, _targetInstanceRow = null!, _detailTargetRow = null!, _resourceSearchPanel = null!, _resourcePaging = null!, _resourceFileDestination = null!;
-    private Button _previousResources = null!, _nextResources = null!, _installResource = null!, _projectSource = null!, _retryVersions = null!;
+    private Button _searchResources = null!, _browseCurseForge = null!, _previousResources = null!, _nextResources = null!,
+        _installResource = null!, _projectSource = null!, _retryVersions = null!;
     private ResourceIconView _projectIcon = null!;
     private CancellationTokenSource? _resourceRequest, _versionRequest;
     private ResourceProject? _selectedProject;
@@ -37,9 +39,12 @@ internal sealed partial class DownloadCenterWindow
     private static readonly string[] ResourceLoaderIds = ["", "fabric", "quilt", "forge", "neoforge"];
     private static readonly string[] ShaderLoaderIds = ["", "iris", "optifine", "canvas"];
     private DownloadResourceKind ResourceKind => _page switch { 2 => DownloadResourceKind.Modpack, 3 => DownloadResourceKind.ResourcePack, 4 => DownloadResourceKind.Shader, _ => DownloadResourceKind.Mod };
+    private ResourceProvider ActiveResourceProvider => _showCurseForge && _resourceProvider.SelectedIndex == 1 ? ResourceProvider.CurseForge : ResourceProvider.Modrinth;
 
-    private Control BuildResourcesPage()
+    private Control BuildResourcesPage(ResourceProvider resourceProvider)
     {
+        _resourceProvider = Choice("资源来源", ["Modrinth", "CurseForge"]);
+        SetResourceProvider(resourceProvider);
         _resourceQuery = Input("搜索资源", "搜索项目名称或关键词");
         _resourceGame = Input("资源 Minecraft 版本", "留空查看全部版本");
         _resourceLoader = Choice("资源加载器筛选");
@@ -56,27 +61,61 @@ internal sealed partial class DownloadCenterWindow
 
         var searchRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,10,Auto") };
         searchRow.Children.Add(_resourceQuery);
-        var search = ActionButton("搜索 Modrinth", () => _ = SearchResourcesAsync(0));
-        Grid.SetColumn(search, 2); searchRow.Children.Add(search);
+        _searchResources = ActionButton("搜索资源", () => UiOperation.Start(() => SearchResourcesAsync(0), () => _closed));
+        Grid.SetColumn(_searchResources, 2); searchRow.Children.Add(_searchResources);
+        _browseCurseForge = ActionButton("在 CurseForge 网站浏览", () => UiOperation.Start(() => OpenResourcePageAsync(CurseForgeBrowseUri(), "CurseForge 网站"), () => _closed));
+        _browseCurseForge.HorizontalAlignment = HorizontalAlignment.Left;
+        PaintResourceProvider();
+        _resourceProvider.SelectionChanged += (_, _) =>
+        {
+            PaintResourceProvider();
+            UiOperation.Start(() => SearchResourcesAsync(0), () => _closed);
+        };
         _resourceQuery.KeyDown += SearchOnEnter;
         _resourceGame.KeyDown += SearchOnEnter;
         _resourceStatus = PageStyles.Hint("输入关键词，或浏览热门资源。");
         _resourceResults = new StackPanel { Spacing = 10 };
-        _previousResources = ActionButton("上一页资源", () => _ = SearchResourcesAsync(Math.Max(0, _offset - 20)));
-        _nextResources = ActionButton("下一页资源", () => _ = SearchResourcesAsync(_offset + 20));
+        _previousResources = ActionButton("上一页资源", () => UiOperation.Start(() => SearchResourcesAsync(Math.Max(0, _offset - 20)), () => _closed));
+        _nextResources = ActionButton("下一页资源", () => UiOperation.Start(() => SearchResourcesAsync(_offset + 20), () => _closed));
         _previousResources.IsEnabled = _nextResources.IsEnabled = false;
         _resourcePaging = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _previousResources, _nextResources } };
-        _resourceSearchPanel = PageStyles.Card(Stack(_targetInstanceRow, searchRow, Field("Minecraft 版本筛选", _resourceGame), _resourceLoader, _resourceStatus));
+        var providerField = Field("资源来源", _resourceProvider);
+        providerField.IsVisible = _showCurseForge;
+        _resourceSearchPanel = PageStyles.Card(Stack(providerField, _targetInstanceRow, searchRow,
+            Field("Minecraft 版本筛选", _resourceGame), _resourceLoader, _resourceStatus, _browseCurseForge));
         _resourceDetails = BuildResourceDetails();
         _resourceDetails.IsVisible = false;
         return Stack(_resourceSearchPanel, _resourceResults, _resourcePaging, _resourceDetails);
+    }
+
+    internal void SetResourceProvider(ResourceProvider provider) =>
+        _resourceProvider.SelectedIndex = _showCurseForge && provider == ResourceProvider.CurseForge ? 1 : 0;
+
+    private void PaintResourceProvider()
+    {
+        var provider = ActiveResourceProvider;
+        var search = "搜索 " + ProviderLabel(provider);
+        _searchResources.Content = search;
+        AutomationProperties.SetName(_searchResources, search);
+        _browseCurseForge.IsVisible = provider == ResourceProvider.CurseForge;
+    }
+
+    private Uri CurseForgeBrowseUri()
+    {
+        var category = ResourceKind switch
+        {
+            DownloadResourceKind.Modpack => "modpacks", DownloadResourceKind.ResourcePack => "texture-packs",
+            DownloadResourceKind.Shader => "shaders", _ => "mc-mods"
+        };
+        var query = Uri.EscapeDataString(_resourceQuery.Text?.Trim() ?? "");
+        return new Uri($"https://www.curseforge.com/minecraft/search?class={category}&search={query}");
     }
 
     private void SearchOnEnter(object? sender, KeyEventArgs args)
     {
         if (args.Key != Key.Enter) return;
         args.Handled = true;
-        _ = SearchResourcesAsync(0);
+        UiOperation.Start(() => SearchResourcesAsync(0), () => _closed);
     }
 
     private Control BuildResourceDetails()
@@ -87,7 +126,10 @@ internal sealed partial class DownloadCenterWindow
         _projectDescription = PageStyles.Hint("");
         _projectAuthor = PageStyles.Hint("");
         _projectCoverage = PageStyles.Hint("");
-        _projectSource = ActionButton("在 Modrinth 查看项目", () => _ = OpenResourceSourceAsync());
+        _projectSource = ActionButton("查看项目主页", () =>
+        {
+            if (TryGetResourcePageUri(_selectedProject, null, out var uri)) UiOperation.Start(() => OpenResourcePageAsync(uri, "项目主页"), () => _closed);
+        });
         _projectSource.HorizontalAlignment = HorizontalAlignment.Left;
         _projectAuthor.VerticalAlignment = VerticalAlignment.Center;
         var overviewText = Stack(_projectTitle, _projectDescription, Pair(_projectAuthor, _projectSource, "*,12,Auto"), _projectCoverage);
@@ -96,7 +138,14 @@ internal sealed partial class DownloadCenterWindow
 
         _installTargetDescription = PageStyles.Hint("");
         _selectedRelease = PageStyles.Hint("");
-        _installResource = ActionButton("安装所选资源", QueueResource);
+        _installResource = ActionButton("安装所选资源", () =>
+        {
+            if (_selectedProject is { Provider: ResourceProvider.CurseForge } project && _selectedResourceVersion is { Files.Count: 0 } version)
+            {
+                if (TryGetResourcePageUri(project, version, out var uri)) UiOperation.Start(() => OpenResourcePageAsync(uri, "CurseForge 文件页"), () => _closed);
+            }
+            else QueueResource();
+        });
         _installResource.IsEnabled = false;
         _installResource.HorizontalAlignment = HorizontalAlignment.Left;
         _resourceDownloadMode = Choice("资源下载方式");
@@ -112,7 +161,7 @@ internal sealed partial class DownloadCenterWindow
         _versionGroups = new StackPanel { Spacing = 8 };
         var families = new ScrollViewer { Content = _versionFamilies, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
         AutomationProperties.SetName(families, "资源大版本");
-        _retryVersions = ActionButton("重试获取发布包", () => { if (_selectedProject is { } selected) _ = SelectProjectAsync(selected); });
+        _retryVersions = ActionButton("重试获取发布包", () => { if (_selectedProject is { } selected) UiOperation.Start(() => SelectProjectAsync(selected), () => _closed); });
         _retryVersions.IsVisible = false;
         return Stack(PageStyles.Card(Stack(back, overview)),
             PageStyles.Card(Stack(Heading("下载"), Pair(Field("下载方式", _resourceDownloadMode), destination, "190,12,*"),
@@ -126,19 +175,41 @@ internal sealed partial class DownloadCenterWindow
         return new Grid { ColumnDefinitions = new ColumnDefinitions(columns), Children = { left, right } };
     }
 
-    private async Task OpenResourceSourceAsync()
+    internal static bool TryGetResourcePageUri(ResourceProject? project, ResourceVersion? version, out Uri uri)
     {
-        if (!Uri.TryCreate(_selectedProject?.PageUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.Host != "modrinth.com" || uri.UserInfo.Length != 0) return;
+        uri = null!;
+        if (project is null || !Uri.TryCreate(project.PageUrl, UriKind.Absolute, out var page) ||
+            page.Scheme != Uri.UriSchemeHttps || !page.IsDefaultPort || page.UserInfo.Length != 0) return false;
+        if (project.Provider == ResourceProvider.CurseForge)
+        {
+            var segments = page.AbsolutePath.TrimEnd('/').Split('/');
+            if (page.Host is not ("www.curseforge.com" or "curseforge.com") ||
+                segments is not ["", "minecraft", "mc-mods" or "modpacks" or "texture-packs" or "shaders", { Length: > 0 }]) return false;
+            if (version is not null)
+            {
+                if (version.ProjectId != project.Id || !int.TryParse(version.Id, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var fileId) || fileId <= 0) return false;
+                page = new UriBuilder(page) { Path = page.AbsolutePath.TrimEnd('/') + "/files/" + version.Id, Query = "", Fragment = "" }.Uri;
+            }
+        }
+        else if (project.Provider != ResourceProvider.Modrinth || page.Host != "modrinth.com") return false;
+        uri = page;
+        return true;
+    }
+
+    private async Task OpenResourcePageAsync(Uri uri, string label)
+    {
         try
         {
-            if (!await Launcher.LaunchUriAsync(uri)) ShowStatus("无法打开 Modrinth 项目页面。", true);
+            if (!await Launcher.LaunchUriAsync(uri)) ShowStatus("无法打开" + label + "。", true);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException) { ShowStatus("无法打开 Modrinth 项目页面。", true); }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException) { ShowStatus("无法打开" + label + "。", true); }
     }
 
     private void ShowResourceResults(bool restoreScroll = false)
     {
         _versionRequest?.Cancel(); _selectedProject = null;
+        _selectedResourceVersion = null;
         _resourceDetails.IsVisible = false; _resourceSearchPanel.IsVisible = _resourceResults.IsVisible = _resourcePaging.IsVisible = true;
         _projectIcon.SetProject(null);
         _versionFamilies.Children.Clear();
@@ -174,7 +245,7 @@ internal sealed partial class DownloadCenterWindow
             FocusResourceVersions();
             UpdateResourceInstall();
         }
-        else if (_page is 1 or 3 or 4) _ = SearchResourcesAsync(0);
+        else if (_page is 1 or 3 or 4) UiOperation.Start(() => SearchResourcesAsync(0), () => _closed);
     }
 
     private void RefreshInstances()
@@ -211,7 +282,8 @@ internal sealed partial class DownloadCenterWindow
 
     private void ConfigureResourceFilters(DownloadResourceKind kind)
     {
-        _resourceLoader.IsVisible = kind != DownloadResourceKind.ResourcePack;
+        _resourceLoader.IsVisible = kind != DownloadResourceKind.ResourcePack &&
+            (kind != DownloadResourceKind.Shader || ActiveResourceProvider == ResourceProvider.Modrinth);
         if (_configuredKind == kind) return;
         var previous = ActiveLoaderFilter();
         var shader = kind == DownloadResourceKind.Shader;
@@ -239,21 +311,22 @@ internal sealed partial class DownloadCenterWindow
         _resourceRequest?.Cancel();
         var request = _resourceRequest = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         var kind = ResourceKind;
+        var provider = ActiveResourceProvider;
         ConfigureResourceFilters(kind);
         ShowResourceResults(); _resourceResults.Children.Clear();
         _previousResources.IsEnabled = _nextResources.IsEnabled = false;
-        _resourceStatus.Text = "正在搜索 Modrinth…";
+        _resourceStatus.Text = "正在搜索 " + ProviderLabel(provider) + "…";
         try
         {
-            var result = await _downloads.Catalog.SearchResourcesAsync(kind, _resourceQuery.Text?.Trim() ?? "", _resourceGame.Text?.Trim(),
-                kind == DownloadResourceKind.ResourcePack ? null : ActiveLoaderFilter(), offset, _downloads.Options, request.Token);
-            if (_closed || request.IsCancellationRequested || _page is < 1 or > 4 || ResourceKind != kind) return;
+            var result = await _downloads.Catalog.SearchResourcesAsync(provider, kind, _resourceQuery.Text?.Trim() ?? "", _resourceGame.Text?.Trim(),
+                _resourceLoader.IsVisible ? ActiveLoaderFilter() : null, offset, _downloads.Options, request.Token);
+            if (_closed || request.IsCancellationRequested) return;
             _offset = result.Offset;
             _resourceStatus.Text = result.Projects.Count == 0 ? "没有找到匹配资源。试试其他关键词、版本或加载器。" :
                 $"共 {result.Total:N0} 项 · 第 {result.Offset + 1}–{result.Offset + result.Projects.Count} 项";
             foreach (var project in result.Projects) _resourceResults.Children.Add(CreateResourceCard(project));
             _previousResources.IsEnabled = result.Offset > 0;
-            _nextResources.IsEnabled = result.Offset + result.Projects.Count < result.Total;
+            _nextResources.IsEnabled = result.Offset + 20 < result.Total;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (!request.IsCancellationRequested) _resourceStatus.Text = "搜索失败，可点击搜索重试：" + ex.Message; }
@@ -277,7 +350,7 @@ internal sealed partial class DownloadCenterWindow
         Grid.SetColumn(arrow, 3); row.Children.Add(arrow);
         button.Content = row;
         AutomationProperties.SetName(button, "资源项目·" + project.Id);
-        button.Click += (_, _) => _ = SelectProjectAsync(project);
+        button.Click += (_, _) => UiOperation.Start(() => SelectProjectAsync(project), () => _closed);
         return button;
     }
 
@@ -285,7 +358,7 @@ internal sealed partial class DownloadCenterWindow
     {
         _versionRequest?.Cancel();
         var request = _versionRequest = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        var opening = !_resourceDetails.IsVisible || _selectedProject?.Id != project.Id;
+        var opening = !_resourceDetails.IsVisible || _selectedProject?.Id != project.Id || _selectedProject?.Provider != project.Provider;
         if (!_resourceDetails.IsVisible) _browseOffset = _scroll.Offset;
         _selectedProject = project;
         _selectedResourceVersion = null;
@@ -314,7 +387,7 @@ internal sealed partial class DownloadCenterWindow
         try
         {
             // Keep every release available for browsing. The instance and search filters choose the starting group.
-            var versions = await _downloads.Catalog.GetResourceVersionsAsync(project.Id, null, null, _downloads.Options, request.Token);
+            var versions = await _downloads.Catalog.GetResourceVersionsAsync(project.Provider, project.Id, null, null, _downloads.Options, request.Token);
             if (_closed || request.IsCancellationRequested) return;
             _resourceFamilies = ResourceVersionGroups.Create(versions);
             _projectCoverage.Text = "适配版本 · " + ResourceVersionGroups.DescribeCoverage(_resourceFamilies);
@@ -347,17 +420,26 @@ internal sealed partial class DownloadCenterWindow
             if (_closed || ct.IsCancellationRequested) return;
             _selectedProject = details;
             PaintProject(details);
+            UpdateResourceInstall();
         }
         catch (OperationCanceledException) { }
-        catch (Exception) { /* Search results already contain the overview shown when metadata is unavailable. */ }
+        catch (Exception error)
+        {
+            Wonder.Core.LauncherDiagnostics.Warn("LoadResourceOverview", error);
+            // Search results already contain the overview shown when metadata is unavailable.
+        }
     }
 
     private void PaintProject(ResourceProject project)
     {
         _projectTitle.Text = project.Title;
         _projectDescription.Text = project.Description;
-        _projectAuthor.Text = "作者 · " + (string.IsNullOrWhiteSpace(project.Author) ? "未标注" : project.Author) + $"    来源 · Modrinth    {project.Downloads:N0} 次下载";
-        _projectSource.IsVisible = !string.IsNullOrWhiteSpace(project.PageUrl);
+        var provider = ProviderLabel(project.Provider);
+        _projectAuthor.Text = "作者 · " + (string.IsNullOrWhiteSpace(project.Author) ? "未标注" : project.Author) + $"    来源 · {provider}    {project.Downloads:N0} 次下载";
+        var action = "在 " + provider + " 查看项目";
+        _projectSource.Content = action;
+        AutomationProperties.SetName(_projectSource, action);
+        _projectSource.IsVisible = TryGetResourcePageUri(project, null, out _);
         _projectIcon.SetProject(project);
     }
 
@@ -445,19 +527,26 @@ internal sealed partial class DownloadCenterWindow
         if (project is null) return;
         var onlyFiles = ResourceDownloadOnly;
         var pack = project.Kind == DownloadResourceKind.Modpack;
-        _detailTargetRow.IsVisible = !onlyFiles && !pack;
-        _packDestination.IsVisible = !onlyFiles && pack;
-        _resourceFileDestination.IsVisible = onlyFiles;
-        _installTargetDescription.Text = onlyFiles && pack ? "保存原始 .mrpack 文件。" : !onlyFiles && !pack && instance is null ? "请先安装或导入一个游戏实例。" : "";
+        var unavailable = version is { Files.Count: 0 };
+        var curseForgeFilePage = unavailable && project.Provider == ResourceProvider.CurseForge;
+        _resourceDownloadMode.IsEnabled = !unavailable;
+        _detailTargetRow.IsVisible = !onlyFiles && !pack && !unavailable;
+        _packDestination.IsVisible = !onlyFiles && pack && !unavailable;
+        _resourceFileDestination.IsVisible = onlyFiles && !unavailable;
+        _installTargetDescription.Text = unavailable ? version!.DownloadUnavailableReason ?? "该发布包没有可用的下载文件。" :
+            onlyFiles && pack ? (project.Provider == ResourceProvider.CurseForge ? "保存原始 CurseForge 整合包 ZIP 文件。" : "保存原始 .mrpack 文件。") :
+            !onlyFiles && !pack && instance is null ? "请先安装或导入一个游戏实例。" : "";
         _installTargetDescription.IsVisible = _installTargetDescription.Text.Length > 0;
         var compatible = version is not null && CanInstallVersion(version, project, instance, onlyFiles);
         _selectedRelease.Text = version is null ? "从下方选择发布包。" :
-            ReleaseChannel(version.ReleaseType).Channel + " · " + version.VersionNumber + (compatible ? "" : " · 与当前目标不兼容");
+            ReleaseChannel(version.ReleaseType).Channel + " · " + version.VersionNumber +
+            (unavailable ? " · 无法直接下载" : compatible ? "" : " · 与当前目标不兼容");
         _selectedRelease.Foreground = version is not null && !compatible ? Palette.Error : Palette.Muted;
-        var action = onlyFiles ? "下载所选文件" : "安装所选资源";
+        var action = curseForgeFilePage ? "在 CurseForge 查看文件" : onlyFiles ? "下载所选文件" : "安装所选资源";
         _installResource.Content = action;
         AutomationProperties.SetName(_installResource, action);
-        _installResource.IsEnabled = compatible && (!onlyFiles || (_resourceFileDirectory.Text is { } directory && Path.IsPathFullyQualified(directory.Trim())));
+        _installResource.IsEnabled = curseForgeFilePage ? TryGetResourcePageUri(project, version, out _) :
+            compatible && (!onlyFiles || (_resourceFileDirectory.Text is { } directory && Path.IsPathFullyQualified(directory.Trim())));
     }
 
     private bool ResourceDownloadOnly => _resourceDownloadMode.SelectedIndex == 1;
@@ -479,12 +568,15 @@ internal sealed partial class DownloadCenterWindow
 
     private static string InstanceLoader(GameInstance instance) => instance.ModLoaders.Select(x => x.Name.ToLowerInvariant()).FirstOrDefault(ResourceLoaderIds.Contains) ?? "vanilla";
 
+    private static string ProviderLabel(ResourceProvider provider) => provider == ResourceProvider.CurseForge ? "CurseForge" : "Modrinth";
+
     private void QueueResource()
     {
         try
         {
             var project = _selectedProject ?? throw new InvalidOperationException("请先选择资源项目。");
             var version = _selectedResourceVersion ?? throw new InvalidOperationException("请先选择资源版本。");
+            if (version.Files.Count == 0) throw new InvalidOperationException(version.DownloadUnavailableReason ?? "该发布包没有可用的下载文件。");
             ResourceInstallRequest request;
             if (ResourceDownloadOnly)
             {

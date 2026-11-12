@@ -42,8 +42,8 @@ internal sealed partial class AccountManagerWindow
             var choice = draftId is null ? OfflineDefaultSkins.ForUuid(draftUuid) : OfflineDefaultSkins.Get(draftId);
             compatibility.Text = (draftId is null ? "自动分配。" : choice.Description + "\n") +
                 "1.19.3+：" + OfflineDefaultSkins.ForUuid(draftUuid).Name + "\n1.8–1.19.2：" + OfflineDefaultSkins.LegacySkinName(draftUuid) + "\n早于 1.8 通常只有 Steve。";
-            _ = preview.LoadDefaultAsync(_selectedInstance?.Invoke(), choice.TextureName, choice.Variant, choice.IsLegacy,
-                _instances?.Catalog.Instances, _defaultSkinDownload);
+            UiOperation.Start(() => preview.LoadDefaultAsync(_selectedInstance?.Invoke(), choice.TextureName, choice.Variant, choice.IsLegacy,
+                _instances?.Catalog.Instances, _defaultSkinDownload), () => _closed);
         }
         selector.SelectionChanged += (_, _) => PreviewChoice();
         body.Children.Add(IdleButton("应用默认皮肤…", "应用离线默认皮肤", () =>
@@ -51,7 +51,7 @@ internal sealed partial class AccountManagerWindow
             if (DraftId() == profile.OfflineSkinId) { _status.Text = "已使用此默认皮肤选项。"; return; }
             confirmation.IsVisible = true;
         }));
-        confirmation.Children.Add(IdleButton("确认更改皮肤与 UUID", "确认离线皮肤 UUID 变化", () => _service.SetOfflineSkin(profile.Id, DraftId())));
+        confirmation.Children.Add(IdleButton("确认更改皮肤与 UUID", "确认离线皮肤 UUID 变化", async () => await Run(() => _service.SetOfflineSkinAsync(profile.Id, DraftId()))));
         confirmation.Children.Add(Button("保留当前身份", "取消离线皮肤变化", () => confirmation.IsVisible = false));
         body.Children.Add(confirmation); PreviewChoice();
     }

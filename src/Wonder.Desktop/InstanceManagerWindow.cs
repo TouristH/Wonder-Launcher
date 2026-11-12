@@ -36,8 +36,9 @@ internal sealed class InstanceManagerWindow : Window
     private readonly CheckBox _clearJvm = new() { Content = "清空来源的额外 JVM 参数" }, _clearGame = new() { Content = "清空来源的额外游戏参数" };
     private readonly TextBlock _details = Text(), _effective = Text(), _status = Text(), _error = Text(), _draftStatus = Text();
     private readonly StackPanel _editor = new() { Spacing = 13 };
+    private readonly StackPanel _saveActions = new() { Orientation = Orientation.Horizontal, Spacing = 10 };
     private readonly Button _import, _refreshRoot, _refresh, _retry;
-    private bool _updating, _closed, _showDetails;
+    private bool _updating, _closed, _showDetails, _savingSettings, _closeWithOwner, _preparingDelete;
     private int _pendingRefresh;
     private string? _currentId, _rootPath, _localError;
 
@@ -128,30 +129,28 @@ internal sealed class InstanceManagerWindow : Window
         _clearGame.IsCheckedChanged += (_, _) => { _fields["game"].IsEnabled = _clearGame.IsChecked != true; MarkDraft(); };
         _fullscreen.SelectionChanged += (_, _) => MarkDraft();
         _editor.Children.Add(Text("数值和路径留空表示继承。保存后用于下次启动，不改写来源启动器的配置。"));
-        var saveActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        saveActions.Children.Add(Button("保存实例设置", "保存设置", Save));
-        saveActions.Children.Add(Button("恢复来源设置", "清除实例覆盖", () =>
+        _saveActions.Children.Add(Button("保存实例设置", "保存设置", async () => await SaveAsync()));
+        _saveActions.Children.Add(Button("恢复来源设置", "清除实例覆盖", async () =>
         {
-            if (_currentId is not { } id) return; _localError = null; _service.UpdateSettings(id, new());
-            _localError = _service.Error;
-            if (_service.Error is null) { _drafts.Remove(id); LoadFields(_service.Catalog.Instances.Single(x => x.Id == id)); }
-            Refresh();
+            if (_currentId is { } id) await SaveSettingsAsync(id, () => _service.UpdateSettingsAsync(id, new()));
         }));
         var saveFooter = new StackPanel { Spacing = 6, Margin = new Thickness(0, 10, 0, 0) };
-        saveFooter.Children.Add(saveActions); saveFooter.Children.Add(_draftStatus);
+        saveFooter.Children.Add(_saveActions); saveFooter.Children.Add(_draftStatus);
         form.Children.Add(new Expander { Header = "当前有效设置与来源诊断", Content = _effective, HorizontalAlignment = HorizontalAlignment.Stretch });
         var scroll = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(scroll, 1); _detailPage.Children.Add(scroll); Grid.SetRow(saveFooter, 2); _detailPage.Children.Add(saveFooter);
         body.Children.Add(_detailPage); Grid.SetRow(body, 1); layout.Children.Add(body);
         var footer = new StackPanel { Spacing = 8, Margin = new Thickness(0, 16, 0, 0) };
         _error.Foreground = Palette.Error; _error.MaxHeight = 70; footer.Children.Add(_error); footer.Children.Add(_status);
-        _retry = Button("重试实例索引读取", "重试读取实例索引", () => { _localError = null; _service.Reload(); });
+        _retry = Button("重试实例索引读取", "重试读取实例索引", async () => { _localError = null; await _service.ReloadAsync(); });
         footer.Children.Add(_retry);
         Grid.SetRow(footer, 2); layout.Children.Add(footer); Content = layout;
-        _service.Changed += Changed; Closed += (_, _) =>
+        _service.Changed += Changed;
+        Closing += (_, args) => _closeWithOwner = args.CloseReason is WindowCloseReason.OwnerWindowClosing or WindowCloseReason.ApplicationShutdown or WindowCloseReason.OSShutdown;
+        Closed += (_, _) =>
         {
             _closed = true; _service.Changed -= Changed;
-            if (_showDetails) ReadDetailDirectory();
+            if (_showDetails && !_closeWithOwner) ReadDetailDirectory();
         };
         SetLayout(initialLayout); Refresh();
     }
@@ -202,7 +201,8 @@ internal sealed class InstanceManagerWindow : Window
                 foreach (var root in roots)
                 {
                     var card = new InstanceBrowserCard("游戏目录：" + root.Name, root.Name, root.Count + " 个实例", root.Path,
-                        () => _service.SelectGameDirectory(root.Path), () => _ = EditDirectory(root.Path), () => _ = DeleteDirectory(root.Path));
+                        () => _service.SelectGameDirectory(root.Path), () => UiOperation.Start(() => EditDirectory(root.Path), () => _closed),
+                        () => UiOperation.Start(() => DeleteDirectory(root.Path), () => _closed));
                     card.Tag = root.Path; _roots.Children.Add(card);
                 }
             }
@@ -215,7 +215,8 @@ internal sealed class InstanceManagerWindow : Window
                 foreach (var row in rows)
                 {
                     var card = new InstanceBrowserCard("实例：" + row.Name, row.Name, row.Version, row.Source + " · " + row.Path,
-                        () => SelectInstance(row.Id), () => OpenInstance(row.Id), () => _ = DeleteInstance(row.Id), catalog.Instances.Single(x => x.Id == row.Id));
+                        () => UiOperation.Start(() => SelectInstanceAsync(row.Id), () => _closed), () => OpenInstance(row.Id),
+                        () => UiOperation.Start(() => DeleteInstance(row.Id), () => _closed), catalog.Instances.Single(x => x.Id == row.Id));
                     card.Tag = row.Id; _list.Children.Add(card);
                 }
                 SizeInstanceCards();
@@ -241,7 +242,8 @@ internal sealed class InstanceManagerWindow : Window
             if (instance is not null)
             {
                 var s = instance.EffectiveSettings;
-                _effective.Text = $"Java：{s.JavaPath ?? "自动查找"}\n内存：{s.MinimumMemoryMb}–{s.MaximumMemoryMb} MiB\n窗口：{s.WindowWidth} × {s.WindowHeight} · {(s.FullScreen == true ? "全屏" : "窗口")}\n游戏目录：{s.GameDirectory}\n配置来源：{instance.ConfigSource}\n\n" + string.Join("\n", instance.Warnings);
+                var warnings = instance.NativeConfigurationDiagnostic is { } diagnostic ? instance.Warnings.Prepend(diagnostic) : instance.Warnings;
+                _effective.Text = $"Java：{s.JavaPath ?? "自动查找"}\n内存：{s.MinimumMemoryMb}–{s.MaximumMemoryMb} MiB\n窗口：{s.WindowWidth} × {s.WindowHeight} · {(s.FullScreen == true ? "全屏" : "窗口")}\n游戏目录：{s.GameDirectory}\n配置来源：{instance.ConfigSource}\n\n" + string.Join("\n", warnings);
                 var inherited = (instance with { Overrides = new() }).EffectiveSettings;
                 _fields["min"].PlaceholderText = "继承 · " + inherited.MinimumMemoryMb; _fields["max"].PlaceholderText = "继承 · " + inherited.MaximumMemoryMb;
                 _fields["width"].PlaceholderText = "继承 · " + inherited.WindowWidth; _fields["height"].PlaceholderText = "继承 · " + inherited.WindowHeight;
@@ -252,6 +254,7 @@ internal sealed class InstanceManagerWindow : Window
             _status.Text = selected is null ? "尚未选择启动实例。" : "当前启动实例：" + selected.Name; ToolTip.SetTip(_status, _status.Text);
             _import.IsEnabled = !_service.IsBusy; _refresh.IsEnabled = instance is not null && !_service.IsBusy;
             _refreshRoot.IsEnabled = _rootPath is not null && !_service.IsBusy;
+            _editor.IsEnabled = _saveActions.IsEnabled = !_savingSettings && !_service.IsReadBlocked;
         }
         finally { _updating = false; }
     }
@@ -280,10 +283,10 @@ internal sealed class InstanceManagerWindow : Window
     {
         if (_currentId is not { } id) return;
         var instance = _service.Catalog.Instances.FirstOrDefault(x => x.Id == id);
-        if (instance is not null) _ = _service.ReadGameDirectoryAsync(instance.GameDirectoryGroup);
+        if (instance is not null) UiOperation.Start(() => _service.ReadGameDirectoryAsync(instance.GameDirectoryGroup), () => _closed);
     }
     private void MarkDraft() { if (!_updating) _draftStatus.Text = "未保存的编辑 · 点击保存后用于下次启动"; }
-    private void Save()
+    private async Task SaveAsync()
     {
         if (_currentId is not { } id) return;
         try
@@ -297,16 +300,35 @@ internal sealed class InstanceManagerWindow : Window
                 JvmArguments = _clearJvm.IsChecked == true ? "" : Value("jvm"), GameArguments = _clearGame.IsChecked == true ? "" : Value("game")
             };
             var previous = _service.Catalog.Instances.FirstOrDefault(x => x.Id == id);
-            _localError = null; _service.UpdateInstance(id, Value("name") ?? "", settings);
-            _localError = _service.Error;
-            if (_service.Error is null)
-            {
-                _drafts.Remove(id); LoadFields(_service.Catalog.Instances.Single(x => x.Id == id));
-                if (previous?.Overrides.GameDirectory != settings.GameDirectory) ReadDetailDirectory();
-            }
+            var name = Value("name") ?? "";
+            await SaveSettingsAsync(id, () => _service.UpdateInstanceAsync(id, name, settings), previous?.Overrides.GameDirectory != settings.GameDirectory);
         }
         catch (ArgumentException ex) { _localError = ex.Message; }
         Refresh();
+    }
+
+    private async Task SaveSettingsAsync(string id, Func<Task<string?>> save, bool refreshDirectory = false)
+    {
+        if (_savingSettings) return;
+        _savingSettings = true;
+        _localError = null;
+        Refresh();
+        try
+        {
+            _localError = await save();
+            if (_closed || _localError is not null) return;
+            _drafts.Remove(id);
+            if (_currentId == id && _service.Catalog.Instances.FirstOrDefault(item => item.Id == id) is { } updated)
+            {
+                LoadFields(updated);
+                if (refreshDirectory) ReadDetailDirectory();
+            }
+        }
+        finally
+        {
+            _savingSettings = false;
+            Refresh();
+        }
     }
     private void AddField(StackPanel parent, string key, string label, string? placeholder = null)
     {
@@ -324,6 +346,8 @@ internal sealed class InstanceManagerWindow : Window
     {
         var button = new Button { Content = label, MinHeight = 34 }; AutomationProperties.SetName(button, name); button.Click += (_, _) => action(); return button;
     }
+    private Button Button(string name, string label, Func<Task> action) =>
+        Button(name, label, () => UiOperation.Start(action, () => _closed));
     private static TextBlock Text(string text = "") => new() { Text = text, FontSize = 12, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap };
     private static string SourceName(InstanceSource source) => source switch { InstanceSource.Wonder => "Wonder", InstanceSource.Hmcl => "HMCL", InstanceSource.Pcl => "PCL", InstanceSource.Prism => "Prism", InstanceSource.MultiMc => "MultiMC", _ => "官方目录" };
     private static string CanonicalRoot(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
@@ -336,18 +360,21 @@ internal sealed class InstanceManagerWindow : Window
         LoadFields(instance); _showDetails = true;
         Refresh();
     }
-    private void SelectInstance(string id)
+    private async Task SelectInstanceAsync(string id)
     {
-        _localError = null; _service.Select(id); _localError = _service.Error; Refresh();
+        _localError = null; _localError = await _service.SelectAsync(id); Refresh();
     }
     private Task DeleteInstance(string id) => ConfirmDelete(() => _service.PrepareDeleteInstance(id));
     private Task DeleteDirectory(string path) => ConfirmDelete(() => _service.PrepareDeleteDirectory(path));
     private async Task ConfirmDelete(Func<InstanceDeletePlan> prepare)
     {
+        if (_preparingDelete) return;
+        _preparingDelete = true;
         try
         {
             _localError = null;
-            var plan = prepare();
+            var plan = await Task.Run(prepare);
+            if (_closed) return;
             var dialog = new DeleteConfirmationWindow(plan.Title, plan.Path, plan.Description, async word =>
             {
                 var deleted = await _service.DeleteAsync(plan, word);
@@ -357,7 +384,7 @@ internal sealed class InstanceManagerWindow : Window
             foreach (var id in _drafts.Keys.Where(id => !_service.Catalog.Instances.Any(x => x.Id == id)).ToArray()) _drafts.Remove(id);
         }
         catch (Exception ex) { _localError = ex.Message; }
-        Refresh();
+        finally { _preparingDelete = false; Refresh(); }
     }
     private async Task EditDirectory(string path)
     {
@@ -368,6 +395,7 @@ internal sealed class InstanceManagerWindow : Window
             {
                 var moved = await _service.MoveDirectoryAsync(path, target);
                 if (!moved) return _service.Error ?? "目录修改未完成。";
+                if (_closed) return null;
                 _service.SelectGameDirectory(target);
                 foreach (var draft in _drafts.Values)
                     foreach (var key in new[] { "java", "directory", "jvm", "game" })

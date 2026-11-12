@@ -91,6 +91,8 @@ public sealed record GameInstance
     public InstanceSettings ImportedSettings { get; init; } = new();
     public InstanceSettings Overrides { get; init; } = new();
     public List<string> Warnings { get; init; } = [];
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? NativeConfigurationDiagnostic { get; init; }
     public string ConfigSource { get; init; } = "";
     public string? SourceProfileId { get; init; }
     public List<string> PreviousRootDirectories { get; init; } = [];
@@ -188,6 +190,8 @@ public sealed record LaunchRequest(GameInstance Instance, string OfflineUsername
 public sealed class LaunchPlan
 {
     public string JavaPath { get; }
+    public int? JavaMajorVersion { get; init; }
+    public string? JavaArchitecture { get; init; }
     public string WorkingDirectory { get; }
     public IReadOnlyList<string> Arguments { get; }
     public string InstanceId { get; }

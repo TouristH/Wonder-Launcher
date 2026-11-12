@@ -120,7 +120,7 @@ internal sealed partial class AccountManagerWindow : Window
         labels.Children.Add(PageStyles.Hint(AccountService.KindLabel(profile.Kind) + (profile.Id == _service.SelectedAccount?.Id ? "  ·  当前启动账户" : "  ·  可切换使用")));
         labels.Children.Add(PageStyles.Hint(profile.Kind == AccountKind.Offline ? "本地身份 · 不进行正版认证" : profile.LastValidatedAt is { } time ? "最近验证 " + time.ToLocalTime().ToString("MM-dd HH:mm") : "登录资料已保存 · 启动前自动验证"));
         identity.Children.Add(labels);
-        var use = IdleButton("使用此账户", "选择账户 " + profile.Username, () => { _service.Select(profile.Id); _renderedProfile = null; Refresh(); });
+        var use = IdleButton("使用此账户", "选择账户 " + profile.Username, async () => await Run(() => _service.SelectAsync(profile.Id)));
         use.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(use, 1); identity.Children.Add(use); body.Children.Add(identity);
         var uuid = new StackPanel { Spacing = 5 };
         uuid.Children.Add(PageStyles.Hint("UUID")); uuid.Children.Add(new SelectableTextBlock { Text = profile.Uuid, FontSize = 12, Foreground = Palette.Muted });
@@ -145,7 +145,7 @@ internal sealed partial class AccountManagerWindow : Window
             body.Children.Add(Heading("离线身份"));
             body.Children.Add(PageStyles.Hint("修改玩家名会生成新的离线 UUID，游戏可能把它视为另一位玩家，原存档中的背包和权限不会自动迁移。"));
             var rename = Field(body, "玩家名", "修改离线玩家名", profile.Username, 16);
-            body.Children.Add(IdleButton("确认修改名字与 UUID", "重命名离线账户", () => _service.RenameOffline(profile.Id, rename.Text ?? "")));
+            body.Children.Add(IdleButton("确认修改名字与 UUID", "重命名离线账户", async () => await Run(() => _service.RenameOfflineAsync(profile.Id, rename.Text ?? ""))));
             BuildOfflineSkinPicker(body, profile);
         }
         else if (profile.Kind == AccountKind.Microsoft) BuildAppearance(body, profile);
@@ -173,7 +173,9 @@ internal sealed partial class AccountManagerWindow : Window
         content.Children.Add(PageStyles.Hint("移除 “" + profile.Username + "” 和本机保存的凭据？游戏存档保留。正在运行的游戏不会退出；微软应用授权可在 Microsoft 账户网站撤销。"));
         content.Children.Add(IdleButton("确认删除", "确认删除账户", async () =>
         {
-            await Run(() => _service.RemoveAsync(profile.Id)); if (!_closed) Navigate("details");
+            var revision = _pageRevision;
+            await Run(() => _service.RemoveAsync(profile.Id));
+            if (!_closed && revision == _pageRevision) Navigate("details");
         }));
         Border? card = null;
         content.Children.Add(Button("保留账户", "取消删除账户", () => body.Children.Remove(card!)));
@@ -224,22 +226,43 @@ internal sealed partial class AccountManagerWindow : Window
     }
     private async Task Run(Func<Task> action)
     {
-        try { var task = action(); Refresh(); await task; }
-        catch { if (!_closed) _status.Text = "操作未完成，请刷新账户后重试。"; }
+        try
+        {
+            var task = action();
+            try { Refresh(); }
+            finally { await task; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            Wonder.Core.LauncherDiagnostics.Warn("AccountManager.Run", error);
+            if (!_closed) _status.Text = "操作未完成，请刷新账户后重试。";
+        }
         if (!_closed) Refresh();
     }
     private async Task CopyText(string value)
     {
-        try { if (Clipboard is { } clipboard) { await clipboard.SetTextAsync(value); _status.Text = "已复制。"; } }
-        catch { _status.Text = "剪贴板暂不可用，可以选中文字手动复制。"; }
+        try { if (Clipboard is { } clipboard) { await clipboard.SetTextAsync(value); if (!_closed) _status.Text = "已复制。"; } }
+        catch (Exception error)
+        {
+            Wonder.Core.LauncherDiagnostics.Warn("AccountManager.Clipboard", error);
+            if (!_closed) _status.Text = "剪贴板暂不可用，可以选中文字手动复制。";
+        }
     }
     private void OpenWebsite(string value)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.UserInfo.Length != 0) return;
-        try { _openBrowser(uri); } catch { _status.Text = "浏览器未能打开，请手动访问：" + uri.GetLeftPart(UriPartial.Path); }
+        try { _openBrowser(uri); }
+        catch (Exception error)
+        {
+            Wonder.Core.LauncherDiagnostics.Warn("AccountManager.OpenWebsite", error);
+            _status.Text = "浏览器未能打开，请手动访问：" + uri.GetLeftPart(UriPartial.Path);
+        }
     }
     private string ServerName(string url) => _service.Servers.FirstOrDefault(x => x.ApiUrl == url)?.Name ?? new Uri(url).Host;
     private Button IdleButton(string text, string automation, Action action)
+    { var button = Button(text, automation, action); _idle.Add(button); return button; }
+    private Button IdleButton(string text, string automation, Func<Task> action)
     { var button = Button(text, automation, action); _idle.Add(button); return button; }
     private TextBox Field(StackPanel parent, string label, string automation, string text, int length)
     {
@@ -251,6 +274,8 @@ internal sealed partial class AccountManagerWindow : Window
         var button = new Button { Content = text, MinHeight = 36 }; AutomationProperties.SetName(button, automation);
         button.Click += (_, _) => action(); return button;
     }
+    private Button Button(string text, string automation, Func<Task> action) =>
+        Button(text, automation, () => UiOperation.Start(action, () => _closed));
     private static StackPanel Page() => new() { Spacing = 16, Margin = new Thickness(2, 0, 8, 14) };
     private static TextBlock Heading(string text) => new() { Text = text, FontSize = 21, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     private static ScrollViewer Scroll(Control content) => new() { Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };

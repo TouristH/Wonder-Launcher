@@ -7,7 +7,9 @@ namespace Wonder.Application;
 public sealed partial class AccountService
 {
     /// <summary>Only an explicit local user action may change an account's private-network texture origins.</summary>
-    public void SetPrivateTextureOrigin(string accountId, string origin, bool allowed) => Mutate(vault =>
+    public void SetPrivateTextureOrigin(string accountId, string origin, bool allowed) => SetPrivateTextureOriginAsync(accountId, origin, allowed).GetAwaiter().GetResult();
+
+    public Task SetPrivateTextureOriginAsync(string accountId, string origin, bool allowed) => MutateAsync(vault =>
     {
         var index = vault.Accounts.FindIndex(x => x.Profile.Id == accountId && x.Profile.Kind == AccountKind.Yggdrasil);
         if (index < 0) throw new AccountAuthenticationException("只能为当前第三方账户设置纹理来源许可。");

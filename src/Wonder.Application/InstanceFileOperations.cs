@@ -36,64 +36,65 @@ public sealed partial class InstanceService
 
     public InstanceDeletePlan PrepareDeleteInstance(string id)
     {
-        lock (_gate)
-        {
-            RequireFileOperationAvailable();
-            var item = Require(_catalog, id);
-            var directory = item.Source == InstanceSource.Wonder ? item.RootDirectory : item.Source is InstanceSource.Prism or InstanceSource.MultiMc ? item.SourcePath : Path.Combine(item.VersionsDirectory, item.VersionId);
-            directory = Full(directory);
-            if (!Within(directory, item.RootDirectory) || Same(directory, item.RootDirectory) && item.Source != InstanceSource.Wonder) throw new InvalidOperationException("无法确定独立实例目录，拒绝删除共享游戏目录。");
-            if (item.Source == InstanceSource.Wonder && item.CollectionDirectory is { } collection &&
-                WonderPath.Comparer.Equals(Path.GetFileName(directory), ".minecraft") &&
-                Path.GetDirectoryName(directory) is { } container && Path.GetDirectoryName(container) is { } instances &&
-                Same(instances, Path.Combine(collection, "instances"))) directory = container;
-            ValidateOwnedPath(directory);
-            EnsureNoOtherReferences(directory, [id]);
-            if (item.Source == InstanceSource.Wonder) _files!.EnsureGameRoot(item.RootDirectory);
-            else _files!.EnsureNoVersionDependents(item, directory);
-            var note = "将移入回收站此实例目录及其中的存档、模组和配置，并移除 1 个实例登记。";
-            if (!Within(item.EffectiveSettings.GameDirectory!, directory)) note += "\n此实例使用目录之外的游戏数据；共享或外部游戏目录、资源和依赖保持原样。";
-            return new(_planOwner, item.Name, directory, note, [id], _files.InspectDirectory(directory), id);
-        }
+        InstanceCatalog catalog;
+        lock (_gate) { RequireFileOperationAvailable(); catalog = _catalog; }
+        return PrepareDeleteInstance(catalog, id);
     }
 
     public InstanceDeletePlan PrepareDeleteDirectory(string rootDirectory)
     {
-        lock (_gate)
-        {
-            RequireFileOperationAvailable();
-            var path = Full(rootDirectory);
-            var members = _catalog.Instances.Where(x => Same(x.GameDirectoryGroup, path)).ToArray();
-            if (!_catalog.GameDirectories.Any(root => Same(root, path))) throw new ArgumentException("游戏目录未登记。");
-            ValidateOwnedPath(path); _files!.EnsureGameRoot(path); EnsureNoOtherReferences(path, members.Select(x => x.Id).ToArray());
-            return new(_planOwner, Path.GetFileName(path), path, $"将移入回收站整个游戏目录，包括其中的游戏、存档、模组、资源与配置，并移除 {members.Length} 个实例登记。目录内其他启动器文件也会一起移入回收站。", members.Select(x => x.Id).Order().ToArray(), _files!.InspectDirectory(path), null);
-        }
+        InstanceCatalog catalog;
+        lock (_gate) { RequireFileOperationAvailable(); catalog = _catalog; }
+        return PrepareDeleteDirectory(catalog, rootDirectory);
     }
 
-    public async Task<bool> DeleteAsync(InstanceDeletePlan plan, string confirmation)
+    private InstanceDeletePlan PrepareDeleteInstance(InstanceCatalog catalog, string id)
     {
-        InstanceCatalog next;
-        lock (_gate)
-        {
-            try
-            {
-                if (confirmation != "sure") throw new ArgumentException("请准确输入小写 sure。");
-                if (!ReferenceEquals(plan.Owner, _planOwner)) throw new ArgumentException("删除确认已失效，请重新打开。");
-                var current = plan.InstanceId is { } id ? PrepareDeleteInstance(id) : PrepareDeleteDirectory(plan.Path);
-                if (!Same(current.Path, plan.Path) || current.Identity != plan.Identity || !current.Ids.SequenceEqual(plan.Ids)) throw new InvalidOperationException("目录或实例发生变化，请重新核对后删除。");
-                next = Copy(_catalog); next.Instances.RemoveAll(x => plan.Ids.Contains(x.Id));
-                if (plan.InstanceId is null) next.GameDirectories.RemoveAll(root => Same(root, plan.Path));
-                if (next.SelectedInstanceId is { } selected && plan.Ids.Contains(selected)) next.SelectedInstanceId = null;
-                next.Validate(); _fileOperation = _operation = true; Error = null;
-            }
-            catch (Exception ex) { Error = ex.Message; Notify(); return false; }
-        }
-        Notify();
+        var item = Require(catalog, id);
+        if (item.NativeConfigurationDiagnostic is not null) throw new InvalidOperationException("Wonder 实例配置不可用，修复配置并重新读取后才能删除实例目录。");
+        var directory = item.Source == InstanceSource.Wonder ? item.RootDirectory : item.Source is InstanceSource.Prism or InstanceSource.MultiMc ? item.SourcePath : Path.Combine(item.VersionsDirectory, item.VersionId);
+        directory = Full(directory);
+        if (!Within(directory, item.RootDirectory) || Same(directory, item.RootDirectory) && item.Source != InstanceSource.Wonder) throw new InvalidOperationException("无法确定独立实例目录，拒绝删除共享游戏目录。");
+        if (item.Source == InstanceSource.Wonder && item.CollectionDirectory is { } collection &&
+            WonderPath.Comparer.Equals(Path.GetFileName(directory), ".minecraft") &&
+            Path.GetDirectoryName(directory) is { } container && Path.GetDirectoryName(container) is { } instances &&
+            Same(instances, Path.Combine(collection, "instances"))) directory = container;
+        ValidateOwnedPath(directory);
+        EnsureNoOtherReferences(catalog, directory, [id]);
+        if (item.Source == InstanceSource.Wonder) _files!.EnsureGameRoot(item.RootDirectory);
+        else _files!.EnsureNoVersionDependents(item, directory);
+        var note = "将移入回收站此实例目录及其中的存档、模组和配置，并移除 1 个实例登记。";
+        if (!Within(item.ResolveSettings(catalog.GlobalSettings).GameDirectory!, directory)) note += "\n此实例使用目录之外的游戏数据；共享或外部游戏目录、资源和依赖保持原样。";
+        return new(_planOwner, item.Name, directory, note, [id], _files.InspectDirectory(directory), id);
+    }
+
+    private InstanceDeletePlan PrepareDeleteDirectory(InstanceCatalog catalog, string rootDirectory)
+    {
+        var path = Full(rootDirectory);
+        var members = catalog.Instances.Where(x => Same(x.GameDirectoryGroup, path)).ToArray();
+        if (!catalog.GameDirectories.Any(root => Same(root, path))) throw new ArgumentException("游戏目录未登记。");
+        ValidateOwnedPath(path); _files!.EnsureGameRoot(path); EnsureNoOtherReferences(catalog, path, members.Select(x => x.Id).ToArray());
+        return new(_planOwner, Path.GetFileName(path), path, $"将移入回收站整个游戏目录，包括其中的游戏、存档、模组、资源与配置，并移除 {members.Length} 个实例登记。目录内其他启动器文件也会一起移入回收站。", members.Select(x => x.Id).Order().ToArray(), _files.InspectDirectory(path), null);
+    }
+
+    public Task<bool> DeleteAsync(InstanceDeletePlan plan, string confirmation) => RunFileOperationAsync(catalog => DeleteFileAsync(catalog, plan, confirmation));
+
+    private async Task<bool> DeleteFileAsync(InstanceCatalog catalog, InstanceDeletePlan plan, string confirmation)
+    {
+        if (confirmation != "sure") throw new ArgumentException("请准确输入小写 sure。");
+        if (!ReferenceEquals(plan.Owner, _planOwner)) throw new ArgumentException("删除确认已失效，请重新打开。");
+        var current = plan.InstanceId is { } id ? PrepareDeleteInstance(catalog, id) : PrepareDeleteDirectory(catalog, plan.Path);
+        if (!Same(current.Path, plan.Path) || current.Identity != plan.Identity || !current.Ids.SequenceEqual(plan.Ids)) throw new InvalidOperationException("目录或实例发生变化，请重新核对后删除。");
+        var next = Copy(catalog); next.Instances.RemoveAll(x => plan.Ids.Contains(x.Id));
+        if (plan.InstanceId is null) next.GameDirectories.RemoveAll(root => Same(root, plan.Path));
+        if (next.SelectedInstanceId is { } selected && plan.Ids.Contains(selected)) next.SelectedInstanceId = null;
+        next.Validate();
         var recycled = false;
         try
         {
             await _files!.RecycleDirectoryAsync(plan.Path, plan.Identity); recycled = true;
-            lock (_gate) { _store.Save(Copy(next)); _catalog = next; Error = null; StatusMessage = "已移入系统回收站。"; }
+            _store.Save(Copy(next), Copy(catalog));
+            lock (_gate) { _catalog = next; Error = null; StatusMessage = "已移入系统回收站。"; }
             return true;
         }
         catch (Exception ex)
@@ -102,42 +103,35 @@ public sealed partial class InstanceService
             Error = recycled ? "文件已移入回收站，但登记保存失败。原登记已保留，请从系统回收站还原该目录后重试。\n" + plan.Path + "\n" + ex.Message : "未完成回收，登记已保留：" + ex.Message;
             return false;
         }
-        finally { lock (_gate) _fileOperation = _operation = false; Notify(); }
     }
 
-    public async Task<bool> MoveDirectoryAsync(string rootDirectory, string targetFullPath)
+    public Task<bool> MoveDirectoryAsync(string rootDirectory, string targetFullPath) => RunFileOperationAsync(catalog => MoveDirectoryCoreAsync(catalog, rootDirectory, targetFullPath));
+
+    private async Task<bool> MoveDirectoryCoreAsync(InstanceCatalog catalog, string rootDirectory, string targetFullPath)
     {
-        InstanceCatalog next; string source, target, identity;
-        lock (_gate)
-        {
-            try
-            {
-                RequireFileOperationAvailable();
-                if (!Path.IsPathFullyQualified(rootDirectory) || !Path.IsPathFullyQualified(targetFullPath)) throw new ArgumentException("目录路径必须是完整路径。");
-                source = Full(rootDirectory); target = Full(targetFullPath);
-                if (!_catalog.GameDirectories.Any(root => Same(root, source))) throw new ArgumentException("游戏目录未登记。");
-                _files!.EnsureGameRoot(source);
-                EnsureNoOtherReferences(source, _catalog.Instances.Where(x => Same(x.GameDirectoryGroup, source)).Select(x => x.Id).ToArray());
-                ValidateOwnedPath(source); ValidateOwnedPath(target);
-                if (Same(source, target)) return true;
-                if (Within(source, target) || Within(target, source)) throw new ArgumentException("新旧目录不能互相包含。");
-                if (_catalog.GameDirectories.Any(root => !Same(root, source) && (Within(target, root) || Within(root, target)))) throw new ArgumentException("目标位置与其他已登记游戏目录重叠。");
-                identity = _files!.InspectDirectory(source);
-                next = Copy(_catalog);
-                next.GameDirectories = next.GameDirectories.Select(root => MapPath(root, source, target)).ToList();
-                next.Instances = next.Instances.Select(x => RebaseInstance(x, source, target)).ToList();
-                next.GlobalSettings = RebaseSettings(next.GlobalSettings, source, target);
-                next.Validate(); _fileOperation = _operation = true; Error = null;
-            }
-            catch (Exception ex) { Error = ex.Message; Notify(); return false; }
-        }
-        Notify(); var moved = false;
+        if (!Path.IsPathFullyQualified(rootDirectory) || !Path.IsPathFullyQualified(targetFullPath)) throw new ArgumentException("目录路径必须是完整路径。");
+        var source = Full(rootDirectory); var target = Full(targetFullPath);
+        if (!catalog.GameDirectories.Any(root => Same(root, source))) throw new ArgumentException("游戏目录未登记。");
+        _files!.EnsureGameRoot(source);
+        EnsureNoOtherReferences(catalog, source, catalog.Instances.Where(x => Same(x.GameDirectoryGroup, source)).Select(x => x.Id).ToArray());
+        ValidateOwnedPath(source); ValidateOwnedPath(target);
+        if (Same(source, target)) return true;
+        if (Within(source, target) || Within(target, source)) throw new ArgumentException("新旧目录不能互相包含。");
+        if (catalog.GameDirectories.Any(root => !Same(root, source) && (Within(target, root) || Within(root, target)))) throw new ArgumentException("目标位置与其他已登记游戏目录重叠。");
+        var identity = _files.InspectDirectory(source);
+        var next = Copy(catalog);
+        next.GameDirectories = next.GameDirectories.Select(root => MapPath(root, source, target)).ToList();
+        next.Instances = next.Instances.Select(x => RebaseInstance(x, source, target)).ToList();
+        next.GlobalSettings = RebaseSettings(next.GlobalSettings, source, target);
+        next.Validate();
+        var moved = false;
         try
         {
             await _files!.MoveDirectoryAsync(source, target, identity); moved = true;
+            _store.Save(Copy(next), Copy(catalog));
             lock (_gate)
             {
-                _store.Save(Copy(next)); _catalog = next;
+                _catalog = next;
                 if (_browseDirectory is not null) _browseDirectory = MapPath(_browseDirectory, source, target);
                 Error = null; StatusMessage = "游戏目录已修改：" + target;
             }
@@ -153,13 +147,39 @@ public sealed partial class InstanceService
             else Error = "目录未修改：" + ex.Message;
             return false;
         }
-        finally { lock (_gate) _fileOperation = _operation = false; Notify(); }
     }
 
-    private void RequireFileOperationAvailable()
+    private async Task<bool> RunFileOperationAsync(Func<InstanceCatalog, Task<bool>> operation)
+    {
+        await _catalogWriter.WaitAsync().ConfigureAwait(false);
+        var started = false;
+        try
+        {
+            InstanceCatalog catalog;
+            lock (_gate)
+            {
+                RequireFileOperationAvailable(writerHeld: true);
+                catalog = _catalog;
+                _fileOperation = _operation = started = true;
+                Error = null;
+            }
+            Notify();
+            return await Task.Run(() => operation(catalog)).ConfigureAwait(false);
+        }
+        catch (Exception ex) { lock (_gate) Error = ex.Message; return false; }
+        finally
+        {
+            if (started) lock (_gate) _fileOperation = _operation = false;
+            _catalogWriter.Release();
+            Notify();
+        }
+    }
+
+    private void RequireFileOperationAvailable(bool writerHeld = false)
     {
         if (_loadFailed) throw new InvalidOperationException("实例索引读取失败，请先修复再进行文件操作。");
-        if (IsBusy) throw new InvalidOperationException("实例正在启动、运行或读取，暂不能修改游戏文件。");
+        if (_operation || _pendingLoad || _launchId is not null || !writerHeld && _pendingSaves != 0)
+            throw new InvalidOperationException("实例正在启动、运行或读取，暂不能修改游戏文件。");
         if (_files is null) throw new InvalidOperationException("当前环境未提供游戏文件操作服务。");
     }
     private void ValidateOwnedPath(string path)
@@ -167,12 +187,12 @@ public sealed partial class InstanceService
         var dataDirectory = Path.GetDirectoryName(Full(_cacheDirectory))!;
         if (Within(dataDirectory, path) || Within(path, dataDirectory) || Within(AppContext.BaseDirectory, path) || Within(path, AppContext.BaseDirectory)) throw new InvalidOperationException("不能修改包含 Wonder 程序或数据的目录。");
     }
-    private void EnsureNoOtherReferences(string path, string[] excluded)
+    private static void EnsureNoOtherReferences(InstanceCatalog catalog, string path, string[] excluded)
     {
-        if (_catalog.GameDirectories.Any(root => !Same(root, path) && Within(root, path)))
+        if (catalog.GameDirectories.Any(root => !Same(root, path) && Within(root, path)))
             throw new InvalidOperationException("此目录包含其他已登记游戏目录，请先分别处理。");
-        foreach (var other in _catalog.Instances.Where(x => !excluded.Contains(x.Id)))
-            if (new[] { other.SourcePath, other.DefaultGameDirectory, other.LibraryDirectory, other.AssetsDirectory, other.VersionsDirectory, other.LocalLibraryDirectory, other.ResolveSettings(_catalog.GlobalSettings).GameDirectory, other.ResolveSettings(_catalog.GlobalSettings).JavaPath }.Concat(other.MetadataPaths).Any(p => p is not null && Path.IsPathFullyQualified(p) && Within(p, path)))
+        foreach (var other in catalog.Instances.Where(x => !excluded.Contains(x.Id)))
+            if (new[] { other.SourcePath, other.DefaultGameDirectory, other.LibraryDirectory, other.AssetsDirectory, other.VersionsDirectory, other.LocalLibraryDirectory, other.ResolveSettings(catalog.GlobalSettings).GameDirectory, other.ResolveSettings(catalog.GlobalSettings).JavaPath }.Concat(other.MetadataPaths).Any(p => p is not null && Path.IsPathFullyQualified(p) && Within(p, path)))
                 throw new InvalidOperationException("此目录仍被其他实例引用，不能删除：" + other.Name);
     }
     private static bool SameSource(GameInstance left, GameInstance right)

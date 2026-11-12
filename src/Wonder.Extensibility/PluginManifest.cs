@@ -13,7 +13,16 @@ public record PluginManifest
     public int ApiVersion { get; init; }
     public string EntryAssembly { get; init; } = "";
     public string EntryType { get; init; } = "";
+    public PluginPermission[]? Permissions { get; init; }
 }
+
+public sealed record PluginPermission
+{
+    public string Name { get; init; } = "";
+    public string Description { get; init; } = "";
+}
+
+public sealed record PluginConsentRequest(PluginManifest Manifest, string Fingerprint, PluginAnalysis Analysis);
 
 public sealed record PluginCatalogEntry : PluginManifest
 {
@@ -21,6 +30,15 @@ public sealed record PluginCatalogEntry : PluginManifest
     public string Sha256 { get; init; } = "";
     public long Size { get; init; }
     public string SourceUrl { get; init; } = "";
+    public PluginReview? Review { get; init; }
+}
+
+public sealed record PluginReview
+{
+    public string Status { get; init; } = "";
+    public string Reviewer { get; init; } = "";
+    public DateTimeOffset ReviewedAt { get; init; }
+    public string Sha256 { get; init; } = "";
 }
 
 public sealed record InstalledPlugin(PluginManifest Manifest, string Directory, bool Enabled, string Status,

@@ -31,7 +31,8 @@ public sealed partial class PluginManager
         foreach (var entry in catalog.Plugins)
         {
             ValidateCatalogEntry(entry);
-            if (!ids.Add(entry.Id)) throw new InvalidDataException("插件目录包含重复 ID：" + entry.Id);
+            if (!ids.Add(entry.Id + "@" + entry.Version))
+                throw new InvalidDataException("插件目录包含重复版本：" + entry.Id + "@" + entry.Version);
         }
         return Array.AsReadOnly(catalog.Plugins);
     }
@@ -83,7 +84,8 @@ public sealed partial class PluginManager
             var manifest = ReadManifest(package);
             if (catalog is not null && (manifest.Id != catalog.Id || manifest.Name != catalog.Name ||
                 manifest.Author != catalog.Author || manifest.Description != catalog.Description ||
-                manifest.ApiVersion != catalog.ApiVersion || manifest.Version != catalog.Version))
+                manifest.ApiVersion != catalog.ApiVersion || manifest.Version != catalog.Version ||
+                !PermissionsEqual(manifest.Permissions, catalog.Permissions)))
                 throw new InvalidDataException("插件清单与目录条目不匹配。");
             cancellationToken.ThrowIfCancellationRequested();
             Change(() => InstallPackage(manifest, package, backup, ref keepBackup));
@@ -301,7 +303,13 @@ public sealed partial class PluginManager
             throw new InvalidDataException("插件元数据无效。");
         if (manifest.ApiVersion != ApiVersion)
             throw new InvalidDataException("插件 API 版本不受支持：" + manifest.ApiVersion);
+        if (manifest.Permissions is { } permissions && (permissions.Length > 64 || permissions.Any(permission =>
+            permission is null || !HasText(permission.Name, 128) || !HasText(permission.Description, 2048))))
+            throw new InvalidDataException("插件作者提供的访问说明无效。");
     }
+
+    private static bool PermissionsEqual(PluginPermission[]? left, PluginPermission[]? right) =>
+        left is null ? right is null : right is not null && left.SequenceEqual(right);
 
     private static bool IsVersion(string version)
     {
@@ -318,6 +326,11 @@ public sealed partial class PluginManager
             throw new InvalidDataException("插件目录中的下载大小或 SHA-256 无效。");
         RequireHttps(entry.DownloadUrl);
         RequireHttps(entry.SourceUrl);
+        if (entry.Review is { } review && (review.Status is not ("verified" or "revoked") ||
+            string.IsNullOrWhiteSpace(review.Reviewer) || review.Reviewer.Length > 256 ||
+            review.ReviewedAt == default ||
+            !string.Equals(review.Sha256, entry.Sha256, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException("插件目录中的人工验证记录与此安装包不匹配。");
     }
 
     private static Uri RequireHttps(string url)

@@ -12,7 +12,7 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 | `downloads.json` | 下载任务、资源元数据、安装目标与恢复状态；不含账户凭据 |
 | 实例目录内 `.minecraft/wonder.instance.json` | Wonder 创建署名、实例身份与启动参数，随实例保存，不含账户令牌；实例内部路径使用相对位置 |
 | `workspace.json` | 功能区、组件快捷方式、便笺等应用状态 |
-| `plugins/`、`plugin-settings.json`、`plugin-data/` | 插件安装文件、启用状态、配置及插件自己的数据 |
+| `plugins/`、`plugin-settings.json`、`plugin-data/` | 插件安装文件、启用状态、对插件文件指纹的同意记录、配置及插件自己的数据 |
 | `instances.json` | 用户主动登记的游戏路径、启动设置、所选实例及离线用户名 |
 | `accounts.dat` | Windows 当前用户 DPAPI 加密的账户库，包括账户资料、所选身份、刷新/游戏令牌、公开 Client ID、皮肤 URL/模型和自有披风资料、最近验证时间、保存的认证服务器及第三方适配器路径/哈希 |
 | `accounts.linux.dat` | Linux 使用 AES-GCM 加密的同类账户资料；随机密钥保存在桌面 Secret Service 密钥环，文件内仅含密文和解密所需的非秘密标识、随机数及验证标签 |
@@ -32,6 +32,8 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 ## 登录与凭据
 
 刷新在线插件仓库时，Wonder 向用户选择的 HTTPS 索引地址请求目录，默认托管于 GitHub。下载安装时连接索引指定的 HTTPS 文件地址，这些服务可收到来源 IP 和请求的文件路径。请求不携带 Wonder 账户凭据。启用的代码插件在启动器进程内运行，具有当前系统用户权限，其网络与数据行为由插件实现决定。插件配置以本地 JSON 保存。
+
+首次启用前，Wonder 在本地读取插件及附带程序集的元数据，提示检测到的敏感 API 引用与无法完整分析的情况；此过程不执行插件代码，也不上传插件文件。用户整体同意后才加载插件，文件变更后需重新确认。自动分析、作者补充说明和人工验证都不构成安全保证；Wonder 不通过此确认限制插件的系统权限。
 
 用户打开下载列表、搜索资源或创建安装任务时，启动器访问 Mojang/Microsoft、BMCLAPI、Fabric、Quilt、Forge、NeoForge、OptiFine、Modrinth、CurseForge 及元数据指定的 HTTPS 文件地址。项目图标从对应平台 CDN 加载并缓存在内存中。这些下载服务可收到来源 IP、搜索词和所请求的版本，下载请求不携带 Wonder 账户令牌。镜像选择、默认资源平台和并发参数保存在本地设置。Java、游戏、资源和未完成片段保存在用户选定的安装或下载目录附近。
 

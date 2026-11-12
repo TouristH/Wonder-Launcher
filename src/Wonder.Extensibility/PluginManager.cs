@@ -31,6 +31,7 @@ public sealed partial class PluginManager : IDisposable
     private readonly Dictionary<string, string> _failures = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ActivityLog> _logs = new(StringComparer.Ordinal);
     private HashSet<string> _enabled = new(StringComparer.Ordinal);
+    private Dictionary<string, string> _consents = new(StringComparer.Ordinal);
     private bool _settingsInvalid;
     private bool _loaded;
     private bool _disposed;
@@ -90,7 +91,7 @@ public sealed partial class PluginManager : IDisposable
         _failures.Clear();
         foreach (var id in _running.Keys.ToArray())
             if (restart || _settingsInvalid || !_enabled.Contains(id) || !found.TryGetValue(id, out var replacement) ||
-                !_installed.TryGetValue(id, out var existing) || existing != replacement)
+                !_installed.TryGetValue(id, out var existing) || !SameInstallation(existing, replacement))
                 Stop(id);
         _installed.Clear();
         foreach (var item in found)
@@ -133,6 +134,7 @@ public sealed partial class PluginManager : IDisposable
             Stop(id);
             return;
         }
+        RequireConsent(local);
         var wasRunning = _running.ContainsKey(id);
         if (!wasRunning && !Start(local))
             throw new InvalidOperationException(_failures[id]);
@@ -189,18 +191,24 @@ public sealed partial class PluginManager : IDisposable
         try
         {
             CheckLink(_settingsPath);
-            var enabled = File.Exists(_settingsPath)
-                ? ReadJson<PluginSettings>(_settingsPath).Enabled
-                : [];
+            var settings = File.Exists(_settingsPath)
+                ? ReadJson<PluginSettings>(_settingsPath)
+                : new PluginSettings([]);
+            var enabled = settings.Enabled;
             if (enabled is null || enabled.Any(id => !IsId(id)) ||
                 enabled.Distinct(StringComparer.Ordinal).Count() != enabled.Length)
                 throw new InvalidDataException("启用清单无效。");
             _enabled = new(enabled, StringComparer.Ordinal);
+            if (settings.Consents is { } consents && consents.Any(pair =>
+                !IsId(pair.Key) || pair.Value is not { Length: 64 } || !pair.Value.All(Uri.IsHexDigit)))
+                throw new InvalidDataException("插件同意记录无效。");
+            _consents = new(settings.Consents ?? [], StringComparer.Ordinal);
             _settingsInvalid = false;
         }
         catch (Exception error) when (IsFileError(error))
         {
             _enabled.Clear();
+            _consents.Clear();
             _settingsInvalid = true;
             problems.Add("读取插件设置失败，已保留原文件：" + error.Message);
         }
@@ -217,7 +225,7 @@ public sealed partial class PluginManager : IDisposable
         var next = new HashSet<string>(_enabled, StringComparer.Ordinal);
         var changed = enabled ? next.Add(id) : next.Remove(id);
         if (!changed) return;
-        WriteAtomic(_settingsPath, JsonSerializer.Serialize(new PluginSettings(next.Order(StringComparer.Ordinal).ToArray()), Json));
+        WriteAtomic(_settingsPath, JsonSerializer.Serialize(new PluginSettings(next.Order(StringComparer.Ordinal).ToArray(), _consents), Json));
         _enabled = next;
     }
 
@@ -229,6 +237,9 @@ public sealed partial class PluginManager : IDisposable
         IWonderPlugin? plugin = null;
         try
         {
+            local = ReadCurrentPlugin(local);
+            manifest = local.Manifest;
+            RequireConsent(local);
             var configuration = ReadConfigurationCore(id);
             var data = PluginDataDirectory(id);
             Directory.CreateDirectory(data);
@@ -358,8 +369,12 @@ public sealed partial class PluginManager : IDisposable
     private static bool IsFileError(Exception error) => error is IOException or UnauthorizedAccessException or
         JsonException or InvalidDataException or ArgumentException or NotSupportedException;
 
-    private sealed record PluginSettings(string[] Enabled);
+    private sealed record PluginSettings(string[] Enabled, Dictionary<string, string>? Consents = null);
     private sealed record LocalPlugin(PluginManifest Manifest, string Directory);
+    private static bool SameInstallation(LocalPlugin left, LocalPlugin right) =>
+        left.Directory == right.Directory &&
+        left.Manifest with { Permissions = null } == right.Manifest with { Permissions = null } &&
+        PermissionsEqual(left.Manifest.Permissions, right.Manifest.Permissions);
     private sealed record RunningPlugin(IWonderPlugin Instance, PluginLoadContext Loader);
 
     private sealed record PluginContext(string ConfigurationJson, string DataDirectory, ActivityLog Activity) : IPluginContext

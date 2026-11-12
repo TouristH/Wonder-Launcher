@@ -21,6 +21,8 @@ internal static class Palette
     public static readonly SolidColorBrush Pressed = new(Color.Parse("#355D4C"));
     public static readonly SolidColorBrush Emphasis = new(Color.Parse("#DBFFE9"));
     public static readonly SolidColorBrush Error = new(Color.Parse("#FFBE91"));
+    public static readonly SolidColorBrush PluginVerified = new(Color.Parse("#8BE4AD"));
+    public static readonly SolidColorBrush PluginUnverified = new(Color.Parse("#FF9B9B"));
 
     public static Color AccentFor(AccentColor accent, bool light) => Color.Parse((accent, light) switch
     {
@@ -39,6 +41,8 @@ internal static class Palette
         Text.Color = Color.Parse(light ? "#202C29" : "#E8EDEF");
         Muted.Color = Color.Parse(light ? "#596A63" : "#9BA8B4");
         Error.Color = Color.Parse(light ? "#A84210" : "#FFBE91");
+        PluginVerified.Color = Color.Parse(light ? "#176B3A" : "#8BE4AD");
+        PluginUnverified.Color = Color.Parse(light ? "#B4232C" : "#FF9B9B");
         Accent.Color = AccentFor(accent, light);
         Active.Color = Blend(Surface.Color, Accent.Color, light ? .08 : .14);
         Hover.Color = Blend(Surface.Color, Accent.Color, light ? .15 : .23);

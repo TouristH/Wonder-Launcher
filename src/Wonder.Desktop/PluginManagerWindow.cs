@@ -15,7 +15,8 @@ namespace Wonder.Desktop;
 
 internal sealed partial class PluginManagerWindow : Window
 {
-    internal const string DefaultRepositoryUrl = "https://raw.githubusercontent.com/TouristH/UNuse/dev/public/wonder/v1/index.json";
+    // Keep the existing preview catalog until the registry's main-branch migration is published.
+    internal const string DefaultRepositoryUrl = "https://raw.githubusercontent.com/TouristH/Wonder-Plugins/dev/public/wonder/v1/index.json";
     private readonly PluginManager _manager;
     private readonly StackPanel _installed = new() { Spacing = 12 };
     private readonly StackPanel _available = new() { Spacing = 12 };
@@ -164,13 +165,9 @@ internal sealed partial class PluginManagerWindow : Window
             }
             body.Children.Add(state);
             var actions = new WrapPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(ActionButton(plugin.Enabled ? "关闭" : "启用", () => UiOperation.Start(() => RunAsync("正在切换插件状态…", _ =>
-            {
-                _manager.SetEnabled(plugin.Manifest.Id, !plugin.Enabled);
-                var current = _manager.Plugins.FirstOrDefault(item => item.Manifest.Id == plugin.Manifest.Id);
-                ShowStatus(current?.Error ?? (current?.Enabled == true ? "插件已启用。" : "插件已关闭。"), current?.Error is not null);
-                return Task.CompletedTask;
-            }), () => _closed), (plugin.Enabled ? "关闭插件 " : "启用插件 ") + plugin.Manifest.Name));
+            actions.Children.Add(ActionButton(plugin.Enabled ? "关闭" : "启用",
+                () => UiOperation.Start(() => SetPluginEnabledAsync(plugin), () => _closed),
+                (plugin.Enabled ? "关闭插件 " : "启用插件 ") + plugin.Manifest.Name));
             actions.Children.Add(ActionButton("修改配置", () => UiOperation.Start(() => EditConfigurationAsync(plugin), () => _closed), "修改配置 " + plugin.Manifest.Name));
             actions.Children.Add(ActionButton("打开目录", () => OpenDirectory(plugin.Directory), "打开插件目录 " + plugin.Manifest.Name));
             body.Children.Add(actions);
@@ -190,38 +187,8 @@ internal sealed partial class PluginManagerWindow : Window
         _catalog = catalog;
         _catalogRequested = true;
         RefreshAvailable();
-        ShowStatus($"已读取 {_catalog.Count} 个在线插件。");
+        ShowStatus($"已读取 {_catalog.Select(entry => entry.Id).Distinct().Count()} 个插件，共 {_catalog.Count} 个版本。");
     });
-
-    private void RefreshAvailable()
-    {
-        _available.Children.Clear();
-        if (_catalog.Count == 0)
-        {
-            _available.Children.Add(Hint("这个仓库暂时没有可下载的插件。"));
-            return;
-        }
-        foreach (var entry in _catalog)
-        {
-            var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(Heading(entry.Name));
-            body.Children.Add(Hint($"{entry.Version} · {entry.Author} · {entry.Id}"));
-            body.Children.Add(Hint(entry.Description));
-            var installed = _manager.Plugins.FirstOrDefault(plugin => plugin.Manifest.Id == entry.Id);
-            var installedSameVersion = installed?.Manifest.Version == entry.Version;
-            var label = installedSameVersion ? "已安装" : installed is null ? "下载安装" : "安装此版本";
-            if (installed is not null) body.Children.Add(Hint("本地版本 " + installed.Manifest.Version));
-            var download = ActionButton(label, () => UiOperation.Start(() => RunAsync("正在下载并校验 " + entry.Name + "…", async token =>
-            {
-                await _manager.InstallAsync(entry, token);
-                ShowStatus(entry.Name + " 已安装，可在“已安装”中启用。");
-            }), () => _closed), "安装在线插件 " + entry.Name);
-            download.IsEnabled = !installedSameVersion;
-            body.Children.Add(download);
-            if (!string.IsNullOrWhiteSpace(entry.SourceUrl)) body.Children.Add(Hint("项目来源 " + entry.SourceUrl));
-            _available.Children.Add(Card(body));
-        }
-    }
 
     private Task ImportAsync() => RunAsync("请选择本地插件 ZIP。", async token =>
     {

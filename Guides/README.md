@@ -13,6 +13,7 @@
 - [启动器与个性化设置](14-settings-component.md)
 - [便携数据、自动保存与动效](15-portable-data-and-motion.md)
 - [组件库、共享状态与便笺](16-component-system.md)
+- [本地插件管理、在线安装与开发接口](35-plugins.md)
 
 ## 实例与启动
 

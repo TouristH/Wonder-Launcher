@@ -4,6 +4,7 @@
   <Project Path="src/Wonder.Application/Wonder.Application.csproj" />
   <Project Path="src/Wonder.Infrastructure/Wonder.Infrastructure.csproj" />
   <Project Path="src/Wonder.Extensibility.Contracts/Wonder.Extensibility.Contracts.csproj" />
+  <Project Path="src/Wonder.Extensibility/Wonder.Extensibility.csproj" />
   <Project Path="src/Wonder.Workspace/Wonder.Workspace.csproj" />
   <Project Path="src/Wonder.Desktop/Wonder.Desktop.csproj" />
 </Solution>

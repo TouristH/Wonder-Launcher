@@ -12,6 +12,7 @@ using Wonder.Workspace;
 using Wonder.Application;
 using Wonder.Core;
 using Wonder.Infrastructure;
+using Wonder.Extensibility;
 using Wonder.Desktop.Components;
 
 namespace Wonder.Desktop;
@@ -87,10 +88,13 @@ public sealed partial class MainWindow : Window
         }, () => _workspaceStorageClosed);
         _downloadEngine = new DownloadEngine();
         _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine, GetCurseForgeApiKey), System.IO.Path.Combine(dataDirectory, "downloads.json"), ImportDownloadedInstanceAsync);
+        _plugins = new PluginManager(dataDirectory);
+        Opened += (_, _) => _plugins.Refresh();
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
         GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
         AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);
         DownloadComponents.Register(registry, _downloads, OpenDownloadCenter);
+        PluginComponents.Register(registry, _plugins, OpenPluginManager);
         _workspace = new WorkspaceView(document, dataDirectory, registry) { Margin = new Thickness(22, 20, 22, 22) };
         InitializeWorkspaceStorage(saveWorkspace ?? _store.Save);
         _workspace.Changed += WorkspaceChanged;
@@ -99,6 +103,7 @@ public sealed partial class MainWindow : Window
         _workspace.SettingsRequested += OpenSettings;
         Deactivated += (_, _) => _workspace.CancelGesture();
         Closed += (_, _) => { DisposeWorkspaceStorage(); _accounts.Cancel(); _downloadCenter?.Close(); _downloads.Dispose(); _downloadEngine.Dispose(); _workspace.DisposeComponents(); };
+        Closed += (_, _) => { _pluginManagerWindow?.Close(); _plugins.Dispose(); };
         PropertyChanged += (_, e) =>
         {
             if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)

@@ -16,6 +16,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <ProjectReference Include="../Wonder.Workspace/Wonder.Workspace.csproj" />
     <ProjectReference Include="../Wonder.Extensibility.Contracts/Wonder.Extensibility.Contracts.csproj" />
+    <ProjectReference Include="../Wonder.Extensibility/Wonder.Extensibility.csproj" />
     <ProjectReference Include="../Wonder.Application/Wonder.Application.csproj" />
     <ProjectReference Include="../Wonder.Infrastructure/Wonder.Infrastructure.csproj" />
   </ItemGroup>

@@ -22,17 +22,19 @@ NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR 
 
 ## 运行方式
 
+从组件库打开“插件”，在“已安装”中管理本地代码插件，启用、关闭、修改配置或打开插件目录。在“在线仓库”中读取 Wonder 插件目录并下载安装，也可导入本地 ZIP。安装完成后选择启用，修改配置会重新激活已启用插件。代码插件与启动器共享系统用户权限。详见[插件管理](Guides/35-plugins.md)。
+
 Windows、Linux、macOS 使用同一套源码与设置/工作区格式，各自输出本机原生入口并自带对应 .NET 运行时；无需 Wine 或 Windows EXE，也不意味着启用了 Native AOT。本次 Release 只提供 Windows 与 Linux 应用，macOS Intel/Apple Silicon `.app` 保留本地构建；试用、本地签名、系统钥匙串和迁移边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。macOS 数据放在 `.app` 旁边的 `WonderData/`，运行时不写入应用包内部。
 
 Windows 用户下载 `Wonder-0.7.2-win-x64.exe`，放到可写目录后双击运行；本地发布产物位于 `artifacts/Wonder-0.7.2-win-x64.exe`。它是 Windows x64 自包含单文件应用，不要求预装 .NET；首次运行会按 .NET 的机制解包必要原生库。
 
-另有本地可构建的 Windows x64 最小版 `artifacts/Wonder-0.7.2-win-x64-minimal.exe`，六个 Wonder 自身程序集仍内置、功能完整，所有第三方依赖由用户准备：在系统安装 .NET 10 x64 运行时，并按同名 `.dependencies.json` 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方 DLL 放在 EXE 同目录；系统 .NET 运行时无需放在 EXE 旁。用 .NET 10 SDK 和 PowerShell 7.4+ 执行 `pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies`，还会在 `artifacts/Wonder-minimal-dependencies-win-x64/` 准备可复制到 EXE 旁的 DLL，这些 DLL 不内置于最小版 EXE。依赖不齐无法运行；普通用户使用原自包含版更省步骤，默认 Release 仍为自包含版。构建及准备步骤见[最小版说明](Guides/32-native-cross-platform.md#windows-x64-可选最小版)。
+另有本地可构建的 Windows x64 最小版 `artifacts/Wonder-0.7.2-win-x64-minimal.exe`，七个 Wonder 自身程序集仍内置、功能完整，所有第三方依赖由用户准备：在系统安装 .NET 10 x64 运行时，并按同名 `.dependencies.json` 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方 DLL 放在 EXE 同目录；系统 .NET 运行时无需放在 EXE 旁。用 .NET 10 SDK 和 PowerShell 7.4+ 执行 `pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies`，还会在 `artifacts/Wonder-minimal-dependencies-win-x64/` 准备可复制到 EXE 旁的 DLL，这些 DLL 不内置于最小版 EXE。依赖不齐无法运行；普通用户使用原自包含版更省步骤，默认 Release 仍为自包含版。构建及准备步骤见[最小版说明](Guides/32-native-cross-platform.md#windows-x64-可选最小版)。
 
 Linux 用户下载 `Wonder-0.7.2-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.7.2-linux-x64`，再执行 `./Wonder-0.7.2-linux-x64`；本地发布产物位于 `artifacts/Wonder-0.7.2-linux-x64`。它是自带 .NET 的 ELF 单文件应用，仍需系统图形库、X11/XWayland 和用于保存账户的已解锁 Secret Service 密钥环。依赖安装、校验和限制见 [Linux 试发行说明](Guides/31-linux-trial.md)；Linux 图形桌面与真实游戏启动尚待实机验收。
 
 Windows/Linux 应用运行无需相邻文档、启动脚本或源码包。Release 独立提供 `Wonder-0.7.2-source.tar.gz`，其中保留对应源码、构建材料、公开文档和全部适用的项目与第三方许可及通知；只使用应用时无需下载它。
 
-启动时在应用旁创建 `WonderData/`（macOS 在 `.app` 同级），集中存放设置、工作区和后续长期数据，并预留 `plugins/`。移动应用时一并移动此文件夹可保留文件数据，账户解密仍依赖原系统用户的密钥服务；分发程序时须一并提供适用的项目许可与第三方声明，不携带用户数据。所在目录需要可写，写入失败会明确提示，不自动切换到其他数据目录。
+启动时在应用旁创建 `WonderData/`（macOS 在 `.app` 同级），集中存放设置、工作区、`plugins/` 安装包和 `plugin-data/` 插件配置与数据。移动应用时一并移动此文件夹可保留文件数据，账户解密仍依赖原系统用户的密钥服务；分发程序时须一并提供适用的项目许可与第三方声明，不携带用户数据。所在目录需要可写，写入失败会明确提示，不自动切换到其他数据目录。
 
 同一 `WonderData` 目录只允许一个启动器进程写入。Windows 再次打开会尝试激活已有窗口；窗口暂不可激活时会提示已有实例运行并退出。Linux/macOS 再次打开将提示写入终端并退出，请自行切换到已有窗口；从 Finder 打开时可能看不到终端信息。不同便携目录仍可同时运行。数据目录中的 `.instance.lock` 是运行协调文件，正常退出或进程异常终止都会释放锁，文件留在目录中不代表程序仍在运行，不需要手动删除。更新前请关闭旧版启动器进程，旧版本没有此保护。
 
@@ -106,6 +108,6 @@ Linux/macOS 需安装适合游戏版本与本机架构的 Java，并通过来源
 
 第三方旧账户升级后点击“刷新资料”取得皮肤与披风；网站更换外观后也使用此操作同步。保存布局失败时请保持程序打开并恢复目录写入条件，再重试保存或关闭。强制结束进程或断电可能丢失尚未落盘的编辑。
 
-游戏安装/修复、外部代码插件加载及权限沙箱尚未实现。来源适配不代表完整复刻其他启动器；缺失依赖和不支持的启动特性会明确提示。微软认证与外观接口的真实在线可用性仍需实际验证，不能将离线模式或本地游戏文件视为所有权证明。
+已有实例的一键修复与插件权限沙箱尚未实现。来源适配不代表完整复刻其他启动器；缺失依赖和不支持的启动特性会明确提示。微软认证与外观接口的真实在线可用性仍需实际验证，不能将离线模式或本地游戏文件视为所有权证明。
 
 更多操作说明见[帮助目录](Guides/README.md)、[账户管理](Guides/26-account-management.md)和[实例管理](Guides/18-instance-management-and-launch.md)。

@@ -19,7 +19,7 @@ $guides = @('README.md','13-wonder-ui-foundation.md','14-settings-component.md',
     '15-portable-data-and-motion.md','16-component-system.md','18-instance-management-and-launch.md',
     '21-settings-pages-and-instance-cards.md','22-instance-selection-and-directory-actions.md',
     '26-account-management.md','28-login-diagnostics-and-default-skins.md',
-    '30-layered-skins-capes-and-avatars.md','31-linux-trial.md','32-native-cross-platform.md','33-download-center.md')
+    '30-layered-skins-capes-and-avatars.md','31-linux-trial.md','32-native-cross-platform.md','33-download-center.md','35-plugins.md')
 
 function Copy-ReleaseDocs([string]$destination) {
     New-Item -ItemType Directory -Path (Join-Path $destination 'Guides') -Force | Out-Null

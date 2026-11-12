@@ -33,7 +33,9 @@
 - 同一份源码发布 Windows x64、Linux x64、macOS Intel/Apple Silicon 原生应用，自带各平台 .NET 运行时；Linux 和 macOS 当前为试发行。设置、布局和实例登记保存在应用旁的 `WonderData/`，macOS 放在 `.app` 外部。
 - 同一数据目录只允许一个启动器进程写入；Windows 再次打开会尝试激活已有窗口，Linux/macOS 将提示写入终端并退出。不同便携目录可独立运行。
 
-已有实例的一键修复、第三方代码插件加载及权限沙箱仍待实现。没有将 `AssemblyLoadContext` 或普通子进程描述为安全沙箱。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
+“插件”组件可打开本地插件库，启用或关闭插件、编辑 JSON 配置、导入 ZIP，并从 Wonder 在线仓库下载安装。插件使用独立的 Wonder API，启用后以当前系统用户权限运行。使用与开发方式见[插件帮助](Guides/35-plugins.md)。
+
+已有实例的一键修复与插件权限沙箱仍待实现。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
 
 ## 认证与隐私
 
@@ -98,7 +100,7 @@ pwsh -File packaging/Wonder.Publish.ps1
 
 ### Windows x64 可选最小版
 
-本地可构建仅内置六个 Wonder 自身程序集的最小版 EXE，保留完整功能；所有第三方依赖由用户准备，当前仅支持 Windows x64。使用 .NET 10 SDK 和 PowerShell 7.4+ 执行：
+本地可构建仅内置七个 Wonder 自身程序集的最小版 EXE，保留完整功能；所有第三方依赖由用户准备，当前仅支持 Windows x64。使用 .NET 10 SDK 和 PowerShell 7.4+ 执行：
 
 ```powershell
 pwsh -File packaging/Wonder.PublishMinimal.ps1
@@ -108,7 +110,7 @@ pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies
 
 产物为 `artifacts/Wonder-0.7.2-win-x64-minimal.exe` 和依赖清单 `artifacts/Wonder-0.7.2-win-x64-minimal.dependencies.json`。运行前须在系统安装 .NET 10 x64 运行时，并按 JSON 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方 DLL 放在 EXE 同目录；.NET 运行时通过系统安装，无需放在 EXE 旁。`-PrepareDependencies` 额外生成 `artifacts/Wonder-minimal-dependencies-win-x64/`，可将其中 DLL 复制到最小版 EXE 同目录；这些 DLL 不内置于最小版 EXE。依赖不齐时最小版无法运行，普通用户使用原自包含版更省步骤，默认 Release 仍为自包含版。详见[三端发行说明](Guides/32-native-cross-platform.md#windows-x64-可选最小版)。
 
-`Wonder.slnx` 包含六个生产工程，版本统一在 `Directory.Build.props` 中维护。三端使用相同设置与工作区格式，平台账户文件和绝对路径仍有差异。数据位于应用旁的 `WonderData/`，macOS 为 `.app` 的同级目录。更新前关闭启动器并保留数据目录；跨系统或更换桌面用户后，账户通常需要重新登录，游戏路径和 Java 也需重新设置。
+`Wonder.slnx` 包含七个生产工程，版本统一在 `Directory.Build.props` 中维护。三端使用相同设置与工作区格式，平台账户文件和绝对路径仍有差异。数据位于应用旁的 `WonderData/`，macOS 为 `.app` 的同级目录。更新前关闭启动器并保留数据目录；跨系统或更换桌面用户后，账户通常需要重新登录，游戏路径和 Java 也需重新设置。
 
 公开仓库保留 `src/`、`packaging/`、解决方案与构建配置、README、Wonder 使用说明、用户 Guides，以及许可、隐私和第三方原始通知。测试工程、探针、AI 开发约定、实施计划、内部验收记录和本地工具配置不纳入公开提交；游戏文件、用户数据、编译缓存及发布产物也不提交。
 

@@ -15,8 +15,7 @@ namespace Wonder.Desktop;
 
 internal sealed partial class PluginManagerWindow : Window
 {
-    // Keep the existing preview catalog until the registry's main-branch migration is published.
-    internal const string DefaultRepositoryUrl = "https://raw.githubusercontent.com/TouristH/Wonder-Plugins/dev/public/wonder/v1/index.json";
+    internal const string DefaultRepositoryUrl = "https://raw.githubusercontent.com/TouristH/Wonder-Plugins/main/public/v1/index.json";
     private readonly PluginManager _manager;
     private readonly StackPanel _installed = new() { Spacing = 12 };
     private readonly StackPanel _available = new() { Spacing = 12 };

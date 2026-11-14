@@ -13,7 +13,7 @@ internal sealed class DeleteConfirmationWindow : Window
 {
     private bool _working;
 
-    public DeleteConfirmationWindow(string title, string path, string description, Func<string, Task<string?>> delete)
+    public DeleteConfirmationWindow(string title, string path, string description, Func<string, Task<string?>> delete, string? instructions = null)
     {
         Title = "删除确认 · Wonder Launcher"; Width = 560; Height = 440; MinWidth = 460; MinHeight = 360;
         Background = Palette.Background; Foreground = Palette.Text; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -23,7 +23,7 @@ internal sealed class DeleteConfirmationWindow : Window
         content.Children.Add(new TextBlock { Text = title, FontSize = 16, TextWrapping = TextWrapping.Wrap });
         content.Children.Add(new SelectableTextBlock { Text = path, FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Palette.Accent });
         content.Children.Add(PageStyles.Hint(description));
-        content.Children.Add(PageStyles.Hint("将移走上述目录中的文件并移除登记。请核对路径，然后准确输入小写 sure。取消不会修改文件。"));
+        content.Children.Add(PageStyles.Hint(instructions ?? "将移走上述目录中的文件并移除登记。请核对路径，然后准确输入小写 sure。取消不会修改文件。"));
         var word = new TextBox { MaxLength = 32, PlaceholderText = "sure" }; AutomationProperties.SetName(word, "删除确认词"); content.Children.Add(word);
         var error = PageStyles.Hint(""); error.Foreground = Palette.Error; content.Children.Add(error);
         layout.Children.Add(new ScrollViewer { Content = content, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled });

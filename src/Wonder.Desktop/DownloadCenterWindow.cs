@@ -75,7 +75,7 @@ internal sealed partial class DownloadCenterWindow : Window
         SelectPage(0); RefreshDownloads();
     }
 
-    private void SelectPage(int page)
+    private void SelectPage(int page, GameInstance? resourceTarget = null)
     {
         var changed = page != _page; _page = page;
         for (var i = 0; i < _navigation.Count; i++) PageStyles.SetSelected(_navigation[i], i == page);
@@ -89,12 +89,18 @@ internal sealed partial class DownloadCenterWindow : Window
             _ => "按来源、Minecraft 版本与加载器筛选资源，可安装到实例或单独下载。"
         };
         _scroll.Offset = default;
-        if (changed)
+        if (changed || resourceTarget is not null)
         {
             _resourceRequest?.Cancel(); _versionRequest?.Cancel();
             if (page is >= 1 and <= 4)
             {
                 _targetInstanceRow.IsVisible = page != 2;
+                if (resourceTarget is not null)
+                {
+                    _resourceGame.Text = resourceTarget.GameVersion;
+                    ConfigureResourceFilters(ResourceKind);
+                    SelectLoaderForTarget(resourceTarget);
+                }
                 UiOperation.Start(() => SearchResourcesAsync(0), () => _closed);
             }
         }

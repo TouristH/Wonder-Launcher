@@ -51,12 +51,54 @@ internal sealed class ResourceIconView : Border
         Refresh();
     }
 
+    public void SetLocal(InstanceContentKind kind, byte[]? bytes)
+    {
+        _fallback.Text = kind switch
+        {
+            InstanceContentKind.ResourcePack => "纹",
+            InstanceContentKind.ShaderPack => "光",
+            InstanceContentKind.World => "图",
+            InstanceContentKind.Screenshot => "影",
+            _ => "模"
+        };
+        _url = null;
+        Refresh();
+        if (bytes is not null) ShowBitmap(DecodeLocal(bytes, 280, 200));
+    }
+
+    internal static Bitmap? DecodeLocal(byte[] bytes, int maximumWidth, int maximumHeight)
+    {
+        try { return Decode(bytes, maximumWidth, maximumHeight, 16384, 64_000_000); }
+        catch (Exception error) when (error is IOException or InvalidOperationException or ArgumentException or NotSupportedException)
+        { return null; }
+    }
+
+    private static Bitmap? Decode(byte[] bytes, int maximumWidth, int maximumHeight, int maximumSide, long maximumPixels)
+    {
+        using var encoded = SkiaSharp.SKData.CreateCopy(bytes);
+        using var codec = SkiaSharp.SKCodec.Create(encoded);
+        if (codec is null) return null;
+        var width = codec.Info.Width;
+        var height = codec.Info.Height;
+        if (width < 1 || height < 1 || width > maximumSide || height > maximumSide || (long)width * height > maximumPixels) return null;
+        // Header inspection and decoding use separate inputs since the codec can consume the stream.
+        using var input = new MemoryStream(bytes, writable: false);
+        return (long)width * maximumHeight >= (long)height * maximumWidth
+            ? Bitmap.DecodeToWidth(input, Math.Min(width, maximumWidth))
+            : Bitmap.DecodeToHeight(input, Math.Min(height, maximumHeight));
+    }
+
+    private void ShowBitmap(Bitmap? bitmap)
+    {
+        _image.Source = bitmap;
+        _bitmap?.Dispose(); _bitmap = bitmap;
+        _fallback.IsVisible = bitmap is null;
+    }
+
     private void Refresh()
     {
         _loading?.Cancel(); _loading = null;
-        _image.Source = null;
-        _bitmap?.Dispose(); _bitmap = null;
-        _fallback.IsVisible = true;
+        ShowBitmap(null);
         if (_attached && TryGetIconUri(_provider, _url, out var uri)) UiOperation.Start(() => LoadAsync(uri), () => !_attached);
     }
 
@@ -83,14 +125,7 @@ internal sealed class ResourceIconView : Border
         {
             var bytes = await ReadIconAsync(uri, request.Token);
             if (bytes is null || request.IsCancellationRequested) return;
-            using var encoded = SkiaSharp.SKData.CreateCopy(bytes);
-            using var codec = SkiaSharp.SKCodec.Create(encoded);
-            if (codec is null || codec.Info.Width is <= 0 or > 2048 || codec.Info.Height is <= 0 or > 2048) return;
-            // The codec can consume or close its input stream while reading WebP headers.
-            using var input = new MemoryStream(bytes, writable: false);
-            _bitmap = Bitmap.DecodeToWidth(input, Math.Min(144, codec.Info.Width));
-            _image.Source = _bitmap;
-            _fallback.IsVisible = false;
+            ShowBitmap(Decode(bytes, 144, 144, 2048, 2048L * 2048));
         }
         catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException or InvalidOperationException or ArgumentException or NotSupportedException)
         { /* The category mark remains visible when an icon cannot load. */ }

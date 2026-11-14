@@ -15,7 +15,7 @@
 - 通用组件与组件库：应用状态和快捷方式位置分开，支持便笺、设置和启动器状态。Windows 与 Linux（X11/XWayland）上的实时预览会跟随指针跨窗口移动，松开时按落点放置或移除快捷方式。
 - 下载组件与下载中心：整张组件可点击，卡片显示当前下载步骤与进度。安装 Minecraft 和加载器时默认按两者的版本命名实例，可选兼容的 OptiFine、Fabric API 或 QFAPI/QSL。可分组浏览 Modrinth 的模组、整合包、资源包和光影，安装到实例或保存原文件。任务支持暂停、重试及重启后恢复。见[下载帮助](Guides/33-download-center.md)。
 - Wonder 原生实例配置：下载实例自带 `.minecraft/wonder.instance.json`，保存 Wonder 创建署名、版本和独立启动参数；修改实例设置同步保存，移动实例后可重新导入。
-- 实例管理：启动和相关操作后自动读取游戏目录，组件可用带图标的下拉框切换实例。游戏安装默认在所选目录中隔离存档、模组和配置，开关位于游戏全局设置。原版使用 Java 稳定版草方块，加载器显示官方图标。
+- 实例管理：启动和相关操作后自动读取游戏目录，组件可用带图标的下拉框切换实例。实例详情可搜索、预览和管理模组、材质包、光影包、地图与截图，支持启停资源、隐藏存档、查看截图大图和移入回收站。新实例默认隔离存档、模组和配置，可在游戏全局设置调整。[实例管理帮助](Guides/18-instance-management-and-launch.md)
 - 官方 `latest-release` 和 `latest-snapshot` profile 可导入。Wonder 按本地已安装的对应版本更新登记，并保留 profile 的游戏目录和启动设置。见[官方 profile 导入](Guides/18-instance-management-and-launch.md#官方-profile-导入)。
 - 账户中心与桌面组件：微软正版、自定义 Yggdrasil 和离线账户，支持搜索、账户详情、切换、刷新、重新登录、离线改名和删除；Windows 使用 DPAPI，Linux 使用 Secret Service，macOS 使用系统钥匙串保护加密账户库。
 - 账户库和实例索引在后台读写。等待磁盘或系统密钥服务时，界面仍可浏览已加载的内容。

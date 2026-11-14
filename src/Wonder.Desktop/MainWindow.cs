@@ -200,7 +200,12 @@ public sealed partial class MainWindow : Window
             _instanceManager.Activate(); return;
         }
         _instanceManager = new InstanceManagerWindow(_instances, initialLayout: _settings.InstanceLayout,
-            layoutChanged: layout => ChangeSettings(_settings with { InstanceLayout = layout })) { FontFamily = FontFamily };
+            layoutChanged: layout => ChangeSettings(_settings with { InstanceLayout = layout }),
+            browseResources: (instance, kind) =>
+            {
+                OpenDownloadCenter();
+                _downloadCenter?.BrowseInstanceResources(instance, kind);
+            }) { FontFamily = FontFamily };
         _instanceManager.Closed += (_, _) => _instanceManager = null;
         _instanceManager.Show(this);
     }

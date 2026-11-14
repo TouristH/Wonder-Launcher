@@ -11,7 +11,7 @@ using Wonder.Core;
 
 namespace Wonder.Infrastructure;
 
-public sealed class InstanceFileOperations : IInstanceFileOperations
+public sealed partial class InstanceFileOperations : IInstanceFileOperations, IInstanceContentFiles
 {
     public void EnsureGameRoot(string path)
     {
@@ -70,17 +70,22 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
         Directory.Move(path, destination);
     });
 
-    public Task RecycleDirectoryAsync(string path, string expectedIdentity)
+    public Task RecycleDirectoryAsync(string path, string expectedIdentity) => RecyclePathAsync(path, () =>
     {
-        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) return RecycleUnixAsync(path, expectedIdentity);
+        if (InspectDirectory(path) != expectedIdentity) throw new IOException("目录发生变化，请重新确认删除。");
+        EnsureNoLinks(path);
+    });
+
+    private static Task RecyclePathAsync(string path, Action validate)
+    {
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) return RecycleUnixAsync(path, validate);
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("此平台暂未实现系统回收站操作。");
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
             try
             {
-                if (InspectDirectory(path) != expectedIdentity) throw new IOException("目录发生变化，请重新确认删除。");
-                EnsureNoLinks(path);
+                validate();
                 if (OperatingSystem.IsWindows()) RecycleWindows(path);
                 completion.TrySetResult();
             }
@@ -89,13 +94,9 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); return completion.Task;
     }
 
-    private async Task RecycleUnixAsync(string path, string expectedIdentity)
+    private static async Task RecycleUnixAsync(string path, Action validate)
     {
-        await Task.Run(() =>
-        {
-            if (InspectDirectory(path) != expectedIdentity) throw new IOException("目录发生变化，请重新确认删除。");
-            EnsureNoLinks(path);
-        }).ConfigureAwait(false);
+        await Task.Run(validate).ConfigureAwait(false);
         // GIO uses the desktop's trash service. Never substitute rm or a permanent-delete fallback.
         var macOS = OperatingSystem.IsMacOS();
         var start = new ProcessStartInfo(macOS ? "/usr/bin/osascript" : "gio") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
@@ -121,14 +122,14 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
             await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
             await output.ConfigureAwait(false);
             var detail = (await standardError.ConfigureAwait(false)).Trim();
-            if (process.ExitCode != 0 || Directory.Exists(path))
+            if (process.ExitCode != 0 || Path.Exists(path))
                 throw new IOException("系统未完成回收，未尝试永久删除。请检查回收站与目录权限。" + (detail.Length == 0 ? "" : "\n" + detail[..Math.Min(detail.Length, 1000)]));
         }
         catch (OperationCanceledException)
         {
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
             catch (Exception error) when (error is Win32Exception or InvalidOperationException) { }
-            throw new IOException("系统回收站操作超时，登记已保留。请先在文件管理器和回收站核对目录位置后重试。");
+            throw new IOException("系统回收站操作超时。请先在文件管理器和回收站核对原路径后重试。");
         }
     }
 
@@ -147,8 +148,7 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
                 special != Environment.SpecialFolder.UserProfile && full.StartsWith(protectedPath + Path.DirectorySeparatorChar, WonderPath.Comparison))
                 throw new IOException("不能修改系统或用户主目录：" + full);
         }
-        for (var current = new DirectoryInfo(full); current is not null; current = current.Parent)
-            if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("目录路径含有链接，拒绝修改：" + current.FullName);
+        EnsurePathWithoutLinks(full);
     }
 
     [SupportedOSPlatform("windows")]
@@ -166,7 +166,7 @@ public sealed class InstanceFileOperations : IInstanceFileOperations
             Marshal.ThrowExceptionForHR(operation.DeleteItem(item, sink));
             Marshal.ThrowExceptionForHR(operation.PerformOperations());
             Marshal.ThrowExceptionForHR(operation.GetAnyOperationsAborted(out var aborted));
-            if (aborted || !sink.Recycled || Directory.Exists(path)) throw new IOException("Windows 未完成回收。文件不会改为永久删除，请检查回收站容量和目录权限。");
+            if (aborted || !sink.Recycled || Path.Exists(path)) throw new IOException("Windows 未完成回收。文件不会改为永久删除，请检查回收站容量和目录权限。");
         }
         finally
         {

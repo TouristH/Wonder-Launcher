@@ -225,6 +225,25 @@ internal sealed partial class DownloadCenterWindow
     private GameInstance? SelectedResourceTarget => _targetInstance.SelectedIndex >= 0 && _targetInstance.SelectedIndex < _targetInstances.Length
         ? _targetInstances[_targetInstance.SelectedIndex] : null;
 
+    internal void BrowseInstanceResources(string instanceId, InstanceContentKind kind)
+    {
+        var page = kind switch
+        {
+            InstanceContentKind.Mod => 1,
+            InstanceContentKind.ResourcePack => 3,
+            InstanceContentKind.ShaderPack => 4,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind))
+        };
+        RefreshInstances();
+        var index = Array.FindIndex(_targetInstances, instance => instance.Id == instanceId);
+        if (index < 0) { ShowStatus("找不到此实例，请重新选择。", true); return; }
+        _refreshingInstances = true;
+        try { _targetInstance.SelectedIndex = _detailTargetInstance.SelectedIndex = index; }
+        finally { _refreshingInstances = false; }
+        _resourceQuery.Clear();
+        SelectPage(page, _targetInstances[index]);
+    }
+
     private void TargetChanged(bool fromDetails)
     {
         if (_refreshingInstances) return;

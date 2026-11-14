@@ -28,6 +28,8 @@ internal sealed class InstanceManagerWindow : Window
     private RootRow[] _rootRows = [];
     private InstanceRow[] _instanceRows = [];
     private readonly Grid _browser = new(), _detailPage = new();
+    private readonly TabControl _detailTabs = new();
+    private readonly InstanceContentPage _contentPage;
     private readonly TextBlock _rootHeading = Text(), _empty = Text(), _detailTitle = Text(), _detailVersion = Text();
     private readonly InstanceIconView _detailIcon = new(48);
     private readonly Dictionary<string, TextBox> _fields = new();
@@ -42,9 +44,11 @@ internal sealed class InstanceManagerWindow : Window
     private int _pendingRefresh;
     private string? _currentId, _rootPath, _localError;
 
-    public InstanceManagerWindow(InstanceService service, Func<Task<string?>>? pickDirectory = null, InstanceLayout initialLayout = InstanceLayout.Grid, Action<InstanceLayout>? layoutChanged = null)
+    public InstanceManagerWindow(InstanceService service, Func<Task<string?>>? pickDirectory = null, InstanceLayout initialLayout = InstanceLayout.Grid,
+        Action<InstanceLayout>? layoutChanged = null, Action<string, InstanceContentKind>? browseResources = null)
     {
         _service = service; _pickDirectory = pickDirectory; _layoutChanged = layoutChanged;
+        _contentPage = new InstanceContentPage(service, this, browseResources) { Margin = new Thickness(0, 12, 0, 0) };
         Title = "实例管理 · Wonder Launcher"; Width = 1050; Height = 820; MinWidth = 800; MinHeight = 580;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Palette.Background; Foreground = Palette.Text;
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
@@ -88,7 +92,7 @@ internal sealed class InstanceManagerWindow : Window
         _empty.Margin = new Thickness(16); Grid.SetRow(_empty, 2); children.Children.Add(_empty);
         Grid.SetColumn(children, 2); _browser.Children.Add(children); body.Children.Add(_browser);
 
-        _detailPage.RowDefinitions = new RowDefinitions("Auto,*,Auto");
+        _detailPage.RowDefinitions = new RowDefinitions("Auto,*");
         var detailHeader = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,18,*,Auto"), Margin = new Thickness(0, 0, 0, 16) };
         detailHeader.Children.Add(Button("返回游戏目录", "← 游戏目录", () =>
         {
@@ -138,18 +142,29 @@ internal sealed class InstanceManagerWindow : Window
         saveFooter.Children.Add(_saveActions); saveFooter.Children.Add(_draftStatus);
         form.Children.Add(new Expander { Header = "当前有效设置与来源诊断", Content = _effective, HorizontalAlignment = HorizontalAlignment.Stretch });
         var scroll = new ScrollViewer { Content = form, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Grid.SetRow(scroll, 1); _detailPage.Children.Add(scroll); Grid.SetRow(saveFooter, 2); _detailPage.Children.Add(saveFooter);
+        var settingsPage = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), Margin = new Thickness(0, 12, 0, 0) };
+        settingsPage.Children.Add(scroll);
+        Grid.SetRow(saveFooter, 1); settingsPage.Children.Add(saveFooter);
+        _detailTabs.Items.Add(new TabItem { Header = "启动设置", Content = settingsPage });
+        _detailTabs.Items.Add(new TabItem { Header = "资源管理", Content = _contentPage });
+        _detailTabs.SelectedIndex = 0;
+        Grid.SetRow(_detailTabs, 1); _detailPage.Children.Add(_detailTabs);
         body.Children.Add(_detailPage); Grid.SetRow(body, 1); layout.Children.Add(body);
         var footer = new StackPanel { Spacing = 8, Margin = new Thickness(0, 16, 0, 0) };
         _error.Foreground = Palette.Error; _error.MaxHeight = 70; footer.Children.Add(_error); footer.Children.Add(_status);
         _retry = Button("重试实例索引读取", "重试读取实例索引", async () => { _localError = null; await _service.ReloadAsync(); });
         footer.Children.Add(_retry);
         Grid.SetRow(footer, 2); layout.Children.Add(footer); Content = layout;
+        _detailTabs.SelectionChanged += (_, args) =>
+        {
+            if (ReferenceEquals(args.Source, _detailTabs)) Refresh();
+        };
         _service.Changed += Changed;
         Closing += (_, args) => _closeWithOwner = args.CloseReason is WindowCloseReason.OwnerWindowClosing or WindowCloseReason.ApplicationShutdown or WindowCloseReason.OSShutdown;
         Closed += (_, _) =>
         {
             _closed = true; _service.Changed -= Changed;
+            _contentPage.Dispose();
             if (_showDetails && !_closeWithOwner) ReadDetailDirectory();
         };
         SetLayout(initialLayout); Refresh();
@@ -234,6 +249,7 @@ internal sealed class InstanceManagerWindow : Window
             _empty.IsVisible = rows.Length == 0;
             if (instance is null) { _showDetails = false; _currentId = null; }
             _browser.IsVisible = !_showDetails; _detailPage.IsVisible = _showDetails;
+            _contentPage.SetInstance(_showDetails && _detailTabs.SelectedIndex == 1 ? instance : null);
             _detailTitle.Text = instance?.Name; ToolTip.SetTip(_detailTitle, instance?.Name);
             _detailVersion.Text = instance?.VersionLabel;
             _detailIcon.IsVisible = instance is not null;
@@ -357,9 +373,11 @@ internal sealed class InstanceManagerWindow : Window
         var instance = _service.Catalog.Instances.FirstOrDefault(x => x.Id == id);
         if (instance is null) return;
         RememberDraft(); _localError = null; _currentId = id;
+        _detailTabs.SelectedIndex = 0;
         LoadFields(instance); _showDetails = true;
         Refresh();
     }
+
     private async Task SelectInstanceAsync(string id)
     {
         _localError = null; _localError = await _service.SelectAsync(id); Refresh();

@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Wonder.Extensibility;
 using Wonder.Desktop.Components;
+using Wonder.Workspace;
 
 namespace Wonder.Desktop;
 
@@ -14,6 +15,18 @@ public sealed partial class MainWindow
     private PluginComponentBridge? _pluginComponents;
     private readonly PluginObservationHub _pluginObservations = new();
     private PluginDesktopObservation? _pluginInput;
+
+    private static void EnsurePluginDirectory() => System.IO.Directory.CreateDirectory(LauncherDataPaths.PluginsDirectory);
+
+    private PluginManager RegisterPluginComponents(ComponentRegistry registry, string dataDirectory)
+    {
+        var manager = new PluginManager(dataDirectory,
+            reservedComponentIds: registry.Definitions.Select(definition => definition.Id).Append(ComponentIds.Plugins),
+            observationProvider: _pluginObservations.Read);
+        PluginComponents.Register(registry, manager, OpenPluginManager);
+        Opened += (_, _) => manager.Refresh();
+        return manager;
+    }
 
     private void InitializePluginComponents()
     {
@@ -33,6 +46,12 @@ public sealed partial class MainWindow
             _pluginInput.Dispose();
         };
     }
+
+    private void RegisterPluginShutdown() => Closed += (_, _) =>
+    {
+        _pluginManagerWindow?.Close();
+        _plugins.Dispose();
+    };
 
     private void PluginInteractionObserved(string kind, string target, string? detail) =>
         _pluginObservations.RecordInteraction(kind, target, detail);

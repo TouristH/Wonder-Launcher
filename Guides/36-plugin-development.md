@@ -2,6 +2,8 @@
 
 本指南对应本地 dev 的 API 2，与《请稍候》0.3.0 一起开发。使用方式见 [插件管理](35-plugins.md)，可编译的完整实现见 `src/Wonder.Plugin.PleaseWait/`。目前插件提供声明式卡片、共享状态、配置和启动器交互观察；Minecraft 游戏内事件与剧情关卡尚未开放。
 
+`Wonder.Extensibility` 是与 `Wonder.Core`、`Wonder.Desktop` 并列的插件运行时工程，负责加载、生命周期、配置、行为报告和组件布局计算。`Wonder.Extensibility.Contracts` 定义插件调用的接口和数据结构。`Wonder.Desktop/Plugins` 接入 Avalonia 窗口、组件渲染和输入事件，工作区继续持有和保存实际布局。
+
 ## 1. 创建一个独立插件
 
 安装 .NET 10 SDK，创建类库，目标为 `net10.0`。只引用与目标宿主一致的 `Wonder.Extensibility.Contracts.dll`，不引用 Desktop、Avalonia 或启动器内部实现。源仓库中的项目可像《请稍候》一样使用 ProjectReference；仓库外开发使用下面的引用，路径改成自己的 SDK 构建路径。

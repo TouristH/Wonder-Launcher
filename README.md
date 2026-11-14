@@ -1,12 +1,8 @@
 # 奇想启动器 · Wonder Launcher
 
-面向 Minecraft Java Edition 的桌面式启动器：自由组合功能区和组件，让实例管理、启动与日常工具融入用户自己的工作区。
+**Wonder Launcher 是面向 Minecraft Java Edition 的独立第三方桌面启动器，与 Mojang 和 Microsoft 无关联，也未获其背书。** 自由组合功能区和组件，在自己的工作区管理实例、启动游戏和使用日常工具。
 
 **当前版本：0.7.2 开发预览。** 项目原创代码按 **[GNU GPLv3（仅第 3 版）](LICENSE)** 开源，并适用第 7 条允许的[署名、修改标识与商标附加条款](ADDITIONAL_TERMS.md)。分发修改版须保留相应的源码开放义务；Wonder 品牌使用另见[品牌政策](BRANDING.md)。
-
-> NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.
->
-> 本项目不是 Minecraft 官方产品，未获 Mojang 或 Microsoft 认可，亦与其无关联。Minecraft 相关商标和游戏内容属于各自权利人。
 
 维护者：[TouristH](https://github.com/TouristH) · 项目联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)
 
@@ -37,7 +33,7 @@
 
 ## 认证与隐私
 
-微软正版账户使用 Wonder 内置的公开应用 ID，由用户在微软官方网页主动授权；启动器不收集微软密码。正版启动路径验证游戏权限和角色，认证失败不会自动切换离线身份。当前尚未完成真实账户的线上全链路验收，也未声明通过 Minecraft AppID 审核。离线和自定义 Yggdrasil 模式不能证明微软游戏所有权。
+微软正版账户使用 Wonder 内置的公开应用 ID，由用户在微软官方网页主动授权；启动器不收集微软密码。正版启动路径验证游戏权限和角色，认证失败不会自动切换离线身份。离线和自定义 Yggdrasil 模式不能证明微软游戏所有权。
 
 第三方密码只发送到用户选择的 HTTPS 认证服务且不保存；账户库在 Windows 使用当前用户 DPAPI，在 Linux/macOS 使用共用的 AES-GCM 存储实现，密钥分别交给 Secret Service 和系统钥匙串，不回退为明文。第三方纹理默认阻止内网、回环和其他受限目标，可在单个账户详情中明确允许准确的 HTTPS 来源；仍执行证书验证，纹理不经过系统 HTTP 代理。配置与撤销方式见[账户帮助](Guides/26-account-management.md)。不随源码分发游戏文件、Java、存档或账户数据，详细说明见[隐私政策](PRIVACY.md)。
 

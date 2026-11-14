@@ -20,10 +20,14 @@ internal sealed class AreaView : Border, IDisposable
     private readonly TextBlock _hint;
     private readonly TextBlock _number;
     private readonly WorkspaceCenterOverlay _centerOverlay;
+    private readonly WorkspaceGridOverlay _gridOverlay;
+    private readonly ComponentHost _host;
+    private double _scale = 1;
 
     public AreaView(Area area, int index, ComponentHost host, bool showNumber = false)
     {
         Area = area;
+        _host = host;
         Background = Palette.Surface;
         BorderBrush = Palette.Line;
         BorderThickness = new Thickness(1);
@@ -44,6 +48,9 @@ internal sealed class AreaView : Border, IDisposable
         _canvas = new Canvas { ClipToBounds = true, Margin = new Thickness(Inset, 0, Inset, Inset) };
         Grid.SetRow(_canvas, 1);
         grid.Children.Add(header);
+        _gridOverlay = new WorkspaceGridOverlay { IsVisible = false, IsHitTestVisible = false, Opacity = .55, Margin = new Thickness(Inset, 0, Inset, Inset) };
+        Grid.SetRow(_gridOverlay, 1);
+        grid.Children.Add(_gridOverlay);
         grid.Children.Add(_canvas);
         _centerOverlay = new WorkspaceCenterOverlay(area) { IsVisible = false, IsHitTestVisible = false };
         Grid.SetRow(_centerOverlay, 1);
@@ -52,6 +59,7 @@ internal sealed class AreaView : Border, IDisposable
         foreach (var component in area.Components)
         {
             var view = new ComponentView(component, host);
+            view.SetAreaPresentation(area.SidebarEdge != SidebarEdge.None);
             Components.Add(component.Id, view);
             _canvas.Children.Add(view);
         }
@@ -68,8 +76,13 @@ internal sealed class AreaView : Border, IDisposable
 
     public void ShowCenter(bool visible) => _centerOverlay.IsVisible = visible;
 
+    public void ShowGrid(bool visible) => _gridOverlay.IsVisible = visible;
+
     public void SetScale(double scale)
     {
+        _scale = scale;
+        _gridOverlay.Unit = Wonder.Extensibility.Contracts.ComponentGrid.Unit * scale;
+        _gridOverlay.InvalidateVisual();
         foreach (var component in Components.Values) component.SetScale(scale);
     }
 
@@ -98,13 +111,26 @@ internal sealed class AreaView : Border, IDisposable
 
     public Rect ComponentRect(ComponentView view, Size areaSize)
     {
+
         var position = WorkspaceLayout.FromCenterOffset(areaSize.Width, areaSize.Height,
             view.Footprint.Width, view.Footprint.Height, view.Item.X + Area.CenterX, view.Item.Y + Area.CenterY);
+        if (view.IsSidebarButton)
+        {
+            const double margin = Inset + 1;
+            position.X = Math.Clamp(position.X, margin, Math.Max(margin, areaSize.Width - margin - view.Footprint.Width));
+            position.Y = Math.Clamp(position.Y, HeaderHeight + 1, Math.Max(HeaderHeight + 1, areaSize.Height - Inset - 1 - view.Footprint.Height));
+        }
         return new Rect(position.X, position.Y, view.Footprint.Width, view.Footprint.Height);
     }
 
+    public Size GetComponentFootprint(ComponentItem item) => ComponentView.GetFootprint(
+        _host.GetDefinition(item), _scale,
+        Area.SidebarEdge != SidebarEdge.None && _host.Registry.Find(item.DefinitionId)?.SidebarEntry is not null);
+
     public void PositionComponents(Size size)
     {
+        _gridOverlay.Origin = new Point(size.Width / 2 + Area.CenterX - Inset - 1, size.Height / 2 + Area.CenterY - HeaderHeight - 1);
+        _gridOverlay.InvalidateVisual();
         _centerOverlay.Origin = new Point(size.Width / 2 + Area.CenterX - 1, size.Height / 2 + Area.CenterY - HeaderHeight - 1);
         _centerOverlay.InvalidateVisual();
         foreach (var view in Components.Values)

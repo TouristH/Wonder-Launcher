@@ -21,26 +21,26 @@ internal static class BuiltInComponents
     {
         var registry = new ComponentRegistry();
         var settings = new ComponentDefinition(ComponentIds.Settings, "设置",
-            "调整启动器外观与工作区交互。修改立即生效，所有入口共享同一份设置。", 168, 164)
+            "调整启动器外观与工作区交互。修改立即生效，所有入口共享同一份设置。", 8 * ComponentGrid.Unit, 8 * ComponentGrid.Unit)
         {
             Outline = PolygonGeometry.RegularPolygon(6, 0).Select(point =>
-                new ComponentPoint((4 + point.X * 160) / 168, (4 + point.Y * 156) / 164)).ToArray()
+                new ComponentPoint((4 + point.X * 192) / 200, (4 + point.Y * 192) / 200)).ToArray()
         };
-        registry.Register(settings, state => new SettingsRuntime(state, openSettings), Settings);
+        registry.Register(settings, state => new SettingsRuntime(state, openSettings), Settings, new("open"));
         registry.Register(new(ComponentIds.Notes, "便笺",
-            "随手记录想法与待办，文字自动保存；同一应用的所有快捷方式实时同步。", 300, 220),
-            state => new NotesRuntime(state), Notes);
+            "随手记录想法与待办，文字自动保存；同一应用的所有快捷方式实时同步。", 14 * ComponentGrid.Unit, 10 * ComponentGrid.Unit),
+            state => new NotesRuntime(state), Notes, new());
         registry.Register(new(ComponentIds.LauncherStatus, "启动器状态",
-            "查看版本、运行环境、数据位置和运行时长。组件隐藏时暂停刷新。", 316, 248),
-            _ => new StatusRuntime(dataDirectory), Status);
+            "查看版本、运行环境、数据位置和运行时长。组件隐藏时暂停刷新。", 14 * ComponentGrid.Unit, 11 * ComponentGrid.Unit),
+            _ => new StatusRuntime(dataDirectory), Status, new());
         return registry;
     }
 
     private static ComponentContent Settings(ComponentPresentationContext context)
     {
-        var stack = new StackPanel { Spacing = 7, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        stack.Children.Add(new TextBlock { Text = "⚙", FontSize = 34, Foreground = Palette.Accent, HorizontalAlignment = HorizontalAlignment.Center });
-        stack.Children.Add(new TextBlock { Text = "设置", FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, HorizontalAlignment = HorizontalAlignment.Center });
+        var stack = new StackPanel { Spacing = 5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        stack.Children.Add(new TextBlock { Text = "⚙", FontSize = 28, Foreground = Palette.Accent, HorizontalAlignment = HorizontalAlignment.Center });
+        stack.Children.Add(new TextBlock { Text = "设置", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, HorizontalAlignment = HorizontalAlignment.Center });
         stack.Children.Add(new TextBlock { Text = "外观与交互", FontSize = 10, Foreground = Palette.Muted, HorizontalAlignment = HorizontalAlignment.Center });
         var size = new Size(context.Definition.Width, context.Definition.Height);
         var action = new PolygonButton(new Points(context.Definition.Outline.Select(point =>
@@ -59,7 +59,7 @@ internal static class BuiltInComponents
         {
             Text = context.Get("text"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
             PlaceholderText = "写下想法、待办或下次游玩的计划…", MaxLength = 65_536,
-            Margin = new Thickness(12, 2, 12, 2), FontSize = 13,
+            Margin = new Thickness(12, 2, 12, 2), FontSize = 12,
             Background = Brushes.Transparent, BorderThickness = new Thickness(0),
             Foreground = Palette.Text, IsReadOnly = context.IsPreview
         };
@@ -92,20 +92,21 @@ internal static class BuiltInComponents
     {
         var panel = new Grid { RowDefinitions = new RowDefinitions("38,*") };
         panel.Children.Add(Header("启动器状态", "实时"));
-        var body = new StackPanel { Spacing = 9, Margin = new Thickness(15, 5, 15, 10) };
+        var body = new StackPanel { Spacing = 6, Margin = new Thickness(12, 3, 12, 8) };
         var version = StatusLine();
         var runtime = StatusLine();
         var location = StatusLine();
         var uptime = StatusLine();
-        location.FontSize = 11;
-        location.MaxHeight = 60;
+        location.FontSize = 10;
         body.Children.Add(version);
         body.Children.Add(runtime);
         body.Children.Add(new TextBlock { Text = "数据位置", FontSize = 10, Foreground = Palette.Muted });
         body.Children.Add(location);
         body.Children.Add(uptime);
-        Grid.SetRow(body, 1);
-        panel.Children.Add(body);
+        var scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 1);
+        panel.Children.Add(scroll);
         void Refresh()
         {
             version.Text = "Wonder Launcher  " + context.Get("version", "—");
@@ -120,13 +121,13 @@ internal static class BuiltInComponents
 
     private static TextBlock StatusLine() => new()
     {
-        FontSize = 12, Foreground = Palette.Text, TextWrapping = TextWrapping.Wrap
+        FontSize = 11, Foreground = Palette.Text, TextWrapping = TextWrapping.Wrap
     };
 
     private static Control Header(string title, string hint)
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(15, 10, 15, 0) };
-        header.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
+        header.Children.Add(new TextBlock { Text = title, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
         var label = new TextBlock { Text = hint, FontSize = 10, Foreground = Palette.Muted, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(label, 1);
         header.Children.Add(label);

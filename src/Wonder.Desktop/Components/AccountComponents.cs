@@ -19,23 +19,23 @@ internal static class AccountComponents
 {
     public static void Register(ComponentRegistry registry, AccountService service, Action openManager, InstanceService? instances = null,
         Func<string, CancellationToken, Task<byte[]>>? textureDownload = null) =>
-        registry.Register(new(ComponentIds.Accounts, "账户管理", "添加、删除和选择微软正版、第三方与离线账户。", 320, 156),
-            _ => new Runtime(service, openManager, instances), context => Present(context, service, instances, textureDownload));
+        registry.Register(new(ComponentIds.Accounts, "账户管理", "添加、删除和选择微软正版、第三方与离线账户。", 14 * ComponentGrid.Unit, 7 * ComponentGrid.Unit),
+            _ => new Runtime(service, openManager, instances), context => Present(context, service, instances, textureDownload), new("manage"));
 
     private static ComponentContent Present(ComponentPresentationContext context, AccountService service, InstanceService? instances,
         Func<string, CancellationToken, Task<byte[]>>? textureDownload)
     {
-        var layout = new Grid { RowDefinitions = new RowDefinitions("30,*,Auto") };
-        layout.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent, Margin = new Thickness(14, 7, 14, 0) });
-        var body = new StackPanel { Spacing = 4, Margin = new Thickness(14, 1, 14, 4), VerticalAlignment = VerticalAlignment.Center };
-        var name = new TextBlock { FontSize = 16, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Palette.Text };
-        var detail = new TextBlock { FontSize = 11, Foreground = Palette.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
-        var choices = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 32, PlaceholderText = "选择游戏账户" };
+        var layout = new Grid { RowDefinitions = new RowDefinitions("26,*,Auto") };
+        layout.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent, Margin = new Thickness(12, 6, 12, 0) });
+        var body = new StackPanel { Spacing = 3, Margin = new Thickness(12, 1, 12, 3), VerticalAlignment = VerticalAlignment.Center };
+        var name = new TextBlock { FontSize = 14, FontWeight = FontWeight.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Palette.Text };
+        var detail = new TextBlock { FontSize = 10, Foreground = Palette.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
+        var choices = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 28, FontSize = 11, Padding = new Thickness(8, 4), PlaceholderText = "选择游戏账户" };
         AutomationProperties.SetName(choices, "切换游戏账户");
         var refreshing = false; Choice[] current = [];
         choices.SelectionChanged += (_, _) => { if (!refreshing && choices.SelectedIndex >= 0 && choices.SelectedIndex < current.Length) context.Invoke("select", current[choices.SelectedIndex].Id); };
-        const double avatarSize = 38;
-        var identity = new Grid { ColumnDefinitions = new ColumnDefinitions("38,9,*") };
+        const double avatarSize = 32;
+        var identity = new Grid { ColumnDefinitions = new ColumnDefinitions("32,8,*") };
         AccountSkinPreview avatar = new(textureDownload) { Width = avatarSize, Height = avatarSize, HeadOnly = true };
         identity.Children.Add(avatar); var details = new StackPanel { VerticalAlignment = VerticalAlignment.Center }; details.Children.Add(name); details.Children.Add(detail);
         Grid.SetColumn(details, 2); identity.Children.Add(details); body.Children.Add(identity);
@@ -43,7 +43,7 @@ internal static class AccountComponents
         Grid.SetRow(body, 1); layout.Children.Add(body); string? skinKey = null;
         var button = new Button
         {
-            Content = "管理账户", Margin = new Thickness(14, 0, 14, 9), MinWidth = 182, MinHeight = 32,
+            Content = "管理账户", Margin = new Thickness(12, 0, 12, 7), MinWidth = 160, MinHeight = 28, FontSize = 11, Padding = new Thickness(10, 4),
             HorizontalAlignment = HorizontalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center
         };
         AutomationProperties.SetName(button, "打开账户管理"); button.Click += (_, _) => context.Invoke("manage"); Grid.SetRow(button, 2); layout.Children.Add(button);

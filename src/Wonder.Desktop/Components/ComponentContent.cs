@@ -43,7 +43,7 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         Action refresh, Func<bool>? enabled = null, Func<string>? description = null)
     {
         body.IsHitTestVisible = false;
-        var surface = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(22, 18), ClipToBounds = true, Child = body };
+        var surface = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 12), ClipToBounds = true, Child = body };
         var button = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,

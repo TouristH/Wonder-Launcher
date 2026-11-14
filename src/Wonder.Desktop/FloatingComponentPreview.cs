@@ -23,6 +23,7 @@ internal sealed class FloatingComponentPreview : IDisposable
     private const uint MouseActivate = 0x0021;
 
     private readonly Window _owner;
+    private readonly WorkspaceView _workspace;
     private readonly Window? _window;
     private readonly Popup? _popup;
     private TopLevel? _popupRoot;
@@ -36,6 +37,7 @@ internal sealed class FloatingComponentPreview : IDisposable
     private FloatingComponentPreview(Window owner, WorkspaceView workspace, ComponentItem item, Vector grabOffset, X11FloatingPreview? x11)
     {
         _owner = owner;
+        _workspace = workspace;
         _x11 = x11;
         _preview = workspace.CreateLibraryPreview(item);
         var size = _preview.Footprint;
@@ -154,7 +156,13 @@ internal sealed class FloatingComponentPreview : IDisposable
     private void MoveToCursor()
     {
         if (!_disposed && TryGetCursor(_x11, out var cursor))
+        {
+            _workspace.ConfigureComponentPreview(_preview, cursor);
+            var size = _preview.Footprint;
+            if (_window != null) { _window.Width = size.Width; _window.Height = size.Height; }
+            if (_popup != null) { _popup.Width = size.Width; _popup.Height = size.Height; }
             PlaceAt(cursor, _window?.RenderScaling ?? _popupRoot?.RenderScaling ?? _owner.RenderScaling);
+        }
     }
 
     internal bool IsX11WindowAt(Window window, PixelPoint point) => !_disposed && _x11?.Contains(window, point) == true;

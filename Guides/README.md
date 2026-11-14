@@ -32,6 +32,6 @@
 - [中文许可说明](../LICENSE.zh-CN.md)、[GPL 附加条款](../ADDITIONAL_TERMS.md)与[品牌政策](../BRANDING.md)
 - [第三方来源与原始许可](../THIRD-PARTY-NOTICES.md)
 
-微软登录的真实在线可用性仍需验证；本项目未声明通过 Minecraft AppID 审核，离线与第三方身份不能证明微软游戏所有权。
+离线与第三方身份不能证明微软游戏所有权。
 
 - [下载组件与下载源](33-download-center.md)：游戏、加载器、Modrinth 资源、任务管理与恢复。

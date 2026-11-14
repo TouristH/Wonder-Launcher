@@ -11,12 +11,13 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Wonder.Workspace;
 using Wonder.Desktop.Components;
+using Wonder.Extensibility.Contracts;
 
 namespace Wonder.Desktop;
 
 public sealed partial class WorkspaceView : Panel
 {
-    public const int HoldMilliseconds = 450;
+    public const int HoldMilliseconds = LauncherSettings.DefaultHoldDelayMilliseconds;
     public WorkspaceDocument Document { get; private set; }
     public LayoutSnapshot Snapshot => MeasureWorkspace(Bounds.Size);
     public event EventHandler? Changed;
@@ -57,6 +58,7 @@ public sealed partial class WorkspaceView : Panel
         foreach (var area in _areas.Values)
         {
             area.ShowNumber(settings.ShowAreaNumbers);
+            area.ShowGrid(false);
             area.SetScale(settings.ComponentScalePercent / 100d);
         }
         _holdTimer.Interval = TimeSpan.FromMilliseconds(settings.HoldDelayMilliseconds);
@@ -188,7 +190,10 @@ public sealed partial class WorkspaceView : Panel
         var items = new List<Control> { Menu("组件库…", () => ComponentLibraryRequested?.Invoke()), Menu("设置…", OpenSettings), new Separator() };
         if (componentId != null && area != null)
         {
-            items.Add(Menu("移除这个组件", () => { area.Components.RemoveAll(c => c.Id == componentId); CommitStructure(); }));
+            items.Add(Menu("移除这个组件", () =>
+            {
+                if (area.Components.FirstOrDefault(c => c.Id == componentId) is { } item) RemoveShortcut(item);
+            }));
             items.Add(new Separator());
         }
         if (area != null)
@@ -201,7 +206,11 @@ public sealed partial class WorkspaceView : Panel
             items.Add(new Separator());
             items.Add(Menu("左右拆分功能区", () => AddArea(area.Id, SplitAxis.Horizontal)));
             items.Add(Menu("上下拆分功能区", () => AddArea(area.Id, SplitAxis.Vertical)));
-            items.Add(Menu("移除此功能区", () => { Document.RemoveArea(area.Id); CommitStructure(); }));
+            items.Add(Menu("移除此功能区", () =>
+            {
+                Document.RemoveArea(area.Id);
+                CommitStructure();
+            }));
             items.Add(new Separator());
         }
         else
@@ -312,6 +321,7 @@ public sealed partial class WorkspaceView : Panel
         _libraryPointer = point;
         if (_libraryPreview is { } preview)
         {
+            ConfigureComponentPreview(preview, target);
             preview.Opacity = allowed ? .85 : .55;
             _libraryPreviewBounds = LibraryPlacement(data.GrabOffset, point, preview.Footprint, target);
         }
@@ -356,7 +366,7 @@ public sealed partial class WorkspaceView : Panel
     {
         var area = target == null ? new LayoutRect(0, 0, Bounds.Width, Bounds.Height) : GetAreaBounds(target.Id);
         var center = point + grabOffset * ComponentScale;
-        var offset = ClampOffset(area, size, center.X - area.X - area.Width / 2, center.Y - area.Y - area.Height / 2);
+        var offset = PlacementOffset(target, area, size, center.X - area.X - area.Width / 2, center.Y - area.Y - area.Height / 2);
         return new Rect(area.X + area.Width / 2 + offset.X - size.Width / 2, area.Y + area.Height / 2 + offset.Y - size.Height / 2, size.Width, size.Height);
     }
 
@@ -378,8 +388,7 @@ public sealed partial class WorkspaceView : Panel
         CancelGesture();
         var area = target ?? Document.AddArea();
         var item = data.Source is null ? Document.CreateShortcut(data.Item) : data.Item;
-        var definition = Components.GetDefinition(item);
-        var size = new Size(definition.Width, definition.Height) * ComponentScale;
+        var size = ComponentFootprint(item, area);
         var placed = LibraryPlacement(data.GrabOffset, point, size, area);
         var bounds = GetAreaBounds(area.Id);
         item.X = placed.Center.X - bounds.X - bounds.Width / 2 - area.CenterX;
@@ -410,7 +419,7 @@ public sealed partial class WorkspaceView : Panel
         var bounds = GetAreaBounds(area.Id);
         foreach (var view in _areas[area.Id].Components.Values)
         {
-            var position = ClampOffset(bounds, view.Footprint, view.Item.X + area.CenterX, view.Item.Y + area.CenterY);
+            var position = PlacementOffset(area, bounds, view.Footprint, view.Item.X + area.CenterX, view.Item.Y + area.CenterY);
             view.Item.X = position.X - area.CenterX;
             view.Item.Y = position.Y - area.CenterY;
         }
@@ -449,6 +458,7 @@ public sealed partial class WorkspaceView : Panel
             var view = new AreaView(area, index++, Components, _settings.ShowAreaNumbers);
             view.SetScale(_settings.ComponentScalePercent / 100d);
             view.ShowCenter(area.Id == _centerAreaId);
+            view.ShowGrid(false);
             _areas.Add(area.Id, view);
             Children.Add(view);
         }
@@ -695,7 +705,10 @@ public sealed partial class WorkspaceView : Panel
         // window decides the outcome, including a return to a different workspace area.
         EndGesture();
         using var hoverSuppression = HoverTipBehavior.SuppressForNativeDrag();
-        try { await DragDrop.DoDragDropAsync(gesture.Trigger, data, DragDropEffects.Move); }
+        try
+        {
+            await DragDrop.DoDragDropAsync(gesture.Trigger, data, DragDropEffects.Move);
+        }
         finally { ClearLibraryDrop(); }
     }
 
@@ -712,6 +725,7 @@ public sealed partial class WorkspaceView : Panel
         {
             if (ComponentLibraryAt(gesture.Last, checkX11: true, releasing: true) != null)
             {
+                EndGesture();
                 RemoveShortcut(dragged);
                 return;
             }
@@ -747,7 +761,7 @@ public sealed partial class WorkspaceView : Panel
             }
             var bounds = GetAreaBounds(target.Id);
             var preview = PreviewBounds(gesture);
-            var position = ClampOffset(bounds, preview.Size,
+            var position = PlacementOffset(target, bounds, preview.Size,
                 preview.Center.X - bounds.X - bounds.Width / 2, preview.Center.Y - bounds.Y - bounds.Height / 2);
             gesture.Component.X = position.X - target.CenterX;
             gesture.Component.Y = position.Y - target.CenterY;
@@ -881,6 +895,29 @@ public sealed partial class WorkspaceView : Panel
             originX + visible.X, originY + visible.Y);
     }
 
+    private (double X, double Y) PlacementOffset(Area? target, LayoutRect area, Size size, double x, double y)
+    {
+        var clamped = ClampOffset(area, size, x, y);
+        if (!_settings.SnapComponentsToGrid) return clamped;
+        var unit = ComponentGrid.Unit * ComponentScale;
+        var left = area.Width / 2 + clamped.X - size.Width / 2;
+        var top = area.Height / 2 + clamped.Y - size.Height / 2;
+        left = SnapWithin(left, AreaView.Inset + 1, Math.Max(AreaView.Inset + 1, area.Width - AreaView.Inset - 1 - size.Width),
+            area.Width / 2 + (target?.CenterX ?? 0), unit);
+        top = SnapWithin(top, AreaView.HeaderHeight + 1, Math.Max(AreaView.HeaderHeight + 1, area.Height - AreaView.Inset - 1 - size.Height),
+            area.Height / 2 + (target?.CenterY ?? 0), unit);
+        return WorkspaceLayout.ToCenterOffset(area.Width, area.Height, size.Width, size.Height, left, top);
+    }
+
+    private static double SnapWithin(double value, double minimum, double maximum, double origin, double unit)
+    {
+        var first = Math.Ceiling((minimum - origin) / unit);
+        var last = Math.Floor((maximum - origin) / unit);
+        // Small regions may contain no complete grid position; retaining visibility takes priority.
+        if (first > last) return Math.Clamp(value, minimum, maximum);
+        return origin + Math.Clamp(Math.Round((value - origin) / unit, MidpointRounding.AwayFromZero), first, last) * unit;
+    }
+
     private void UpgradePreviewCoordinates(LayoutSnapshot snapshot, Size viewport)
     {
         if (Document.Version != 1 || viewport.Width <= 0 || viewport.Height <= 0) return;
@@ -918,10 +955,25 @@ public sealed partial class WorkspaceView : Panel
         return (null, null);
     }
     private static Rect ToRect(LayoutRect rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
-    private static Rect PreviewBounds(Gesture gesture) => new(
-        gesture.ComponentBounds.X + gesture.Last.X - gesture.Start.X,
-        gesture.ComponentBounds.Y + gesture.Last.Y - gesture.Start.Y,
-        gesture.ComponentBounds.Width, gesture.ComponentBounds.Height);
+    private Rect PreviewBounds(Gesture gesture)
+    {
+        var targetId = AreaAt(gesture.Last);
+        var target = targetId == null ? null : Document.FindArea(targetId);
+        var size = gesture.Component == null || target == null ? gesture.ComponentBounds.Size :
+            ComponentFootprint(gesture.Component, target);
+        if (_dragPreview != null) ConfigureComponentPreview(_dragPreview, target);
+        var center = gesture.ComponentBounds.Center + gesture.Last - gesture.Start;
+        var preview = new Rect(
+            center.X - size.Width / 2, center.Y - size.Height / 2, size.Width, size.Height);
+        if (gesture.Component is null || target is null) return preview;
+        var sidebarButton = target.SidebarEdge != SidebarEdge.None && Components.Registry.Find(gesture.Component.DefinitionId)?.SidebarEntry is not null;
+        if (!_settings.SnapComponentsToGrid && !sidebarButton) return preview;
+        var area = GetAreaBounds(target.Id);
+        var position = PlacementOffset(target, area, preview.Size,
+            preview.Center.X - area.X - area.Width / 2, preview.Center.Y - area.Y - area.Height / 2);
+        return new Rect(area.X + area.Width / 2 + position.X - preview.Width / 2,
+            area.Y + area.Height / 2 + position.Y - preview.Height / 2, preview.Width, preview.Height);
+    }
 
     private static Rect NodeBounds(LayoutNode node, LayoutSnapshot snapshot)
     {

@@ -27,6 +27,7 @@ internal sealed class SettingsWindow : Window
     private readonly ComboBox? _resourceProvider;
     private readonly Slider _downloadFiles, _downloadConnections, _downloadRetries;
     private readonly ToggleSwitch _showAreaNumbers;
+    private readonly ToggleSwitch _snapComponentsToGrid;
     private readonly Slider _padding, _componentScale, _hold, _extent, _closeDelay;
     private readonly TextBlock _status, _error, _resetDescription;
     private readonly Border _errorBanner, _confirmation;
@@ -118,11 +119,18 @@ internal sealed class SettingsWindow : Window
         AutomationProperties.SetName(_showAreaNumbers, "显示功能区序号");
         _showAreaNumbers.IsCheckedChanged += (_, _) => Change(_settings with { ShowAreaNumbers = _showAreaNumbers.IsChecked == true });
         workspace.Children.Add(ChoiceRow("显示功能区序号", _showAreaNumbers));
+        _snapComponentsToGrid = new ToggleSwitch { OnContent = "开启", OffContent = "关闭" };
+        AutomationProperties.SetName(_snapComponentsToGrid, "组件网格对齐");
+        _snapComponentsToGrid.IsCheckedChanged += (_, _) => Change(_settings with { SnapComponentsToGrid = _snapComponentsToGrid.IsChecked == true });
+        workspace.Children.Add(ChoiceRow("组件网格对齐", _snapComponentsToGrid));
+        workspace.Children.Add(Hint("以功能区坐标原点划分 20 DIP 方格，随组件整体大小缩放；拖放时对齐组件边缘，现有位置保持不变。"));
         _componentScale = Range(workspace, "组件整体大小", "统一缩放桌面与侧边栏中的组件内容；100% 为原始大小", 50, 200, 10, "%", value => _settings with { ComponentScalePercent = value });
         _padding = Range(workspace, "工作区留白", "功能区与窗口边缘之间的距离", 0, 40, 2, "DIP", value => _settings with { WorkspacePadding = value });
         _personalizationPage.Children.Add(Card(workspace));
         var interaction = Section("工作区交互", "调整组件和功能区的移动手感。");
-        _hold = Range(interaction, "长按拖动时间", "短按打开组件，长按后移动组件或功能区", 250, 1000, 50, "ms", value => _settings with { HoldDelayMilliseconds = value });
+        _hold = Range(interaction, "长按拖动时间", "短按打开组件，长按后移动组件或功能区",
+            LauncherSettings.MinimumHoldDelayMilliseconds, LauncherSettings.MaximumHoldDelayMilliseconds, 10, "ms",
+            value => _settings with { HoldDelayMilliseconds = value });
         _personalizationPage.Children.Add(Card(interaction));
 
         var sidebar = Section("侧边栏", "悬停展开，离开后自动收起。");
@@ -211,6 +219,7 @@ internal sealed class SettingsWindow : Window
             _theme.SelectedIndex = (int)settings.Theme;
             _accent.SelectedIndex = (int)settings.Accent;
             _showAreaNumbers.IsChecked = settings.ShowAreaNumbers;
+            _snapComponentsToGrid.IsChecked = settings.SnapComponentsToGrid;
             _padding.Value = settings.WorkspacePadding;
             _componentScale.Value = settings.ComponentScalePercent;
             _hold.Value = settings.HoldDelayMilliseconds;

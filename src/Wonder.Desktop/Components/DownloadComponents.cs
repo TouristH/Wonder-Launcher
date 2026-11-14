@@ -16,17 +16,17 @@ namespace Wonder.Desktop.Components;
 internal static class DownloadComponents
 {
     public static void Register(ComponentRegistry registry, DownloadService service, Action openCenter) =>
-        registry.Register(new(ComponentIds.Downloads, "下载", "安装游戏、加载器、模组、整合包、资源包与光影，管理后台下载任务。", 300, 144),
-            _ => new Runtime(service, openCenter), Present);
+        registry.Register(new(ComponentIds.Downloads, "下载", "安装游戏、加载器、模组、整合包、资源包与光影，管理后台下载任务。", 14 * ComponentGrid.Unit, 7 * ComponentGrid.Unit),
+            _ => new Runtime(service, openCenter), Present, new("open"));
 
     private static ComponentContent Present(ComponentPresentationContext context)
     {
         var body = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        header.Children.Add(new TextBlock { Text = "↓  下载", FontSize = 15, LineHeight = 19, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
+        header.Children.Add(new TextBlock { Text = "↓  下载", FontSize = 13, LineHeight = 17, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
         var source = Label(); source.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(source, 1); header.Children.Add(source);
-        var title = new TextBlock { FontSize = 15, LineHeight = 19, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
+        var title = new TextBlock { FontSize = 13, LineHeight = 17, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
         var status = Label(); status.TextWrapping = TextWrapping.Wrap; status.MaxLines = 2;
         var metrics = Label();
         var progress = new ProgressBar { Minimum = 0, Maximum = 100, Height = 6 };
@@ -47,7 +47,7 @@ internal static class DownloadComponents
             string.Join("\n", new[] { title.Text, status.Text, metrics.Text, source.Text }.Where(text => !string.IsNullOrEmpty(text))));
     }
 
-    private static TextBlock Label() => new() { FontSize = 11, LineHeight = 15, Foreground = Palette.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
+    private static TextBlock Label() => new() { FontSize = 10, LineHeight = 14, Foreground = Palette.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
 
     private sealed class Runtime(DownloadService service, Action openCenter) : IComponentRuntime
     {

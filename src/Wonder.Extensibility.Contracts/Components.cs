@@ -6,6 +6,12 @@ namespace Wonder.Extensibility.Contracts;
 /// <summary>Coordinates are normalized to the component's natural width and height.</summary>
 public readonly record struct ComponentPoint(double X, double Y);
 
+// Natural component dimensions and workspace snapping use this DIP unit.
+public static class ComponentGrid
+{
+    public const double Unit = 20;
+}
+
 /// <summary>A stable definition, independent of the desktop renderer and application state.</summary>
 public sealed record ComponentDefinition(string Id, string Title, string Description, double Width, double Height)
 {

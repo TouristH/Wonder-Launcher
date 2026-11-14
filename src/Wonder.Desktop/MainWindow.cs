@@ -41,6 +41,8 @@ public sealed partial class MainWindow : Window
         MinHeight = 520;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         WindowDecorations = WindowDecorations.BorderOnly;
+        // Let the custom header reach the top edge while keeping Win32 resize hit testing.
+        ExtendClientAreaToDecorationsHint = OperatingSystem.IsWindows();
         Background = Palette.Background;
         Foreground = Palette.Text;
         FontFamily = new FontFamily(OperatingSystem.IsLinux()
@@ -236,6 +238,7 @@ public sealed partial class MainWindow : Window
             "组件：短按按钮操作，长按后可在本区或跨功能区移动。\n" +
             "定位：右键“拖动工作区中心”，拖动画布平移原点与组件；十字轴显示原点，离屏箭头提示方向。Esc 退出，右键可重置中心或整理组件。\n" +
             "组件大小：个性化设置统一缩放桌面组件（50%–200%），组件中心位置不变。\n" +
+            "网格：在个性化设置中开启组件网格对齐，以功能区原点划分 20 DIP 方格，拖放时对齐边缘。\n" +
             "取消：按 Esc 或切换窗口；移动组件/换区时在工作区外松开也会取消。\n\n" +
             "提示：鼠标按住或跨窗口拖放时，悬浮提示暂停显示；操作提示继续保留。\n\n" +
             "组件库：独立窗口，可直接操作应用；拖到功能区创建快捷方式，所有入口共享状态，移除快捷方式不会删除应用。\n" +

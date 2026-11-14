@@ -33,6 +33,9 @@ public sealed class LauncherSettingsStore
                 throw new InvalidDataException("设置文件超过 64 KiB 限制，原文件已保留。");
             var settings = JsonSerializer.Deserialize<LauncherSettings>(stream, JsonOptions)
                 ?? throw new InvalidDataException("设置文件内容为空，原文件已保留。");
+            // Earlier Wonder builds allowed up to 1000 ms. Keep the preference within the new range on load.
+            if (settings.HoldDelayMilliseconds is > LauncherSettings.MaximumHoldDelayMilliseconds and <= 1000)
+                settings = settings with { HoldDelayMilliseconds = LauncherSettings.MaximumHoldDelayMilliseconds };
             settings.Validate();
             return settings;
         }

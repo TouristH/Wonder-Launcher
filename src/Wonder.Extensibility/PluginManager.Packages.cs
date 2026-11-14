@@ -13,7 +13,7 @@ public sealed partial class PluginManager
     private const long ZipLimit = 64L * 1024 * 1024;
     private const long ExtractedLimit = 128L * 1024 * 1024;
     private const int EntryLimit = 2048;
-    private const int ApiVersion = 1;
+    private const int ApiVersion = 2;
 
     public async Task<IReadOnlyList<PluginCatalogEntry>> GetCatalogAsync(string url, CancellationToken cancellationToken = default)
     {
@@ -85,7 +85,8 @@ public sealed partial class PluginManager
             if (catalog is not null && (manifest.Id != catalog.Id || manifest.Name != catalog.Name ||
                 manifest.Author != catalog.Author || manifest.Description != catalog.Description ||
                 manifest.ApiVersion != catalog.ApiVersion || manifest.Version != catalog.Version ||
-                !PermissionsEqual(manifest.Permissions, catalog.Permissions)))
+                !PermissionsEqual(manifest.Permissions, catalog.Permissions) ||
+                !PluginConfiguration.Equivalent(manifest.ConfigurationSchema, catalog.ConfigurationSchema)))
                 throw new InvalidDataException("插件清单与目录条目不匹配。");
             cancellationToken.ThrowIfCancellationRequested();
             Change(() => InstallPackage(manifest, package, backup, ref keepBackup));
@@ -301,11 +302,12 @@ public sealed partial class PluginManager
         if (!IsId(manifest.Id) || !HasText(manifest.Name, 256) || !HasText(manifest.Description, 4096) ||
             !HasText(manifest.Author, 256) || !HasText(manifest.Version, 32) || !IsVersion(manifest.Version))
             throw new InvalidDataException("插件元数据无效。");
-        if (manifest.ApiVersion != ApiVersion)
+        if (manifest.ApiVersion is < 1 or > ApiVersion)
             throw new InvalidDataException("插件 API 版本不受支持：" + manifest.ApiVersion);
         if (manifest.Permissions is { } permissions && (permissions.Length > 64 || permissions.Any(permission =>
             permission is null || !HasText(permission.Name, 128) || !HasText(permission.Description, 2048))))
             throw new InvalidDataException("插件作者提供的访问说明无效。");
+        if (manifest.ConfigurationSchema is { } schema) PluginConfiguration.ValidateSchema(schema);
     }
 
     private static bool PermissionsEqual(PluginPermission[]? left, PluginPermission[]? right) =>

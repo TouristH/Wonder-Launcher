@@ -30,22 +30,22 @@ internal static class GameComponents
             statusWindow.Closed += (_, _) => statusWindow = null;
             if (owner is null) statusWindow.Show(); else statusWindow.Show(owner);
         }
-        registry.Register(new(ComponentIds.Instances, "实例管理", "切换当前游戏目录内的实例，管理目录与启动设置。", 320, 128),
-            _ => new Runtime(service, openManager, accounts), context => PresentInstances(context, service));
-        registry.Register(new(ComponentIds.Launch, "启动游戏", "点击整个组件启动当前选中的实例；长按可移动，启动详情见启动日志组件。", 300, 160),
-            _ => new Runtime(service, openManager, accounts), context => PresentLaunch(context, accounts is not null));
-        registry.Register(new(ComponentIds.LaunchLog, "启动日志", "查看实时启动状态和最近 200 行日志，取消启动准备或打开完整状态窗口。", 480, 300),
-            _ => new Runtime(service, openManager, accounts, includeLogs: true), context => PresentLog(context, OpenStatus));
+        registry.Register(new(ComponentIds.Instances, "实例管理", "切换当前游戏目录内的实例，管理目录与启动设置。", 14 * ComponentGrid.Unit, 7 * ComponentGrid.Unit),
+            _ => new Runtime(service, openManager, accounts), context => PresentInstances(context, service), new("manage"));
+        registry.Register(new(ComponentIds.Launch, "启动游戏", "点击整个组件启动当前选中的实例；长按可移动，启动详情见启动日志组件。", 14 * ComponentGrid.Unit, 7 * ComponentGrid.Unit),
+            _ => new Runtime(service, openManager, accounts), context => PresentLaunch(context, accounts is not null), new("manage", Title: "游戏实例"));
+        registry.Register(new(ComponentIds.LaunchLog, "启动日志", "查看实时启动状态和最近 200 行日志，取消启动准备或打开完整状态窗口。", 20 * ComponentGrid.Unit, 13 * ComponentGrid.Unit),
+            _ => new Runtime(service, openManager, accounts, includeLogs: true), context => PresentLog(context, OpenStatus), new(OpenPage: OpenStatus));
     }
 
     private static ComponentContent PresentLaunch(ComponentPresentationContext context, bool accountAware)
     {
-        var body = new StackPanel { Spacing = 10, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        var action = new TextBlock { FontSize = 15, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent };
-        var name = new TextBlock { FontSize = 22, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
+        var body = new StackPanel { Spacing = 7, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        var action = new TextBlock { FontSize = 13, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent };
+        var name = new TextBlock { FontSize = 19, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextTrimming = TextTrimming.CharacterEllipsis };
         var detail = Label(); detail.MaxLines = 2;
-        var icon = new InstanceIconView(38);
-        var launchHeading = new Grid { ColumnDefinitions = new ColumnDefinitions("38,10,*") };
+        var icon = new InstanceIconView(30);
+        var launchHeading = new Grid { ColumnDefinitions = new ColumnDefinitions("30,8,*") };
         launchHeading.Children.Add(icon); Grid.SetColumn(action, 2); action.VerticalAlignment = VerticalAlignment.Center; launchHeading.Children.Add(action);
         body.Children.Add(launchHeading); body.Children.Add(name); body.Children.Add(detail);
         void Refresh()
@@ -63,7 +63,7 @@ internal static class GameComponents
     private static ComponentContent PresentLog(ComponentPresentationContext context, Action<Window?> openStatus)
     {
         var layout = new Grid { RowDefinitions = new RowDefinitions("38,Auto,*,Auto") };
-        layout.Children.Add(new TextBlock { Text = "启动日志", FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent, Margin = new Thickness(15, 10, 15, 0) });
+        layout.Children.Add(new TextBlock { Text = "启动日志", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent, Margin = new Thickness(15, 10, 15, 0) });
         var status = Label(); status.Margin = new Thickness(15, 0, 15, 8); status.MaxLines = 3;
         AutomationProperties.SetName(status, "当前启动状态"); Grid.SetRow(status, 1); layout.Children.Add(status);
         var logs = new TextBox
@@ -76,9 +76,9 @@ internal static class GameComponents
         ScrollViewer.SetVerticalScrollBarVisibility(logs, ScrollBarVisibility.Auto);
         Grid.SetRow(logs, 2); layout.Children.Add(logs);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(15, 0, 15, 14) };
-        var cancel = new Button { Content = "取消准备", MinHeight = 32 };
+        var cancel = new Button { Content = "取消准备", MinHeight = 28, FontSize = 11, Padding = new Thickness(10, 4) };
         AutomationProperties.SetName(cancel, "取消启动准备"); cancel.Click += (_, _) => context.Invoke("cancel"); actions.Children.Add(cancel);
-        var expand = new Button { Content = "查看启动状态", MinHeight = 32, IsEnabled = !context.IsPreview };
+        var expand = new Button { Content = "查看启动状态", MinHeight = 28, FontSize = 11, Padding = new Thickness(10, 4), IsEnabled = !context.IsPreview };
         AutomationProperties.SetName(expand, "查看启动状态");
         expand.Click += (_, _) => { if (!context.IsPreview) openStatus(TopLevel.GetTopLevel(layout) as Window); }; actions.Children.Add(expand);
         Grid.SetRow(actions, 3); layout.Children.Add(actions);
@@ -99,7 +99,7 @@ internal static class GameComponents
     {
         var layout = new Grid { RowDefinitions = new RowDefinitions("30,*,Auto") };
         var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(14, 7, 14, 0) };
-        heading.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
+        heading.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
         var count = Label();
         Grid.SetColumn(count, 1); heading.Children.Add(count); layout.Children.Add(heading);
         var choices = new ComboBox
@@ -117,7 +117,7 @@ internal static class GameComponents
         Grid.SetRow(choices, 1); layout.Children.Add(choices);
         var primary = new Button
         {
-            Content = "管理实例", Margin = new Thickness(14, 0, 14, 9), MinWidth = 182, MinHeight = 32,
+            Content = "管理实例", Margin = new Thickness(12, 0, 12, 7), MinWidth = 160, MinHeight = 28, FontSize = 11, Padding = new Thickness(10, 4),
             HorizontalAlignment = HorizontalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center, IsEnabled = !context.IsPreview
         };
         AutomationProperties.SetName(primary, "打开实例管理");

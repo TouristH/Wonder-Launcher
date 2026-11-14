@@ -13,14 +13,14 @@ namespace Wonder.Desktop.Components;
 internal static class PluginComponents
 {
     public static void Register(ComponentRegistry registry, PluginManager manager, Action openManager) =>
-        registry.Register(new(ComponentIds.Plugins, "插件", "管理本地插件、修改配置，并从在线仓库下载安装。", 300, 144),
-            _ => new Runtime(manager, openManager), Present);
+        registry.Register(new(ComponentIds.Plugins, "插件", "管理本地插件、修改配置，并从在线仓库下载安装。", 14 * ComponentGrid.Unit, 7 * ComponentGrid.Unit),
+            _ => new Runtime(manager, openManager), Present, new("open"));
 
     private static ComponentContent Present(ComponentPresentationContext context)
     {
-        var body = new StackPanel { Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        body.Children.Add(new TextBlock { Text = "插件", FontSize = 16, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
-        var count = new TextBlock { Foreground = Palette.Text, FontSize = 13 };
+        var body = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        body.Children.Add(new TextBlock { Text = "插件", FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
+        var count = new TextBlock { Foreground = Palette.Text, FontSize = 12 };
         var status = new TextBlock { Foreground = Palette.Muted, FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxLines = 2 };
         body.Children.Add(count);
         body.Children.Add(status);

@@ -69,6 +69,7 @@ public sealed partial class WorkspaceView
         Rebuild();
         StartSidebarAnimation(from, opacity);
         NotifyChanged();
+        ObserveInteraction("sidebar.mode", area.Title, edge.ToString());
     }
 
     private void InitializeSidebars()
@@ -290,6 +291,7 @@ public sealed partial class WorkspaceView
             var delta = horizontal ? gesture.Last.X - gesture.Start.X : gesture.Last.Y - gesture.Start.Y;
             if (Math.Abs(delta) < .001)
             {
+                ObserveGesture(gesture, "end");
                 EndGesture();
                 return true;
             }
@@ -298,6 +300,7 @@ public sealed partial class WorkspaceView
             var extent = horizontal ? bounds.Width : bounds.Height;
             if (extent <= gesture.InitialSidebarExtent + 8)
             {
+                ObserveGesture(gesture, "end");
                 EndGesture();
                 return true;
             }
@@ -320,6 +323,9 @@ public sealed partial class WorkspaceView
             _expandedSidebarId = null;
         }
         else return false;
+        ObserveGesture(gesture, "end");
+        var changedArea = gesture.SidebarArea ?? gesture.CollapseArea!;
+        ObserveInteraction("sidebar.mode", changedArea.Title, changedArea.SidebarEdge.ToString());
         EndGesture();
         Rebuild();
         StartSidebarAnimation(from, sourceOpacity);

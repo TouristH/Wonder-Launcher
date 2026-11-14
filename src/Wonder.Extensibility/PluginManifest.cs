@@ -14,6 +14,7 @@ public record PluginManifest
     public string EntryAssembly { get; init; } = "";
     public string EntryType { get; init; } = "";
     public PluginPermission[]? Permissions { get; init; }
+    public PluginConfigurationSchema? ConfigurationSchema { get; init; }
 }
 
 public sealed record PluginPermission

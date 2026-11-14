@@ -16,7 +16,7 @@ namespace Wonder.Desktop;
 internal sealed class ComponentLibraryView : Border
 {
     private readonly WorkspaceView _workspace;
-    private readonly ComponentItem[] _items;
+    private ComponentItem[] _items;
     private readonly TextBox _search;
     private readonly WrapPanel _cards;
     private readonly TextBlock _status;
@@ -28,6 +28,13 @@ internal sealed class ComponentLibraryView : Border
 
     private sealed record CapturedDrag(Control Source, IPointer Pointer, ComponentItem Application, Vector GrabOffset,
         ComponentView? Component, FloatingComponentPreview? Preview, IDisposable Suppression);
+
+    internal void RefreshItems(ComponentItem[] items)
+    {
+        if (_capturedDrag is not null) FinishCapturedDrag(false);
+        _items = items;
+        RefreshCards();
+    }
 
     public ComponentLibraryView(WorkspaceView workspace, ComponentItem[] items, Action close)
     {

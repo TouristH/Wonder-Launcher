@@ -19,7 +19,7 @@ $guides = @('README.md','13-wonder-ui-foundation.md','14-settings-component.md',
     '15-portable-data-and-motion.md','16-component-system.md','18-instance-management-and-launch.md',
     '21-settings-pages-and-instance-cards.md','22-instance-selection-and-directory-actions.md',
     '26-account-management.md','28-login-diagnostics-and-default-skins.md',
-    '30-layered-skins-capes-and-avatars.md','31-linux-trial.md','32-native-cross-platform.md','33-download-center.md','35-plugins.md')
+    '30-layered-skins-capes-and-avatars.md','31-linux-trial.md','32-native-cross-platform.md','33-download-center.md','35-plugins.md','36-plugin-development.md')
 
 function Copy-ReleaseDocs([string]$destination) {
     New-Item -ItemType Directory -Path (Join-Path $destination 'Guides') -Force | Out-Null
@@ -59,7 +59,8 @@ try {
             $relative = [IO.Path]::GetRelativePath($root, $item.FullName)
             if ($relative -match '(^|[\\/])(bin|obj|WonderData)([\\/]|$)') { continue }
             $instanceLogo = $relative.Replace('\','/') -match '^src/Wonder.Desktop/Assets/InstanceIcons/[^/]+\.png$'
-            if (!$instanceLogo -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.sh','.plist')) { throw "Review new source file type: $relative" }
+            $pluginSource = $relative.Replace('\','/') -in @('src/Wonder.Plugin.PleaseWait/plugin.json','src/Wonder.Plugin.PleaseWait/README.md')
+            if (!$instanceLogo -and !$pluginSource -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.sh','.plist')) { throw "Review new source file type: $relative" }
             $destination = Join-Path $source $relative
             New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
             Copy-Item -LiteralPath $item.FullName -Destination $destination

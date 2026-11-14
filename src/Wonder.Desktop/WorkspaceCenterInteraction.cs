@@ -14,6 +14,7 @@ public sealed partial class WorkspaceView
     {
         CancelGesture();
         _centerAreaId = area?.Id;
+        ObserveInteraction("center.mode", area?.Title ?? "工作区", area == null ? "off" : "on");
         foreach (var view in _areas.Values) view.ShowCenter(view.Area.Id == _centerAreaId);
         Focus();
         InvalidateArrange();
@@ -25,6 +26,7 @@ public sealed partial class WorkspaceView
         area.CenterX = area.CenterY = 0;
         InvalidateArrange();
         NotifyChanged();
+        ObserveInteraction("center.reset", area.Title);
     }
 
     private bool TryPressCenter(PointerPressedEventArgs e, Point position)
@@ -39,6 +41,7 @@ public sealed partial class WorkspaceView
             Pointer = e.Pointer, Trigger = e, Start = position, Last = position,
             Active = true, CenterArea = area, OriginalX = area.CenterX, OriginalY = area.CenterY
         };
+        ObserveGesture(_gesture, "start");
         e.Pointer.Capture(this);
         Focus();
         Cursor = new Cursor(StandardCursorType.SizeAll);

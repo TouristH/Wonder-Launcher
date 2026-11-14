@@ -1,0 +1,54 @@
+{
+  "id": "wonder.please-wait",
+  "name": "请稍候",
+  "description": "五个场景组件、真实行为字幕与可滚动观察记录。《请稍候》开口阶段预览。",
+  "author": "Wonder contributors",
+  "version": "0.3.0",
+  "apiVersion": 2,
+  "entryAssembly": "Wonder.Plugin.PleaseWait.dll",
+  "entryType": "Wonder.Plugin.PleaseWait.PleaseWaitPlugin",
+  "configurationSchema": {
+    "version": 1,
+    "fields": [
+      {
+        "key": "showObservations",
+        "label": "显示观测读数",
+        "description": "在出勤表中显示光标、停留、实例、离开时间、最近点击与行为记录；关闭后仍记录会话时长并保留解说条。",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "dragDelayMilliseconds",
+        "label": "拖动延迟（毫秒）",
+        "description": "卡片跟随光标的延迟；设为 0 立即跟随。",
+        "type": "number",
+        "default": 60,
+        "minimum": 0,
+        "maximum": 200
+      },
+      {
+        "key": "maximumDragTiltDegrees",
+        "label": "拖动最大倾斜（度）",
+        "description": "拖动时的最大倾斜角度；设为 0 关闭倾斜。",
+        "type": "number",
+        "default": 6,
+        "minimum": 0,
+        "maximum": 6
+      }
+    ]
+  },
+  "permissions": [
+    {
+      "name": "插件自有文件",
+      "description": "读取插件配置，并保存 WonderData/plugin-data/wonder.please-wait/state.json 中的文字、上一句、会话分钟数与上次关闭时间。"
+    },
+    {
+      "name": "桌面组件",
+      "description": "注册解说条、出勤表、工具面板、记录本和实例列表，首次启用依次淡入；拖动位置由宿主保存。"
+    },
+    {
+      "name": "启动器内观察",
+      "description": "读取启动器及其所属窗口、菜单内的光标、停留、鼠标按键、滚动、快捷键、文字输入发生、拖放、组件与功能区操作、窗口变化和所选实例。只保留最近 64 条内存记录，不读取输入文字内容、其它应用或全局桌面。"
+    }
+  ]
+}

@@ -26,6 +26,8 @@ public sealed partial class PluginManager : IDisposable
     private readonly bool _ownsHttpClient;
     private readonly string _dataDirectory;
     private readonly string _settingsPath;
+    private readonly HashSet<string> _reservedComponentIds;
+    private readonly Func<PluginObservationSnapshot?>? _observationProvider;
     private readonly Dictionary<string, LocalPlugin> _installed = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RunningPlugin> _running = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _failures = new(StringComparer.Ordinal);
@@ -37,11 +39,14 @@ public sealed partial class PluginManager : IDisposable
     private bool _disposed;
     private string? _error;
 
-    public PluginManager(string dataDirectory, HttpClient? httpClient = null)
+    public PluginManager(string dataDirectory, HttpClient? httpClient = null, IEnumerable<string>? reservedComponentIds = null,
+        Func<PluginObservationSnapshot?>? observationProvider = null)
     {
         _dataDirectory = Path.GetFullPath(dataDirectory);
         RootDirectory = Path.Combine(_dataDirectory, "plugins");
         _settingsPath = Path.Combine(_dataDirectory, "plugin-settings.json");
+        _reservedComponentIds = new(reservedComponentIds ?? [], StringComparer.Ordinal);
+        _observationProvider = observationProvider;
         _httpClient = httpClient ?? new HttpClient();
         _ownsHttpClient = httpClient is null;
     }
@@ -49,6 +54,16 @@ public sealed partial class PluginManager : IDisposable
     public string RootDirectory { get; }
     public string? Error { get { lock (_gate) return _error; } }
     public event EventHandler? Changed;
+
+    /// <summary>Components supplied by successfully activated plugins in the current generation.</summary>
+    public IReadOnlyList<PluginComponentRegistration> Components
+    {
+        get
+        {
+            lock (_gate)
+                return _running.Values.SelectMany(plugin => plugin.Components).ToArray();
+        }
+    }
 
     public IReadOnlyList<InstalledPlugin> Plugins
     {
@@ -97,6 +112,12 @@ public sealed partial class PluginManager : IDisposable
         foreach (var item in found)
         {
             _installed.Add(item.Key, item.Value);
+            try { if (item.Value.Manifest.ConfigurationSchema is not null) EnsureConfiguration(item.Value.Manifest); }
+            catch (Exception error) when (IsFileError(error))
+            {
+                _failures[item.Key] = "生成插件配置失败：" + error.Message;
+                continue;
+            }
             if (!_settingsInvalid && _enabled.Contains(item.Key) && !_running.ContainsKey(item.Key))
                 Start(item.Value);
         }
@@ -150,8 +171,9 @@ public sealed partial class PluginManager : IDisposable
     {
         lock (_gate)
         {
-            RequireInstalled(id);
-            return ReadConfigurationCore(id);
+            var local = RequireInstalled(id);
+            EnsureConfiguration(local.Manifest);
+            return ReadText(ConfigurationPath(id));
         }
     }
 
@@ -160,6 +182,7 @@ public sealed partial class PluginManager : IDisposable
         var local = RequireInstalled(id);
         CheckWritable();
         ValidateConfiguration(json);
+        if (local.Manifest.ConfigurationSchema is { } schema) PluginConfiguration.Validate(schema, json);
         var path = ConfigurationPath(id);
         var old = File.Exists(path) ? ReadText(path) : null;
         var restart = _running.ContainsKey(id);
@@ -235,12 +258,15 @@ public sealed partial class PluginManager : IDisposable
         var id = manifest.Id;
         PluginLoadContext? loader = null;
         IWonderPlugin? plugin = null;
+        PluginContext? context = null;
         try
         {
             local = ReadCurrentPlugin(local);
             manifest = local.Manifest;
             RequireConsent(local);
+            EnsureConfiguration(manifest);
             var configuration = ReadConfigurationCore(id);
+            if (manifest.ConfigurationSchema is { } schema) PluginConfiguration.Validate(schema, configuration);
             var data = PluginDataDirectory(id);
             Directory.CreateDirectory(data);
             var entryAssembly = EntryPath(local.Directory, manifest);
@@ -252,14 +278,24 @@ public sealed partial class PluginManager : IDisposable
                 throw new InvalidDataException("无法创建插件入口。");
             if (!_logs.TryGetValue(id, out var log))
                 _logs.Add(id, log = new ActivityLog());
-            plugin.Activate(new PluginContext(configuration, data, log));
-            _running.Add(id, new(plugin, loader));
+            context = new PluginContext(configuration, data, log, id, _observationProvider);
+            PluginComponentRegistration[] components;
+            try { plugin.Activate(context); }
+            finally { components = context.CompleteActivation(); }
+            var reserved = components.FirstOrDefault(component => _reservedComponentIds.Contains(component.Definition.Id));
+            if (reserved is not null)
+                throw new InvalidDataException("组件标识由宿主保留，插件不能注册：" + reserved.Definition.Id);
+            var existingIds = _running.Values.SelectMany(running => running.Components)
+                .Select(component => component.Definition.Id).ToHashSet(StringComparer.Ordinal);
+            if (components.Any(component => existingIds.Contains(component.Definition.Id)))
+                throw new InvalidDataException("组件定义已经由其他插件注册。");
+            _running.Add(id, new(plugin, loader, components, context));
             _failures.Remove(id);
             return true;
         }
         catch (Exception error)
         {
-            Release(plugin, loader);
+            Release(plugin, loader, context);
             _failures[id] = "启用插件失败：" + (error is TargetInvocationException { InnerException: { } inner }
                 ? inner.Message : error.Message);
             return false;
@@ -269,15 +305,15 @@ public sealed partial class PluginManager : IDisposable
     private void Stop(string id)
     {
         _failures.Remove(id);
-        if (_running.Remove(id, out var running) && Release(running.Instance, running.Loader) is { } error)
+        if (_running.Remove(id, out var running) && Release(running.Instance, running.Loader, running.Context) is { } error)
             _failures[id] = "停用插件失败：" + error.Message;
     }
 
-    private static Exception? Release(IWonderPlugin? plugin, PluginLoadContext? loader)
+    private static Exception? Release(IWonderPlugin? plugin, PluginLoadContext? loader, PluginContext? context)
     {
         try { plugin?.Dispose(); }
         catch (Exception error) { return error; }
-        finally { loader?.Unload(); }
+        finally { context?.Close(); loader?.Unload(); }
         return null;
     }
 
@@ -315,6 +351,25 @@ public sealed partial class PluginManager : IDisposable
     }
 
     private string ConfigurationPath(string id) => Path.Combine(PluginDataDirectory(id), "config.json");
+
+    private void EnsureConfiguration(PluginManifest manifest)
+    {
+        var path = ConfigurationPath(manifest.Id);
+        CheckLink(path);
+        if (File.Exists(path))
+        {
+            if (manifest.ConfigurationSchema is not { } existingSchema) return;
+            var original = ReadText(path);
+            var updated = PluginConfiguration.AddMissingDefaults(existingSchema, original);
+            if (updated == original) return;
+            ValidateConfiguration(updated);
+            WriteAtomic(path, updated);
+            return;
+        }
+        var defaults = manifest.ConfigurationSchema is { } schema ? PluginConfiguration.CreateDefaults(schema) : "{}";
+        ValidateConfiguration(defaults);
+        WriteAtomic(path, defaults);
+    }
 
     private string ReadConfigurationCore(string id)
     {
@@ -373,13 +428,42 @@ public sealed partial class PluginManager : IDisposable
     private sealed record LocalPlugin(PluginManifest Manifest, string Directory);
     private static bool SameInstallation(LocalPlugin left, LocalPlugin right) =>
         left.Directory == right.Directory &&
-        left.Manifest with { Permissions = null } == right.Manifest with { Permissions = null } &&
+        left.Manifest with { Permissions = null, ConfigurationSchema = null } == right.Manifest with { Permissions = null, ConfigurationSchema = null } &&
+        PluginConfiguration.Equivalent(left.Manifest.ConfigurationSchema, right.Manifest.ConfigurationSchema) &&
         PermissionsEqual(left.Manifest.Permissions, right.Manifest.Permissions);
-    private sealed record RunningPlugin(IWonderPlugin Instance, PluginLoadContext Loader);
+    private sealed record RunningPlugin(IWonderPlugin Instance, PluginLoadContext Loader,
+        IReadOnlyList<PluginComponentRegistration> Components, PluginContext Context);
 
-    private sealed record PluginContext(string ConfigurationJson, string DataDirectory, ActivityLog Activity) : IPluginContext
+    private sealed class PluginContext(string configurationJson, string dataDirectory, ActivityLog activity, string pluginId,
+        Func<PluginObservationSnapshot?>? observationProvider) : IPluginContext
     {
-        public void Log(string message) => Activity.Add(message);
+        private readonly int _activationThread = Environment.CurrentManagedThreadId;
+        private readonly List<PluginComponentRegistration> _components = [];
+        private bool _accepting = true;
+        private Func<PluginObservationSnapshot?>? _observe = observationProvider;
+        public string ConfigurationJson { get; } = configurationJson;
+        public string DataDirectory { get; } = dataDirectory;
+        public void Log(string message) => activity.Add(message);
+        public PluginObservationSnapshot? GetObservation() => Volatile.Read(ref _observe)?.Invoke();
+        public void Close() => Interlocked.Exchange(ref _observe, null);
+
+        public void RegisterComponent(PluginComponentRegistration registration)
+        {
+            if (Environment.CurrentManagedThreadId != _activationThread || !_accepting)
+                throw new InvalidOperationException("组件只能在 Activate 调用期间同步注册。");
+            var snapshot = ValidateComponent(registration, pluginId);
+            if (_components.Any(component => component.Definition.Id == snapshot.Definition.Id))
+                throw new InvalidDataException("组件定义重复：" + snapshot.Definition.Id);
+            _components.Add(snapshot);
+        }
+
+        public PluginComponentRegistration[] CompleteActivation()
+        {
+            _accepting = false;
+            var registrations = _components.ToArray();
+            _components.Clear();
+            return registrations;
+        }
     }
 
     private sealed class ActivityLog

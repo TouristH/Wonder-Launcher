@@ -18,6 +18,7 @@ internal sealed class ComponentHost : IDisposable
     private bool _disposed;
     public ComponentRegistry Registry { get; }
     public event EventHandler? Changed;
+    internal event Action<string, string>? ActionInvoked;
 
     public ComponentHost(Action openSettings, Action stateChanged, string? dataDirectory = null, ComponentRegistry? registry = null)
     {
@@ -50,6 +51,13 @@ internal sealed class ComponentHost : IDisposable
         foreach (var entry in _applications.Values) entry.Dispose();
         _applications.Clear();
         Changed = null;
+        ActionInvoked = null;
+    }
+
+    internal void RefreshDefinitions(IReadOnlySet<string> definitionIds)
+    {
+        foreach (var entry in _applications.Values.ToArray())
+            if (definitionIds.Contains(entry.Application.DefinitionId)) entry.DefinitionChanged();
     }
 
     internal static void Notify(EventHandler? handlers, object sender)
@@ -130,7 +138,16 @@ internal sealed class ComponentHost : IDisposable
         public void Invoke(string actionId, string? value)
         {
             if (_disposed || Runtime is null || Status is not (ComponentRunStatus.Ready or ComponentRunStatus.Suspended)) return;
-            Run(() => Runtime.Invoke(actionId, value), notify: false);
+            Run(() =>
+            {
+                Runtime.Invoke(actionId, value);
+                if (_host.ActionInvoked is { } handlers)
+                    foreach (Action<string, string> handler in handlers.GetInvocationList())
+                    {
+                        try { handler(Application.DefinitionId, actionId); }
+                        catch (Exception error) { Wonder.Core.LauncherDiagnostics.Warn("ObserveComponentAction", error); }
+                    }
+            }, notify: false);
         }
 
         public void Retry()
@@ -141,6 +158,18 @@ internal sealed class ComponentHost : IDisposable
             Error = null;
             Publish();
             Initialize();
+        }
+
+        internal void DefinitionChanged()
+        {
+            if (_disposed) return;
+            ReleaseRuntime();
+            Values = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(Application.State));
+            var available = _host.Registry.Find(Application.DefinitionId) is not null;
+            Status = available ? ComponentRunStatus.Loading : ComponentRunStatus.Unavailable;
+            Error = available ? null : "尚未安装或注册：" + Application.DefinitionId;
+            if (available && _visibleViews > 0) Initialize();
+            else Publish();
         }
 
         public void Fail(Exception exception)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -11,12 +12,13 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Wonder.Workspace;
 using Wonder.Desktop.Components;
+using Wonder.Extensibility.Contracts;
 
 namespace Wonder.Desktop;
 
 public sealed partial class WorkspaceView : Panel
 {
-    public const int HoldMilliseconds = 450;
+    public const int HoldMilliseconds = LauncherSettings.DefaultHoldDelayMilliseconds;
     public WorkspaceDocument Document { get; private set; }
     public LayoutSnapshot Snapshot => MeasureWorkspace(Bounds.Size);
     public event EventHandler? Changed;
@@ -32,6 +34,7 @@ public sealed partial class WorkspaceView : Panel
     private readonly Dictionary<string, AreaView> _areas = new();
     private readonly Dictionary<string, Border> _splitters = new();
     private readonly DispatcherTimer _holdTimer;
+    private readonly DispatcherTimer _componentDragTimer = new(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(16) };
     private readonly Border _dragLabel;
     private readonly TextBlock _dragText;
     private Gesture? _gesture;
@@ -57,6 +60,7 @@ public sealed partial class WorkspaceView : Panel
         foreach (var area in _areas.Values)
         {
             area.ShowNumber(settings.ShowAreaNumbers);
+            area.ShowGrid(false);
             area.SetScale(settings.ComponentScalePercent / 100d);
         }
         _holdTimer.Interval = TimeSpan.FromMilliseconds(settings.HoldDelayMilliseconds);
@@ -80,6 +84,7 @@ public sealed partial class WorkspaceView : Panel
         _dragLabel = new Border { Child = _dragText, Background = Palette.Background, BorderBrush = Palette.Accent, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 8), IsHitTestVisible = false, IsVisible = false };
         _holdTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(HoldMilliseconds) };
         _holdTimer.Tick += (_, _) => ActivateGesture();
+        _componentDragTimer.Tick += (_, _) => AdvanceComponentDrag();
         InitializeSidebars();
         AddHandler(PointerPressedEvent, Pressed, RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent, Moved, RoutingStrategies.Tunnel, true);
@@ -152,12 +157,14 @@ public sealed partial class WorkspaceView : Panel
         Document = document;
         Rebuild();
         NotifyChanged();
+        ObserveInteraction("workspace.replace", "工作区");
     }
 
     public void CancelGesture()
     {
         var gesture = _gesture;
         if (gesture == null) return;
+        ObserveGesture(gesture, "cancel");
         if (gesture.CenterArea is { } centerArea)
         {
             centerArea.CenterX = gesture.OriginalX;
@@ -188,7 +195,10 @@ public sealed partial class WorkspaceView : Panel
         var items = new List<Control> { Menu("组件库…", () => ComponentLibraryRequested?.Invoke()), Menu("设置…", OpenSettings), new Separator() };
         if (componentId != null && area != null)
         {
-            items.Add(Menu("移除这个组件", () => { area.Components.RemoveAll(c => c.Id == componentId); CommitStructure(); }));
+            items.Add(Menu("移除这个组件", () =>
+            {
+                if (area.Components.FirstOrDefault(c => c.Id == componentId) is { } item) RemoveShortcut(item);
+            }));
             items.Add(new Separator());
         }
         if (area != null)
@@ -201,7 +211,12 @@ public sealed partial class WorkspaceView : Panel
             items.Add(new Separator());
             items.Add(Menu("左右拆分功能区", () => AddArea(area.Id, SplitAxis.Horizontal)));
             items.Add(Menu("上下拆分功能区", () => AddArea(area.Id, SplitAxis.Vertical)));
-            items.Add(Menu("移除此功能区", () => { Document.RemoveArea(area.Id); CommitStructure(); }));
+            items.Add(Menu("移除此功能区", () =>
+            {
+                Document.RemoveArea(area.Id);
+                CommitStructure();
+                ObserveInteraction("area.remove", area.Title);
+            }));
             items.Add(new Separator());
         }
         else
@@ -242,6 +257,7 @@ public sealed partial class WorkspaceView : Panel
             if (_disposed || title == null || title == area.Title || Document != document || Document.FindArea(area.Id) != area) return;
             area.Title = title;
             CommitStructure();
+            ObserveInteraction("area.rename", area.Title);
         }
         finally { _renameDialog = null; }
     }
@@ -249,8 +265,9 @@ public sealed partial class WorkspaceView : Panel
     private void AddArea(string? id, SplitAxis axis)
     {
         if (Document.Areas.Count() >= 12) return;
-        Document.AddArea(id, axis);
+        var area = Document.AddArea(id, axis);
         CommitStructure();
+        ObserveInteraction("area.add", area.Title, axis.ToString());
     }
 
     internal bool ContainsShortcut(ComponentItem shortcut) => Document.Areas.Any(area => area.Components.Contains(shortcut));
@@ -262,6 +279,7 @@ public sealed partial class WorkspaceView : Panel
         CancelGesture();
         area.Components.Remove(shortcut);
         CommitStructure();
+        ObserveInteraction("component.remove", Components.GetDefinition(shortcut).Title, area.Title);
         return true;
     }
 
@@ -312,8 +330,9 @@ public sealed partial class WorkspaceView : Panel
         _libraryPointer = point;
         if (_libraryPreview is { } preview)
         {
+            ConfigureComponentPreview(preview, target);
             preview.Opacity = allowed ? .85 : .55;
-            _libraryPreviewBounds = LibraryPlacement(data.GrabOffset, point, preview.Footprint, target);
+            _libraryPreviewBounds = LibraryPlacement(data.Item, data.GrabOffset, point, preview.Footprint, target);
         }
         _dragText.Text = !allowed ? "此处无法放置" : data.Source != null ? "松开放入功能区" : target == null ? "松开创建功能区并放置快捷方式" : "松开创建快捷方式";
         _dragLabel.IsVisible = true;
@@ -352,11 +371,11 @@ public sealed partial class WorkspaceView : Panel
         return preview;
     }
 
-    private Rect LibraryPlacement(Vector grabOffset, Point point, Size size, Area? target)
+    private Rect LibraryPlacement(ComponentItem item, Vector grabOffset, Point point, Size size, Area? target)
     {
         var area = target == null ? new LayoutRect(0, 0, Bounds.Width, Bounds.Height) : GetAreaBounds(target.Id);
         var center = point + grabOffset * ComponentScale;
-        var offset = ClampOffset(area, size, center.X - area.X - area.Width / 2, center.Y - area.Y - area.Height / 2);
+        var offset = PlacementOffset(item, target, area, size, center.X - area.X - area.Width / 2, center.Y - area.Y - area.Height / 2);
         return new Rect(area.X + area.Width / 2 + offset.X - size.Width / 2, area.Y + area.Height / 2 + offset.Y - size.Height / 2, size.Width, size.Height);
     }
 
@@ -379,8 +398,8 @@ public sealed partial class WorkspaceView : Panel
         var area = target ?? Document.AddArea();
         var item = data.Source is null ? Document.CreateShortcut(data.Item) : data.Item;
         var definition = Components.GetDefinition(item);
-        var size = new Size(definition.Width, definition.Height) * ComponentScale;
-        var placed = LibraryPlacement(data.GrabOffset, point, size, area);
+        var size = ComponentFootprint(item, area, GetAreaBounds(area.Id).Width);
+        var placed = LibraryPlacement(item, data.GrabOffset, point, size, area);
         var bounds = GetAreaBounds(area.Id);
         item.X = placed.Center.X - bounds.X - bounds.Width / 2 - area.CenterX;
         item.Y = placed.Center.Y - bounds.Y - bounds.Height / 2 - area.CenterY;
@@ -390,6 +409,7 @@ public sealed partial class WorkspaceView : Panel
             area.Components.Add(item);
         }
         CommitStructure();
+        ObserveInteraction(data.Source == null ? "component.add" : "component.drag.end", definition.Title, area.Title);
     }
 
     internal void ClearLibraryDrop()
@@ -410,12 +430,13 @@ public sealed partial class WorkspaceView : Panel
         var bounds = GetAreaBounds(area.Id);
         foreach (var view in _areas[area.Id].Components.Values)
         {
-            var position = ClampOffset(bounds, view.Footprint, view.Item.X + area.CenterX, view.Item.Y + area.CenterY);
+            var position = PlacementOffset(view.Item, area, bounds, view.Footprint, view.Item.X + area.CenterX, view.Item.Y + area.CenterY);
             view.Item.X = position.X - area.CenterX;
             view.Item.Y = position.Y - area.CenterY;
         }
         InvalidateArrange();
         NotifyChanged();
+        ObserveInteraction("area.arrange", area.Title);
     }
 
     private void CommitStructure()
@@ -449,6 +470,7 @@ public sealed partial class WorkspaceView : Panel
             var view = new AreaView(area, index++, Components, _settings.ShowAreaNumbers);
             view.SetScale(_settings.ComponentScalePercent / 100d);
             view.ShowCenter(area.Id == _centerAreaId);
+            view.ShowGrid(false);
             _areas.Add(area.Id, view);
             Children.Add(view);
         }
@@ -554,6 +576,12 @@ public sealed partial class WorkspaceView : Panel
                 gesture.OriginalX = view.Item.X;
                 gesture.OriginalY = view.Item.Y;
                 gesture.ComponentBounds = GetComponentBounds(view.Item.Id);
+                var motion = Components.GetDefinition(view.Item).Desktop;
+                if (motion.DragDelayMilliseconds > 0 || motion.MaximumDragTiltDegrees > 0)
+                {
+                    gesture.Motion = new ComponentDragMotion(position, motion.DragDelayMilliseconds, motion.MaximumDragTiltDegrees);
+                    gesture.MotionClock = Stopwatch.StartNew();
+                }
                 break;
             }
             if (gesture.Component == null)
@@ -565,7 +593,7 @@ public sealed partial class WorkspaceView : Panel
             if (gesture.Component == null) area.Highlight(false, false, true);
         }
         _gesture = gesture;
-        if (gesture.Split != null)
+        if (gesture.Split != null || gesture.Motion != null)
         {
             e.Handled = true;
             ActivateGesture();
@@ -579,18 +607,22 @@ public sealed partial class WorkspaceView : Panel
         if (_gesture == null || _gesture.Aborted) return;
         if (_gesture.Split != null) FinishSidebarAnimation();
         _gesture.Active = true;
+        ObserveGesture(_gesture, "start");
         _gesture.Pointer.Capture(this);
         if (_gesture.Component != null)
         {
-            if (_gesture.Pointer.Type == PointerType.Mouse)
+            // Weighted cards use one unclipped, rotated workspace preview on every platform.
+            // Ordinary shortcuts retain their native cross-window preview and drag behavior.
+            if (_gesture.Motion == null && _gesture.Pointer.Type == PointerType.Mouse)
                 _floatingPreview = FloatingComponentPreview.TryShow(this, _gesture.Component, GrabOffset(_gesture));
             if (_floatingPreview == null)
             {
                 _dragPreview = CreateLibraryPreview(_gesture.Component);
                 Children.Insert(Children.Count - 1, _dragPreview);
             }
-            _areas[_gesture.AreaId!].Components[_gesture.Component.Id].Opacity = .2;
+            _areas[_gesture.AreaId!].Components[_gesture.Component.Id].Opacity = _gesture.Motion == null ? .2 : 0;
             _gesture.TargetAreaId = _gesture.AreaId;
+            if (_gesture.Motion != null) _componentDragTimer.Start();
         }
         Focus();
         Cursor = new Cursor(_gesture.Split != null ? (_gesture.Split.Axis == SplitAxis.Horizontal ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth) : StandardCursorType.SizeAll);
@@ -600,7 +632,7 @@ public sealed partial class WorkspaceView : Panel
         InvalidateMeasure();
         // Keep the mouse capture on X11. Its XDND source requires another motion after
         // starting to find a target and consumes Escape without cancelling the drag.
-        _gesture.CapturedAcrossWindows = _gesture.Component != null && _gesture.Pointer.Type == PointerType.Mouse &&
+        _gesture.CapturedAcrossWindows = _gesture.Motion == null && _gesture.Component != null && _gesture.Pointer.Type == PointerType.Mouse &&
             OperatingSystem.IsLinux() && TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.HandleDescriptor == "XID";
     }
 
@@ -617,6 +649,7 @@ public sealed partial class WorkspaceView : Panel
         }
         if (e.Pointer.Id != gesture.Pointer.Id) return;
         gesture.Last = e.GetPosition(this);
+        gesture.Motion?.Record(gesture.Last, gesture.MotionClock!.Elapsed.TotalMilliseconds);
         var delta = gesture.Last - gesture.Start;
         if (!gesture.Active)
         {
@@ -643,18 +676,19 @@ public sealed partial class WorkspaceView : Panel
         else if (gesture.Component != null && gesture.AreaId != null)
         {
             var library = ComponentLibraryAt(gesture.Last, gesture.CapturedAcrossWindows);
-            if (gesture.CapturedAcrossWindows)
+            if (gesture.CapturedAcrossWindows || gesture.Motion != null)
             {
                 if (gesture.CapturedLibrary != library) gesture.CapturedLibrary?.ClearCapturedWorkspaceDrag();
                 gesture.CapturedLibrary = library;
                 library?.ShowCapturedWorkspaceDrag(gesture.Component, GrabOffset(gesture), this.PointToScreen(gesture.Last), _floatingPreview != null);
+                if (_dragPreview != null) _dragPreview.IsVisible = library == null;
             }
             else if (library != null)
             {
                 UiOperation.Start(() => StartNativeShortcutDragAsync(gesture), () => _disposed);
                 return;
             }
-            gesture.TargetAreaId = library == null ? AreaAt(gesture.Last) : null;
+            gesture.TargetAreaId = library == null ? AreaAt(gesture.Motion?.Position ?? gesture.Last) : null;
             _dragText.Text = library != null ? "松开移除此快捷方式 · Esc 取消" :
                 gesture.TargetAreaId == null ? "松开取消 · Esc 返回" : "松开放入功能区 · Esc 取消";
         }
@@ -668,7 +702,21 @@ public sealed partial class WorkspaceView : Panel
             FindSidebarCollapse(gesture, gesture.DividerStart - origin + offset, length);
         }
         else UpdateAreaDrop(gesture);
+        ObserveGesture(gesture, "move");
         UpdateHighlights();
+        InvalidateArrange();
+    }
+
+    private void AdvanceComponentDrag()
+    {
+        if (_gesture is not { Active: true, Motion: { } motion, MotionClock: { } clock } gesture) return;
+        motion.Advance(clock.Elapsed.TotalMilliseconds);
+        gesture.TargetAreaId = gesture.CapturedLibrary == null ? AreaAt(motion.Position) : null;
+        if (_dragPreview != null)
+        {
+            _dragPreview.RenderTransformOrigin = RelativePoint.Center;
+            _dragPreview.RenderTransform = new RotateTransform(motion.TiltDegrees);
+        }
         InvalidateArrange();
     }
 
@@ -695,7 +743,11 @@ public sealed partial class WorkspaceView : Panel
         // window decides the outcome, including a return to a different workspace area.
         EndGesture();
         using var hoverSuppression = HoverTipBehavior.SuppressForNativeDrag();
-        try { await DragDrop.DoDragDropAsync(gesture.Trigger, data, DragDropEffects.Move); }
+        try
+        {
+            var effect = await DragDrop.DoDragDropAsync(gesture.Trigger, data, DragDropEffects.Move);
+            ObserveGesture(gesture, effect == DragDropEffects.None ? "cancel" : "end");
+        }
         finally { ClearLibraryDrop(); }
     }
 
@@ -708,14 +760,16 @@ public sealed partial class WorkspaceView : Panel
         var active = gesture.Active;
         gesture.Last = e.GetPosition(this);
         e.Handled = active || gesture.Aborted;
-        if (active && gesture.CapturedAcrossWindows && gesture.Component is { } dragged)
+        if (active && (gesture.CapturedAcrossWindows || gesture.Motion != null) && gesture.Component is { } dragged)
         {
-            if (ComponentLibraryAt(gesture.Last, checkX11: true, releasing: true) != null)
+            if (ComponentLibraryAt(gesture.Last, checkX11: gesture.CapturedAcrossWindows, releasing: true) != null)
             {
+                ObserveGesture(gesture, "end", "组件库");
+                EndGesture();
                 RemoveShortcut(dragged);
                 return;
             }
-            if (TopLevel.GetTopLevel(this) is not Window window || !X11FloatingPreview.IsWindowAt(window, this.PointToScreen(gesture.Last)))
+            if (gesture.CapturedAcrossWindows && (TopLevel.GetTopLevel(this) is not Window window || !X11FloatingPreview.IsWindowAt(window, this.PointToScreen(gesture.Last))))
             {
                 CancelGesture();
                 return;
@@ -724,6 +778,7 @@ public sealed partial class WorkspaceView : Panel
         if (gesture.CenterArea is { } centerArea)
         {
             var changed = centerArea.CenterX != gesture.OriginalX || centerArea.CenterY != gesture.OriginalY;
+            ObserveGesture(gesture, "end");
             EndGesture();
             if (changed) NotifyChanged();
             return;
@@ -737,7 +792,7 @@ public sealed partial class WorkspaceView : Panel
         var transferred = false;
         if (active && gesture.Component != null)
         {
-            var targetId = AreaAt(gesture.Last);
+            var targetId = AreaAt(gesture.Motion?.Position ?? gesture.Last);
             var source = Document.FindArea(gesture.AreaId!)!;
             var target = targetId == null ? null : Document.FindArea(targetId);
             if (target == null || target != source && target.Components.Count >= 24)
@@ -747,7 +802,7 @@ public sealed partial class WorkspaceView : Panel
             }
             var bounds = GetAreaBounds(target.Id);
             var preview = PreviewBounds(gesture);
-            var position = ClampOffset(bounds, preview.Size,
+            var position = PlacementOffset(gesture.Component, target, bounds, preview.Size,
                 preview.Center.X - bounds.X - bounds.Width / 2, preview.Center.Y - bounds.Y - bounds.Height / 2);
             gesture.Component.X = position.X - target.CenterX;
             gesture.Component.Y = position.Y - target.CenterY;
@@ -769,6 +824,7 @@ public sealed partial class WorkspaceView : Panel
                     ? Document.MoveArea(sourceId, targetId, placement)
                     : Document.SwapAreas(sourceId, targetId);
         }
+        ObserveGesture(gesture, "end", gesture.Placement?.ToString() ?? Document.FindArea(gesture.TargetAreaId ?? "")?.Title);
         EndGesture();
         if (rearranged || transferred) Rebuild();
         if (active && (!movingArea || rearranged)) NotifyChanged();
@@ -778,6 +834,7 @@ public sealed partial class WorkspaceView : Panel
     {
         var sidebarReturn = _gesture?.SidebarArea is { SidebarEdge: not SidebarEdge.None } ? Snapshot : null;
         _holdTimer.Stop();
+        _componentDragTimer.Stop();
         var pointer = _gesture?.Pointer;
         _gesture?.CapturedLibrary?.ClearCapturedWorkspaceDrag();
         if (_gesture?.Component != null && _gesture.AreaId != null)
@@ -828,6 +885,7 @@ public sealed partial class WorkspaceView : Panel
             var context = ContextFor(e.Source as Visual);
             ContextMenu = CreateWorkspaceMenu(context.AreaId, context.ComponentId);
             ContextMenu.Open(this);
+            ObserveInteraction("context.open", Document.FindArea(context.AreaId ?? "")?.Title ?? "工作区", "keyboard");
             e.Handled = true;
         }
     }
@@ -842,6 +900,7 @@ public sealed partial class WorkspaceView : Panel
         var componentId = hasPosition ? (areaId == null ? null : _areas[areaId].Components.Values.Reverse().FirstOrDefault(view => HitsComponent(areaId, view, position))?.Item.Id) : context.ComponentId;
         ContextMenu = CreateWorkspaceMenu(areaId, componentId);
         ContextMenu.Open(this);
+        ObserveInteraction("context.open", Document.FindArea(areaId ?? "")?.Title ?? "工作区");
         e.Handled = true;
     }
 
@@ -881,6 +940,31 @@ public sealed partial class WorkspaceView : Panel
             originX + visible.X, originY + visible.Y);
     }
 
+    private (double X, double Y) PlacementOffset(ComponentItem item, Area? target, LayoutRect area, Size size, double x, double y)
+    {
+        var clamped = ClampOffset(area, size, x, y);
+        if (Components.GetDefinition(item).Desktop.StretchToAreaWidth)
+            clamped.X = 0;
+        if (!_settings.SnapComponentsToGrid || !Components.GetDefinition(item).Desktop.SnapToGrid) return clamped;
+        var unit = ComponentGrid.Unit * ComponentScale;
+        var left = area.Width / 2 + clamped.X - size.Width / 2;
+        var top = area.Height / 2 + clamped.Y - size.Height / 2;
+        left = SnapWithin(left, AreaView.Inset + 1, Math.Max(AreaView.Inset + 1, area.Width - AreaView.Inset - 1 - size.Width),
+            area.Width / 2 + (target?.CenterX ?? 0), unit);
+        top = SnapWithin(top, AreaView.HeaderHeight + 1, Math.Max(AreaView.HeaderHeight + 1, area.Height - AreaView.Inset - 1 - size.Height),
+            area.Height / 2 + (target?.CenterY ?? 0), unit);
+        return WorkspaceLayout.ToCenterOffset(area.Width, area.Height, size.Width, size.Height, left, top);
+    }
+
+    private static double SnapWithin(double value, double minimum, double maximum, double origin, double unit)
+    {
+        var first = Math.Ceiling((minimum - origin) / unit);
+        var last = Math.Floor((maximum - origin) / unit);
+        // Small regions may contain no complete grid position; retaining visibility takes priority.
+        if (first > last) return Math.Clamp(value, minimum, maximum);
+        return origin + Math.Clamp(Math.Round((value - origin) / unit, MidpointRounding.AwayFromZero), first, last) * unit;
+    }
+
     private void UpgradePreviewCoordinates(LayoutSnapshot snapshot, Size viewport)
     {
         if (Document.Version != 1 || viewport.Width <= 0 || viewport.Height <= 0) return;
@@ -918,10 +1002,26 @@ public sealed partial class WorkspaceView : Panel
         return (null, null);
     }
     private static Rect ToRect(LayoutRect rect) => new(rect.X, rect.Y, rect.Width, rect.Height);
-    private static Rect PreviewBounds(Gesture gesture) => new(
-        gesture.ComponentBounds.X + gesture.Last.X - gesture.Start.X,
-        gesture.ComponentBounds.Y + gesture.Last.Y - gesture.Start.Y,
-        gesture.ComponentBounds.Width, gesture.ComponentBounds.Height);
+    private Rect PreviewBounds(Gesture gesture)
+    {
+        var targetId = AreaAt(gesture.Motion?.Position ?? gesture.Last);
+        var target = targetId == null ? null : Document.FindArea(targetId);
+        var size = gesture.Component == null || target == null ? gesture.ComponentBounds.Size :
+            ComponentFootprint(gesture.Component, target, GetAreaBounds(target.Id).Width);
+        if (_dragPreview != null) ConfigureComponentPreview(_dragPreview, target);
+        var center = gesture.ComponentBounds.Center + (gesture.Motion?.Position ?? gesture.Last) - gesture.Start;
+        var preview = new Rect(
+            center.X - size.Width / 2, center.Y - size.Height / 2, size.Width, size.Height);
+        if (gesture.Component is null || target is null) return preview;
+        var options = Components.GetDefinition(gesture.Component).Desktop;
+        var sidebarButton = target.SidebarEdge != SidebarEdge.None && Components.Registry.Find(gesture.Component.DefinitionId)?.SidebarEntry is not null;
+        if ((!_settings.SnapComponentsToGrid || !options.SnapToGrid) && !options.StretchToAreaWidth && !sidebarButton) return preview;
+        var area = GetAreaBounds(target.Id);
+        var position = PlacementOffset(gesture.Component, target, area, preview.Size,
+            preview.Center.X - area.X - area.Width / 2, preview.Center.Y - area.Y - area.Height / 2);
+        return new Rect(area.X + area.Width / 2 + position.X - preview.Width / 2,
+            area.Y + area.Height / 2 + position.Y - preview.Height / 2, preview.Width, preview.Height);
+    }
 
     private static Rect NodeBounds(LayoutNode node, LayoutSnapshot snapshot)
     {
@@ -934,8 +1034,11 @@ public sealed partial class WorkspaceView : Panel
         public required IPointer Pointer;
         public required PointerPressedEventArgs Trigger;
         public Point Start, Last;
+        public ComponentDragMotion? Motion;
+        public Stopwatch? MotionClock;
         public bool Active, Aborted;
         public bool CapturedAcrossWindows;
+        public long LastObservation;
         public ComponentLibraryView? CapturedLibrary;
         public string? AreaId, TargetAreaId;
         public AreaPlacement? Placement;

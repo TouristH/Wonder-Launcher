@@ -22,4 +22,19 @@ public interface IPluginContext
 
     /// <summary>Adds a message to the plugin manager's recent activity.</summary>
     void Log(string message);
+
+    /// <summary>
+    /// Returns a thread-safe snapshot of launcher interaction, or null when unavailable.
+    /// Coordinates describe the named launcher window in device-independent pixels.
+    /// No keyboard contents, credentials, game input or activity in other applications is included.
+    /// </summary>
+    PluginObservationSnapshot? GetObservation() => null;
+
+    /// <summary>
+    /// Registers a declarative desktop component during the synchronous Activate call (API 2).
+    /// Its definition ID must begin with the plugin ID and a dot. The host removes registrations
+    /// when activation fails or the plugin stops; application state and desktop positions remain.
+    /// </summary>
+    void RegisterComponent(PluginComponentRegistration registration) =>
+        throw new NotSupportedException("This host does not support plugin components.");
 }

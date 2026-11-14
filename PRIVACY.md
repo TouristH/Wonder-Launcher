@@ -1,6 +1,6 @@
 # 隐私说明 / Privacy statement
 
-适用版本：Wonder Launcher 0.7.2。更新日期：2026-11-12。维护者：[TouristH](https://github.com/TouristH)，联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
+适用版本：Wonder Launcher 0.7.2。更新日期：2026-11-14。维护者：[TouristH](https://github.com/TouristH)，联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
 
 ## 当前实现
 
@@ -34,6 +34,8 @@ Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 
 刷新在线插件仓库时，Wonder 向用户选择的 HTTPS 索引地址请求目录，默认托管于 GitHub。下载安装时连接索引指定的 HTTPS 文件地址，这些服务可收到来源 IP 和请求的文件路径。请求不携带 Wonder 账户凭据。启用的代码插件在启动器进程内运行，具有当前系统用户权限，其网络与数据行为由插件实现决定。插件配置以本地 JSON 保存。
 
 首次启用前，Wonder 在本地读取插件及附带程序集的元数据，提示检测到的敏感 API 引用与无法完整分析的情况；此过程不执行插件代码，也不上传插件文件。用户整体同意后才加载插件，文件变更后需重新确认。自动分析、作者补充说明和人工验证都不构成安全保证；Wonder 不通过此确认限制插件的系统权限。
+
+启用的插件可通过观察 API 读取启动器主窗口、组件库、所属窗口和弹出层内的光标坐标、停留时长、最近五次点击、最近 64 条近期交互及当前所选实例 ID/名称，并读取 UTC 和单调计时快照。近期交互可包含拖放、窗口菜单与组件动作；该接口不采集其他程序的活动、键盘正文、密码或令牌。宿主在内存中提供这些快照，指针离开可观测表面或窗口失活后不再提供位置。组件行为记录不包含动作参数正文，文本输入只标记发生输入，不保存输入内容。插件可能自行保存它读到或产生的数据，具体由插件说明决定；《请稍候》仅在本地保存展示文字、上一句、会话起始、时长、关闭时间和系统改时识别，不持久化指针路径、点击或行为列表。修改配置会重新启用插件并结束上一条会话。
 
 用户打开下载列表、搜索资源或创建安装任务时，启动器访问 Mojang/Microsoft、BMCLAPI、Fabric、Quilt、Forge、NeoForge、OptiFine、Modrinth、CurseForge 及元数据指定的 HTTPS 文件地址。项目图标从对应平台 CDN 加载并缓存在内存中。这些下载服务可收到来源 IP、搜索词和所请求的版本，下载请求不携带 Wonder 账户令牌。镜像选择、默认资源平台和并发参数保存在本地设置。Java、游戏、资源和未完成片段保存在用户选定的安装或下载目录附近。
 
@@ -72,3 +74,5 @@ Version 0.7.2 stores local settings and an account vault in WonderData beside th
 Third-party appearance lookup sends the selected UUID to that authentication service's public session-profile endpoint without account credentials. Its declared HTTPS texture hosts receive image requests without tokens or redirects. Texture metadata stays in the encrypted vault; decoded images remain in view memory and are not persisted in workspace layout.
 
 After a launch failure or game crash, Wonder asks before saving a diagnostic ZIP under `WonderData/CrashReports/`. The ZIP stays local and may contain paths, usernames, and data recorded by the game or mods. Review the contents before sharing.
+
+Enabled plugins can read in-memory observation snapshots for launcher surfaces, owned windows and popup layers: pointer position and idle time, the last five clicked control labels, up to 64 recent launcher interactions, the selected instance ID/name, and clock values. Interaction summaries may identify scrolling, launcher drags, menus and component actions. They do not include activity in other applications, keyboard contents, passwords, tokens or component action argument text. Please Wait stores displayed text and session timing locally without persisting pointer paths, clicks or the interaction list.

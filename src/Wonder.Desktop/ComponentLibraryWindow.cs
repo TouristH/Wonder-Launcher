@@ -10,6 +10,7 @@ namespace Wonder.Desktop;
 internal sealed class ComponentLibraryWindow : Window
 {
     private readonly ComponentLibraryView _library;
+    internal void RefreshItems(ComponentItem[] items) => _library.RefreshItems(items);
 
     public ComponentLibraryWindow(WorkspaceView workspace, ComponentItem[] items)
     {

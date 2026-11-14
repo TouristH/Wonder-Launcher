@@ -1,0 +1,19 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only; additional terms: see ADDITIONAL_TERMS.md in the repository root. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>0.3.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Wonder.Extensibility.Contracts/Wonder.Extensibility.Contracts.csproj" />
+    <InternalsVisibleTo Include="Wonder.PleaseWait.Tests" />
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../ADDITIONAL_TERMS.md" Link="ADDITIONAL_TERMS.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../NOTICE" Link="NOTICE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../BRANDING.md" Link="BRANDING.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

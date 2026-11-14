@@ -2,6 +2,7 @@
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
 using Wonder.Extensibility.Contracts;
+using Avalonia.Controls;
 
 namespace Wonder.Desktop.Components;
 
@@ -12,7 +13,7 @@ internal sealed class ComponentRegistry
     public IReadOnlyList<ComponentDefinition> Definitions => _registrations.Values.Select(value => value.Definition).ToArray();
 
     public void Register(ComponentDefinition definition, Func<IComponentState, IComponentRuntime> runtime,
-        Func<ComponentPresentationContext, ComponentContent> presentation)
+        Func<ComponentPresentationContext, ComponentContent> presentation, ComponentSidebarEntry? sidebarEntry = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(runtime);
@@ -27,13 +28,18 @@ internal sealed class ComponentRegistry
                 point.X is < 0 or > 1 || point.Y is < 0 or > 1))
             throw new ArgumentException("组件定义的标识、尺寸或轮廓无效。", nameof(definition));
         definition = definition with { Outline = Array.AsReadOnly(definition.Outline.ToArray()) };
-        if (!_registrations.TryAdd(definition.Id, new(definition, runtime, presentation)))
+        if (!_registrations.TryAdd(definition.Id, new(definition, runtime, presentation, sidebarEntry)))
             throw new ArgumentException("组件定义已经注册。", nameof(definition));
     }
 
     internal ComponentRegistration? Find(string id) => _registrations.GetValueOrDefault(id);
+    internal void Unregister(string id) => _registrations.Remove(id);
 }
 
 internal sealed record ComponentRegistration(ComponentDefinition Definition,
     Func<IComponentState, IComponentRuntime> CreateRuntime,
-    Func<ComponentPresentationContext, ComponentContent> CreatePresentation);
+    Func<ComponentPresentationContext, ComponentContent> CreatePresentation,
+    ComponentSidebarEntry? SidebarEntry);
+
+// Only native registrations opt in. A null action opens the component's full detail view.
+internal sealed record ComponentSidebarEntry(string? ActionId = null, Action<Window?>? OpenPage = null, string? Title = null);

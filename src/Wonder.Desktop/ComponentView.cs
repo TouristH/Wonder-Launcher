@@ -2,11 +2,14 @@
 // Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Wonder.Desktop.Components;
 using Wonder.Extensibility.Contracts;
@@ -31,10 +34,35 @@ internal sealed class ComponentView : Viewbox, IDisposable
     private bool _inViewport;
     private double _scale = 1;
     private bool _scaleApplied;
+    private bool _sidebar;
+    private double _areaWidth = double.NaN;
+    private bool _revealStarted;
+    private DispatcherTimer? _revealTimer;
+    private Control? _revealSurface;
+    private Window? _detailsWindow;
     private readonly List<Visual> _visibilityAncestors = [];
     public ComponentItem Item { get; }
-    private Size NativeSize => new(_definition.Width, _definition.Height);
-    public Size Footprint => new(_definition.Width * _scale, _definition.Height * _scale);
+    public bool IsSidebarButton => _sidebar && _host.Registry.Find(Item.DefinitionId)?.SidebarEntry is not null;
+    public Size Footprint => GetFootprint(_definition, _areaWidth, _scale, IsSidebarButton);
+    private Size NativeSize => new(Footprint.Width / _scale, Footprint.Height / _scale);
+
+    internal static Size GetFootprint(ComponentDefinition definition, double areaWidth, double scale, bool sidebarButton)
+    {
+        if (sidebarButton) return new Size(120 * scale, 40 * scale);
+        var width = definition.Desktop.StretchToAreaWidth && double.IsFinite(areaWidth)
+            ? Math.Max(ComponentGrid.Unit, areaWidth - 2 * definition.Desktop.HorizontalMargin)
+            : definition.Width * scale;
+        return new Size(width, definition.Height * scale);
+    }
+
+    public void SetAreaPresentation(bool sidebar, double areaWidth)
+    {
+        var wasSidebar = IsSidebarButton;
+        _sidebar = sidebar;
+        _areaWidth = areaWidth;
+        if (wasSidebar != IsSidebarButton) BuildContent();
+        UpdateSize();
+    }
 
     public ComponentView(ComponentItem item, ComponentHost host, bool preview = false, bool livePreview = false)
     {
@@ -72,6 +100,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
             _inViewport = false;
             ReleaseVisibilitySubscriptions();
             DetachSession();
+            FinishReveal();
         };
         EffectiveViewportChanged += (_, args) =>
         {
@@ -107,8 +136,47 @@ internal sealed class ComponentView : Viewbox, IDisposable
             throw new ArgumentOutOfRangeException(nameof(factor));
         _scale = factor;
         _scaleApplied = true;
+        UpdateSize();
+    }
+
+    private void UpdateSize()
+    {
         Width = Footprint.Width;
         Height = Footprint.Height;
+        if (Child is not null) { Child.Width = NativeSize.Width; Child.Height = NativeSize.Height; }
+    }
+
+    public void RevealOnFirstActivation()
+    {
+        if (_revealStarted || _preview || _disposed) return;
+        _revealStarted = true;
+        var options = _definition.Desktop;
+        if (options.RevealDurationMilliseconds <= 0 || Child is null) return;
+        _revealSurface = Child;
+        var surface = _revealSurface;
+        var translation = new TranslateTransform(0, options.RevealOffsetY);
+        surface.Opacity = 0;
+        surface.RenderTransform = translation;
+        var started = Stopwatch.GetTimestamp();
+        _revealTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _revealTimer.Tick += (_, _) =>
+        {
+            var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds - options.RevealDelayMilliseconds;
+            var progress = Math.Clamp(elapsed / options.RevealDurationMilliseconds, 0, 1);
+            var eased = 1 - Math.Pow(1 - progress, 3);
+            surface.Opacity = eased;
+            translation.Y = options.RevealOffsetY * (1 - eased);
+            if (progress >= 1) FinishReveal();
+        };
+        _revealTimer.Start();
+    }
+
+    private void FinishReveal()
+    {
+        _revealTimer?.Stop();
+        _revealTimer = null;
+        if (_revealSurface is not null) { _revealSurface.Opacity = 1; _revealSurface.RenderTransform = null; }
+        _revealSurface = null;
     }
 
     public bool IsHitAt(Point local)
@@ -171,7 +239,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
         ReleaseContent();
         if (_scaleApplied) SetScale(_scale);
         _outline = null;
-        if (_definition.Outline.Count > 0)
+        if (!IsSidebarButton && _definition.Outline.Count > 0)
         {
             _outline = new StreamGeometry();
             using var geometry = _outline.Open();
@@ -191,7 +259,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
             var context = new ComponentPresentationContext(_definition, _preview,
                 () => _session?.Values ?? new ReadOnlyDictionary<string, string>(Item.Application.State),
                 (action, value) => _session?.Invoke(action, value));
-            _content = registration.CreatePresentation(context);
+            _content = IsSidebarButton ? BuildSidebarEntry(context, registration.SidebarEntry!) : registration.CreatePresentation(context);
             _showingFailure = false;
             Child = new Grid { Width = NativeSize.Width, Height = NativeSize.Height, Children = { _content.Control } };
             _content.SetSelected(_selected);
@@ -201,6 +269,46 @@ internal sealed class ComponentView : Viewbox, IDisposable
         {
             FailPresentation(exception);
         }
+    }
+
+    private ComponentContent BuildSidebarEntry(ComponentPresentationContext context, ComponentSidebarEntry entry)
+    {
+        var title = entry.Title ?? _definition.Title;
+        var button = new Button
+        {
+            Content = title, FontSize = 11, Padding = new Thickness(10, 3),
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
+            Background = Palette.Active, Foreground = Palette.Text, BorderBrush = Palette.Accent,
+            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), IsEnabled = !_preview
+        };
+        AutomationProperties.SetName(button, "打开" + title);
+        ToolTip.SetTip(button, "打开" + title + " · 长按移动");
+        button.Click += (_, _) =>
+        {
+            if (entry.OpenPage is not null) entry.OpenPage(TopLevel.GetTopLevel(this) as Window);
+            else if (entry.ActionId is not null) context.Invoke(entry.ActionId);
+            else OpenDetails();
+        };
+        return new ComponentContent(button, select: selected => button.BorderBrush = selected ? Palette.Emphasis : Palette.Accent);
+    }
+
+    private void OpenDetails()
+    {
+        if (_detailsWindow is not null) { _detailsWindow.Activate(); return; }
+        var component = new ComponentView(Item, _host);
+        component.SetScale(1);
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var details = new Window
+        {
+            Title = _definition.Title, Width = _definition.Width + 32, Height = _definition.Height + 32,
+            MinWidth = _definition.Width + 32, MinHeight = _definition.Height + 32,
+            Background = Palette.Background, Content = new Border { Padding = new Thickness(16), Child = component }
+        };
+        if (owner is not null) details.FontFamily = owner.FontFamily;
+        details.Closed += (_, _) => { component.Dispose(); _detailsWindow = null; };
+        _detailsWindow = details;
+        if (owner is null) details.Show(); else details.Show(owner);
     }
 
     private void FailPresentation(Exception exception)
@@ -238,6 +346,8 @@ internal sealed class ComponentView : Viewbox, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        FinishReveal();
+        _detailsWindow?.Close();
         ReleaseVisibilitySubscriptions();
         DetachSession();
         ReleaseContent();

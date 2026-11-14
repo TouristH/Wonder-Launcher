@@ -16,10 +16,11 @@ namespace Wonder.Desktop;
 internal sealed partial class PluginManagerWindow : Window
 {
     internal const string DefaultRepositoryUrl = "https://raw.githubusercontent.com/TouristH/Wonder-Plugins/main/public/v1/index.json";
+    internal const string MirrorRepositoryUrl = "https://cdn.jsdelivr.net/gh/TouristH/Wonder-Plugins@main/public/v1/index.json";
     private readonly PluginManager _manager;
     private readonly StackPanel _installed = new() { Spacing = 12 };
     private readonly StackPanel _available = new() { Spacing = 12 };
-    private readonly TextBox _repository = new() { Text = DefaultRepositoryUrl, MinWidth = 160 };
+    private readonly ComboBox _repository = new() { ItemsSource = new[] { "原版源（GitHub）", "镜像源（jsDelivr）" }, SelectedIndex = 0, MinWidth = 160 };
     private readonly TextBlock _status = Hint("");
     private readonly TextBlock _localError = Hint("");
     private readonly Grid _content;
@@ -29,6 +30,7 @@ internal sealed partial class PluginManagerWindow : Window
     private CancellationTokenSource? _operation;
     private IReadOnlyList<PluginCatalogEntry> _catalog = [];
     private bool _busy, _closed, _catalogRequested;
+    private string? _catalogSource;
     private int _refreshPending;
 
     public PluginManagerWindow(PluginManager manager)
@@ -114,8 +116,11 @@ internal sealed partial class PluginManagerWindow : Window
     {
         var page = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), Margin = new Thickness(0, 16, 0, 0) };
         var source = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 14) };
-        AutomationProperties.SetName(_repository, "在线插件仓库地址");
-        _repository.PlaceholderText = "HTTPS 插件索引地址";
+        AutomationProperties.SetName(_repository, "插件索引来源");
+        _repository.SelectionChanged += (_, _) =>
+        {
+            if (_catalogRequested) UiOperation.Start(RefreshCatalogAsync, () => _closed);
+        };
         source.Children.Add(_repository);
         var refresh = ActionButton("刷新在线仓库", () => UiOperation.Start(RefreshCatalogAsync, () => _closed));
         Grid.SetColumn(refresh, 1);
@@ -181,12 +186,29 @@ internal sealed partial class PluginManagerWindow : Window
 
     internal Task RefreshCatalogAsync() => RunAsync("正在读取在线仓库…", async token =>
     {
-        var catalog = await _manager.GetCatalogAsync(_repository.Text?.Trim() ?? "", token);
+        var source = _repository.SelectedIndex == 1 ? MirrorRepositoryUrl : DefaultRepositoryUrl;
+        try
+        {
+            _catalog = await _manager.GetCatalogAsync(source, token);
+            _catalogSource = source;
+            ShowStatus($"已读取 {_catalog.Select(entry => entry.Id).Distinct().Count()} 个插件，共 {_catalog.Count} 个版本。");
+        }
+        catch (Exception error) when (!token.IsCancellationRequested &&
+            (error is HttpRequestException or IOException or OperationCanceledException or InvalidDataException))
+        {
+            if (_catalogSource != source)
+            {
+                using var snapshot = typeof(PluginManagerWindow).Assembly.GetManifestResourceStream("Wonder.PluginCatalog")!;
+                _catalog = await PluginManager.ReadCatalogAsync(snapshot, token);
+                _catalogSource = null;
+            }
+            ShowStatus(_catalogSource is null
+                ? $"索引刷新失败，当前显示随启动器发布的目录，验证状态可能已更新。{error.Message}"
+                : $"索引刷新失败，当前显示上次读取的目录。{error.Message}", true);
+        }
         if (_closed) return;
-        _catalog = catalog;
         _catalogRequested = true;
         RefreshAvailable();
-        ShowStatus($"已读取 {_catalog.Select(entry => entry.Id).Distinct().Count()} 个插件，共 {_catalog.Count} 个版本。");
     });
 
     private Task ImportAsync() => RunAsync("请选择本地插件 ZIP。", async token =>

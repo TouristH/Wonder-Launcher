@@ -18,9 +18,9 @@
 
 ## 在线仓库
 
-默认源使用 Wonder Plugins 的正式索引 `main/public/v1/index.json`，可在窗口中输入其他同格式 HTTPS 索引地址。点击刷新获取列表，再选择下载安装。安装器验证下载大小和 SHA-256，并检查 ZIP 的解压路径。安装成功后选择启用插件。
+在线仓库预设「原版源（GitHub）」和「镜像源（jsDelivr）」，默认使用原版源。切换源后会刷新列表，也可以手动刷新。网络不可用时，可查看随启动器发布的目录，验证状态以在线刷新结果为准。两种源均读取 Wonder Plugins 的索引，插件 ZIP 从索引中的发布地址下载。安装器验证下载大小和 SHA-256，并检查 ZIP 的解压路径。安装成功后选择启用插件。
 
-当前默认索引地址为 `https://raw.githubusercontent.com/TouristH/Wonder-Plugins/main/public/v1/index.json`。投稿与工具使用方式见 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins)。仓库使用 C# 工具重新分析安装包，核对必需的权限报告；技术检查通过即可收录，人工验证由维护者对指定版本与哈希单独授予或撤销。网络请求由刷新与安装操作触发，关闭管理窗口会取消该窗口正在等待的网络操作。
+当前默认索引地址为 `https://raw.githubusercontent.com/TouristH/Wonder-Plugins/main/public/v1/index.json`。投稿与工具使用方式见 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins)。仓库使用 C# 工具重新分析安装包，核对必需的权限报告；技术检查通过即可收录，人工验证由维护者在机器人公布精确版本和哈希后回复 `/ap`，已验证版本仍可逐个撤销。网络请求由刷新与安装操作触发，关闭管理窗口会取消该窗口正在等待的网络操作。
 
 同一插件按版本展示。人工验证通过的版本标绿，未验证或验证已撤销的版本标红，并显示对应文字；所有已收录版本都可以下载。验证记录绑定具体版本和安装包 SHA-256，新版本不会继承旧版本的验证状态。本地插件若无法与已获取的验证记录核对，则显示无法确认其验证状态。
 

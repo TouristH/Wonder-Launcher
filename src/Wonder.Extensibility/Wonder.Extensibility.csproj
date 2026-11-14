@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Wonder.Desktop" />
     <ProjectReference Include="../Wonder.Extensibility.Contracts/Wonder.Extensibility.Contracts.csproj" />
   </ItemGroup>
 </Project>

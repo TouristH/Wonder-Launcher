@@ -26,7 +26,7 @@ NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR 
 
 ## 运行方式
 
-从组件库打开“插件”，在“已安装”中管理本地代码插件，启用、关闭、修改配置或打开插件目录。在“在线仓库”中按版本查看人工验证状态：已验证标绿，其余标红，均可下载；也可导入本地 ZIP。首次启用前，启动器静态分析插件代码并展示检测到的行为、分析限制和作者补充说明。选择同意才会加载插件，不同意则保持关闭。文件变化后需要重新确认；修改普通配置会重新激活已启用插件。代码插件与启动器共享系统用户权限，不受逐项权限限制或安全沙箱约束。默认连接 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins) 的 main 正式索引，仓库使用 C# 工具核对包与自动生成的权限报告。详见[插件管理](Guides/35-plugins.md)。
+从组件库打开“插件”，在“已安装”中管理本地代码插件，启用、关闭、修改配置或打开插件目录。在“在线仓库”中按版本查看人工验证状态：已验证标绿，其余标红，均可下载；也可导入本地 ZIP。首次启用前，启动器静态分析插件代码并展示检测到的行为、分析限制和作者补充说明。选择同意才会加载插件，不同意则保持关闭。文件变化后需要重新确认；修改普通配置会重新激活已启用插件。代码插件与启动器共享系统用户权限，不受逐项权限限制或安全沙箱约束。在线仓库内置 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins) 的索引，可在 GitHub 原版源与 jsDelivr 镜像源之间切换。仓库使用 C# 工具核对包与自动生成的权限报告。详见[插件管理](Guides/35-plugins.md)。
 
 Windows、Linux、macOS 使用同一套源码与设置/工作区格式，各自输出本机原生入口并自带对应 .NET 运行时；无需 Wine 或 Windows EXE，也不意味着启用了 Native AOT。本次 Release 只提供 Windows 与 Linux 应用，macOS Intel/Apple Silicon `.app` 保留本地构建；试用、本地签名、系统钥匙串和迁移边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。macOS 数据放在 `.app` 旁边的 `WonderData/`，运行时不写入应用包内部。
 

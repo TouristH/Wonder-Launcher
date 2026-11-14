@@ -59,7 +59,9 @@ try {
             $relative = [IO.Path]::GetRelativePath($root, $item.FullName)
             if ($relative -match '(^|[\\/])(bin|obj|WonderData)([\\/]|$)') { continue }
             $instanceLogo = $relative.Replace('\','/') -match '^src/Wonder.Desktop/Assets/InstanceIcons/[^/]+\.png$'
-            $pluginSource = $relative.Replace('\','/') -in @('src/Wonder.Plugin.PleaseWait/plugin.json','src/Wonder.Plugin.PleaseWait/README.md')
+            $pluginSource = $relative.Replace('\','/') -in @(
+                'src/Wonder.Plugin.PleaseWait/plugin.json','src/Wonder.Plugin.PleaseWait/README.md',
+                'src/Wonder.Desktop/Plugins/index.json')
             if (!$instanceLogo -and !$pluginSource -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.sh','.plist')) { throw "Review new source file type: $relative" }
             $destination = Join-Path $source $relative
             New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null

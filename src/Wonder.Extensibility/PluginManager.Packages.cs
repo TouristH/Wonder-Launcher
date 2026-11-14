@@ -19,6 +19,11 @@ public sealed partial class PluginManager
     {
         using var response = await GetAsync(RequireHttps(url), JsonLimit, cancellationToken).ConfigureAwait(false);
         await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadCatalogAsync(body, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<IReadOnlyList<PluginCatalogEntry>> ReadCatalogAsync(Stream body, CancellationToken cancellationToken)
+    {
         using var json = new MemoryStream();
         await CopyBoundedAsync(body, json, JsonLimit, cancellationToken).ConfigureAwait(false);
         json.Position = 0;

@@ -12,6 +12,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Wonder.Desktop.Tests" />
     <AvaloniaResource Include="Assets/InstanceIcons/*.png" />
+    <EmbeddedResource Include="Plugins/index.json" LogicalName="Wonder.PluginCatalog" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <ProjectReference Include="../Wonder.Workspace/Wonder.Workspace.csproj" />

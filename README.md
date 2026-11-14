@@ -29,7 +29,7 @@
 - 同一份源码发布 Windows x64、Linux x64、macOS Intel/Apple Silicon 原生应用，自带各平台 .NET 运行时；Linux 和 macOS 当前为试发行。设置、布局和实例登记保存在应用旁的 `WonderData/`，macOS 放在 `.app` 外部。
 - 同一数据目录只允许一个启动器进程写入；Windows 再次打开会尝试激活已有窗口，Linux/macOS 将提示写入终端并退出。不同便携目录可独立运行。
 
-“插件”组件可打开本地插件库，启用或关闭插件、编辑 JSON 配置、导入 ZIP，并从 Wonder 在线仓库下载安装。在线版本按人工验证状态标绿或标红，均可下载。首次启用前自动分析插件代码并提示检测到的行为与分析限制，用户整体同意后才加载；作者说明只作补充。插件使用独立的 Wonder API，以当前系统用户权限运行。默认连接 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins) 的 main 正式索引，仓库使用 C# 工具核对包与自动生成的权限报告。使用与开发方式见[插件帮助](Guides/35-plugins.md)及[API 2 开发指南](Guides/36-plugin-development.md)。
+“插件”组件可打开本地插件库，启用或关闭插件、编辑 JSON 配置、导入 ZIP，并从 Wonder 在线仓库下载安装。在线版本按人工验证状态标绿或标红，均可下载。首次启用前自动分析插件代码并提示检测到的行为与分析限制，用户整体同意后才加载；作者说明只作补充。插件使用独立的 Wonder API，以当前系统用户权限运行。在线仓库内置 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins) 的索引，可在 GitHub 原版源与 jsDelivr 镜像源之间切换。仓库使用 C# 工具核对包与自动生成的权限报告。使用与开发方式见[插件帮助](Guides/35-plugins.md)及[API 2 开发指南](Guides/36-plugin-development.md)。
 
 已有实例的一键修复与插件权限沙箱仍待实现。账户使用、认证适配器和安全边界见[账户管理说明](Guides/26-account-management.md)。
 

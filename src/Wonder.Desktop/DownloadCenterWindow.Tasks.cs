@@ -22,7 +22,7 @@ internal sealed partial class DownloadCenterWindow
         _taskFilter.SelectionChanged += (_, _) => RefreshTasks();
         _taskList = new StackPanel { Spacing = 12 };
         var clear = ActionButton("清除已结束记录", () => RunTaskAction(_downloads.ClearFinished)); clear.HorizontalAlignment = HorizontalAlignment.Left;
-        return Stack(_tasksSummary, _taskStorage, _taskFilter, clear, _taskList);
+        return Stack(PageStyles.Card(Stack(_tasksSummary, _taskStorage, _taskFilter, clear)), _taskList);
     }
     private void RefreshTasks()
     {
@@ -90,20 +90,21 @@ internal sealed partial class DownloadCenterWindow
             _task = task;
             _state = PageStyles.Hint(""); _state.Foreground = Palette.Accent;
             var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            var title = Heading(task.Title); title.Margin = new Thickness(0, 0, 14, 0); header.Children.Add(title);
+            var title = PageStyles.SectionTitle(task.Title); title.Margin = new Thickness(0, 0, 14, 0); header.Children.Add(title);
             Grid.SetColumn(_state, 1); header.Children.Add(_state);
             _stage = PageStyles.Hint(""); _metrics = PageStyles.Hint("");
             _error = PageStyles.Hint(""); _error.Foreground = Palette.Error;
-            _path = new SelectableTextBlock { FontSize = 11, Foreground = Palette.Muted, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-            _progress = new ProgressBar { Minimum = 0, Maximum = 100, Height = 7 };
+            _path = new SelectableTextBlock { FontSize = 12, FontFamily = PageStyles.MonoFamily, Foreground = Palette.Muted, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            _progress = new ProgressBar { Minimum = 0, Maximum = 100, Height = 6 };
             AutomationProperties.SetName(_progress, "下载进度·" + task.Id);
             _pause = ActionButton("暂停", () => owner.RunTaskAction(() => owner._downloads.Pause(task.Id)));
             _resume = ActionButton("继续", () => owner.RunTaskAction(() => owner._downloads.Resume(task.Id)));
             _cancel = ActionButton("取消下载", () => owner.RunTaskAction(() => owner._downloads.Cancel(task.Id)));
             _retry = ActionButton("重试下载", () => owner.RunTaskAction(() => owner._downloads.Retry(task.Id)));
             _open = ActionButton("打开安装目录", () => owner.OpenResult(_task.ResultPath));
-            var actions = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
-            foreach (var button in new[] { _pause, _resume, _cancel, _retry, _open }) actions.Children.Add(button);
+            // The result path sits above the buttons; give the row air so the two are not read as one line of text.
+            var actions = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8, Margin = new Thickness(0, 8, 0, 0) };
+            foreach (var button in new[] { _pause, _resume, _cancel, _retry, _open }) { button.MinHeight = 34; actions.Children.Add(button); }
             Surface = PageStyles.Card(Stack(header, _stage, _progress, _metrics, _error, _path, actions)); Update(task);
         }
         public void Update(DownloadTaskSnapshot task)

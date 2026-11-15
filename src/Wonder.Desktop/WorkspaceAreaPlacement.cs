@@ -61,6 +61,7 @@ public sealed partial class WorkspaceView
         _areaPlacementPreview.IsVisible = gesture is
             { Active: true, Component: null, Split: null, CenterArea: null, TargetAreaId: not null };
         if (!_areaPlacementPreview.IsVisible) return;
+        _areaPlacementPreview.BoxShadow = Palette.Elevation;
         _areaPlacementLabel.Text = PlacementText(gesture!.Placement);
         _areaPlacementPreview.Child ??= _areaPlacementLabel;
     }

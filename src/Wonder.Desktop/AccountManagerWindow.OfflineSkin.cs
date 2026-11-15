@@ -12,7 +12,7 @@ internal sealed partial class AccountManagerWindow
 {
     private void BuildOfflineSkinPicker(StackPanel body, AccountProfile profile)
     {
-        body.Children.Add(Heading("游戏默认皮肤"));
+        body.Children.Add(PageStyles.SectionTitle("游戏默认皮肤"));
         body.Children.Add(PageStyles.Hint("通过离线 UUID 选择游戏内置皮肤，不安装模组、不上传图片。旧版和新版规则不同；联机服务器或皮肤模组可能覆盖此选择。"));
         var choices = OfflineDefaultSkins.Choices.ToArray();
         var selector = new ComboBox
@@ -29,8 +29,8 @@ internal sealed partial class AccountManagerWindow
         var compatibility = PageStyles.Hint(""); info.Children.Add(compatibility);
         var textureStatus = PageStyles.Hint(""); info.Children.Add(textureStatus);
         preview.LoadedTexture += () => textureStatus.Text = preview.Description;
-        var uuid = new SelectableTextBlock { FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap }; AutomationProperties.SetName(uuid, "默认皮肤候选 UUID");
-        info.Children.Add(PageStyles.Hint("应用后的 UUID")); info.Children.Add(uuid);
+        var uuid = PageStyles.Code("", selectable: true); AutomationProperties.SetName(uuid, "默认皮肤候选 UUID");
+        info.Children.Add(PageStyles.Label("应用后的 UUID")); info.Children.Add(uuid);
         body.Children.Add(PageStyles.Card(row, new Thickness(14)));
         var confirmation = new StackPanel { Spacing = 10, IsVisible = false };
         confirmation.Children.Add(PageStyles.Hint("修改 UUID 会改变游戏身份，原背包、成就及服务器权限可能不再对应。Wonder 不迁移或删除存档。确认使用上方新 UUID？"));
@@ -52,7 +52,7 @@ internal sealed partial class AccountManagerWindow
             confirmation.IsVisible = true;
         }));
         confirmation.Children.Add(IdleButton("确认更改皮肤与 UUID", "确认离线皮肤 UUID 变化", async () => await Run(() => _service.SetOfflineSkinAsync(profile.Id, DraftId()))));
-        confirmation.Children.Add(Button("保留当前身份", "取消离线皮肤变化", () => confirmation.IsVisible = false));
+        confirmation.Children.Add(PageStyles.Button("保留当前身份", "取消离线皮肤变化", () => confirmation.IsVisible = false));
         body.Children.Add(confirmation); PreviewChoice();
     }
 }

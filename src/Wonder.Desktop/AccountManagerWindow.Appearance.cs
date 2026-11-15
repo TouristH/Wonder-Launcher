@@ -13,7 +13,7 @@ internal sealed partial class AccountManagerWindow
 {
     private void BuildAppearance(StackPanel body, AccountProfile profile)
     {
-        body.Children.Add(Heading("皮肤与披风"));
+        body.Children.Add(PageStyles.SectionTitle("皮肤与披风"));
         var area = new Grid { ColumnDefinitions = new ColumnDefinitions("190,20,*") };
         var previewColumn = BuildCharacterPreview(profile);
         var preview = _preview!;
@@ -59,7 +59,7 @@ internal sealed partial class AccountManagerWindow
         var resetConfirm = new StackPanel { Spacing = 8, IsVisible = false };
         resetConfirm.Children.Add(PageStyles.Hint("恢复默认皮肤将移除当前自定义皮肤。确认后同步到 Minecraft 账户。"));
         resetConfirm.Children.Add(IdleButton("确认恢复默认", "确认恢复默认皮肤", async () => await Run(() => _service.ResetSkinAsync(profile.Id))));
-        resetConfirm.Children.Add(Button("保留当前皮肤", "取消恢复默认皮肤", () => resetConfirm.IsVisible = false));
+        resetConfirm.Children.Add(PageStyles.Button("保留当前皮肤", "取消恢复默认皮肤", () => resetConfirm.IsVisible = false));
         controls.Children.Add(IdleButton("恢复默认皮肤", "恢复默认皮肤", () => resetConfirm.IsVisible = true)); controls.Children.Add(resetConfirm);
         body.Children.Add(PageStyles.Card(area, new Thickness(16)));
         var capePanel = new StackPanel { Spacing = 10 };
@@ -82,7 +82,7 @@ internal sealed partial class AccountManagerWindow
         var caption = PageStyles.Hint(preview.Description); caption.MaxWidth = 220;
         caption.HorizontalAlignment = HorizontalAlignment.Center; column.Children.Add(caption);
         preview.LoadedTexture += () => caption.Text = preview.Description;
-        var turn = Button("查看背面", "切换角色预览方向", () => preview.Back = !preview.Back);
+        var turn = PageStyles.Button("查看背面", "切换角色预览方向", () => preview.Back = !preview.Back);
         turn.Click += (_, _) => turn.Content = preview.Back ? "查看正面" : "查看背面";
         turn.HorizontalAlignment = HorizontalAlignment.Center; column.Children.Add(turn);
         UiOperation.Start(() => preview.LoadAsync(profile), () => _closed);
@@ -95,7 +95,7 @@ internal sealed partial class AccountManagerWindow
         var preview = _capePreview = new AccountSkinPreview(_textureDownload) { CapeOnly = true, Width = 90, Height = 144 };
         AutomationProperties.SetName(preview, "已选披风预览"); layout.Children.Add(preview);
         var info = new StackPanel { Spacing = 8, VerticalAlignment = VerticalAlignment.Center }; Grid.SetColumn(info, 2); layout.Children.Add(info);
-        info.Children.Add(new TextBlock { Text = "已选披风", FontSize = 16 });
+        info.Children.Add(PageStyles.SectionTitle("已选披风"));
         var status = PageStyles.Hint(""); info.Children.Add(status);
         preview.LoadedTexture += () => status.Text = preview.Description;
         info.Children.Add(PageStyles.Hint("角色背面同步显示当前佩戴的披风。"));

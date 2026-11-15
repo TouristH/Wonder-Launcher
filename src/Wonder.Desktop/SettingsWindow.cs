@@ -55,13 +55,14 @@ internal sealed class SettingsWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.Background;
         Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto") };
-        var heading = new StackPanel { Margin = new Thickness(26, 24, 26, 20), Spacing = 6 };
-        heading.Children.Add(new TextBlock { Text = "设置", FontSize = 28, FontWeight = FontWeight.SemiBold });
-        heading.Children.Add(Hint("按类别调整启动器、游戏和工作区外观。"));
+        var heading = new StackPanel { Margin = new Thickness(24, 24, 24, 20), Spacing = 6 };
+        heading.Children.Add(PageStyles.PageTitle("设置"));
+        heading.Children.Add(PageStyles.Hint("按类别调整启动器、游戏和工作区外观。"));
         layout.Children.Add(heading);
 
-        var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), Margin = new Thickness(26, 0, 26, 0) };
+        var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), Margin = new Thickness(24, 0, 24, 0) };
         var navigation = new StackPanel { Spacing = 12, Margin = new Thickness(0, 0, 20, 20) };
         var titles = new[] { "个性化设置", "游戏全局设置", "启动器设置" };
         var descriptions = new[] { "外观、组件与工作区交互", "Java、内存与启动参数", "下载源、并发与失败重试" };
@@ -74,9 +75,9 @@ internal sealed class SettingsWindow : Window
         columns.Children.Add(navigation);
         var body = new StackPanel { Margin = new Thickness(0, 0, 0, 24), Spacing = 18 };
         _pageTitle = new TextBlock { FontSize = 23, FontWeight = FontWeight.SemiBold };
-        _pageDescription = Hint("");
+        _pageDescription = PageStyles.Hint("");
         body.Children.Add(_pageTitle); body.Children.Add(_pageDescription);
-        _error = Hint("");
+        _error = PageStyles.Hint("");
         _error.Foreground = Palette.Error;
         _error.Name = "SettingsError";
         var errorStack = new StackPanel { Spacing = 12 };
@@ -102,7 +103,7 @@ internal sealed class SettingsWindow : Window
             _gameFooter = gameEditor.Footer;
             Closed += (_, _) => gameEditor.Dispose();
         }
-        else { _gamePage = Card(Hint("游戏实例服务尚未就绪。")); _gameFooter = new Border(); }
+        else { _gamePage = Card(PageStyles.Hint("游戏实例服务尚未就绪。")); _gameFooter = new Border(); }
         body.Children.Add(_gamePage);
 
         var appearance = Section("外观", "整个启动器共用一套外观，包括已打开的组件窗口。");
@@ -123,7 +124,7 @@ internal sealed class SettingsWindow : Window
         AutomationProperties.SetName(_snapComponentsToGrid, "组件网格对齐");
         _snapComponentsToGrid.IsCheckedChanged += (_, _) => Change(_settings with { SnapComponentsToGrid = _snapComponentsToGrid.IsChecked == true });
         workspace.Children.Add(ChoiceRow("组件网格对齐", _snapComponentsToGrid));
-        workspace.Children.Add(Hint("以功能区坐标原点划分 20 DIP 方格，随组件整体大小缩放；拖放时对齐组件边缘，现有位置保持不变。特殊自由拖动组件可不吸附。"));
+        workspace.Children.Add(PageStyles.Hint("以功能区坐标原点划分 20 DIP 方格，随组件整体大小缩放；拖放时对齐组件边缘，现有位置保持不变。特殊自由拖动组件可不吸附。"));
         _componentScale = Range(workspace, "组件整体大小", "统一缩放桌面与侧边栏中的组件内容；100% 为原始大小", 50, 200, 10, "%", value => _settings with { ComponentScalePercent = value });
         _padding = Range(workspace, "工作区留白", "功能区与窗口边缘之间的距离", 0, 40, 2, "DIP", value => _settings with { WorkspacePadding = value });
         _personalizationPage.Children.Add(Card(workspace));
@@ -142,7 +143,7 @@ internal sealed class SettingsWindow : Window
         _downloadSource = Choice("下载源", ["自动（镜像优先）", "官方源", "BMCLAPI 镜像"]);
         _downloadSource.SelectionChanged += (_, _) => { if (_downloadSource.SelectedIndex >= 0) Change(_settings with { DownloadSource = (DownloadSource)_downloadSource.SelectedIndex }); };
         downloads.Children.Add(ChoiceRow("游戏下载源", _downloadSource));
-        downloads.Children.Add(Hint("版本清单和校验信息始终来自官方。自动与 BMCLAPI 优先通过镜像传输受支持的文件，失败后回退官方。"));
+        downloads.Children.Add(PageStyles.Hint("版本清单和校验信息始终来自官方。自动与 BMCLAPI 优先通过镜像传输受支持的文件，失败后回退官方。"));
         if (showCurseForge)
         {
             _resourceProvider = Choice("默认资源平台", ["Modrinth", "CurseForge"]);
@@ -159,8 +160,8 @@ internal sealed class SettingsWindow : Window
         _launcherPage.Children.Add(Card(downloads));
 
         var storage = new StackPanel { Spacing = 8 };
-        storage.Children.Add(Hint("设置仅保存在此设备。恢复默认设置不会清空功能区和快捷方式。"));
-        storage.Children.Add(new SelectableTextBlock { Text = path, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Palette.Muted });
+        storage.Children.Add(PageStyles.Hint("设置仅保存在此设备。恢复默认设置不会清空功能区和快捷方式。"));
+        storage.Children.Add(PageStyles.Code(path, selectable: true));
         _storage = new Expander { Header = "本地设置文件", Content = storage, HorizontalAlignment = HorizontalAlignment.Stretch };
         body.Children.Add(_storage);
         _scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -168,9 +169,9 @@ internal sealed class SettingsWindow : Window
         Grid.SetRow(columns, 1);
         layout.Children.Add(columns);
 
-        var footer = new StackPanel { Spacing = 12, Margin = new Thickness(26, 14, 26, 18) };
+        var footer = new StackPanel { Spacing = 12, Margin = new Thickness(24, 14, 24, 18) };
         var confirmation = new StackPanel { Spacing = 10 };
-        _resetDescription = Hint("");
+        _resetDescription = PageStyles.Hint("");
         confirmation.Children.Add(_resetDescription);
         var confirmActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         var confirm = new Button { Content = "确认恢复" };
@@ -253,7 +254,7 @@ internal sealed class SettingsWindow : Window
     {
         var keyInput = new TextBox { PasswordChar = '●', PlaceholderText = "CurseForge API 密钥", MaxLength = 1024 };
         AutomationProperties.SetName(keyInput, "CurseForge API 密钥");
-        var status = Hint("");
+        var status = PageStyles.Hint("");
         var apply = new Button { Content = "本次使用", IsEnabled = false };
         var clear = new Button { Content = "清除本次密钥" };
         var official = new Button { Content = "API 密钥申请说明" };
@@ -290,7 +291,7 @@ internal sealed class SettingsWindow : Window
         downloads.Children.Add(keyInput);
         downloads.Children.Add(buttons);
         downloads.Children.Add(status);
-        downloads.Children.Add(Hint("输入的密钥仅用于本次启动。长期使用可在启动前设置 WONDER_CURSEFORGE_API_KEY。"));
+        downloads.Children.Add(PageStyles.Hint("输入的密钥仅用于本次启动。长期使用可在启动前设置 WONDER_CURSEFORGE_API_KEY。"));
     }
 
     private void SelectCategory(int index)
@@ -321,12 +322,13 @@ internal sealed class SettingsWindow : Window
     private Slider Range(StackPanel section, string title, string description, int minimum, int maximum, int step, string unit, Func<int, LauncherSettings> update)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 8, 0, 0) };
-        row.Children.Add(new TextBlock { Text = title, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
-        var valueLabel = new TextBlock { Foreground = Palette.Accent, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+        var label = PageStyles.Label(title);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(label);
+        var valueLabel = new TextBlock { Foreground = Palette.Accent, FontSize = 13, FontFamily = PageStyles.MonoFamily, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(valueLabel, 1);
         row.Children.Add(valueLabel);
         section.Children.Add(row);
-        section.Children.Add(Hint(description));
         var slider = new Slider { Minimum = minimum, Maximum = maximum, TickFrequency = step, IsSnapToTickEnabled = true, SmallChange = step, LargeChange = step * 2, MinHeight = 30 };
         AutomationProperties.SetName(slider, title);
         slider.ValueChanged += (_, _) =>
@@ -337,6 +339,9 @@ internal sealed class SettingsWindow : Window
         };
         valueLabel.Text = $"{minimum} {unit}";
         section.Children.Add(slider);
+        var hint = PageStyles.Hint(description);
+        hint.Margin = new Thickness(0, 2, 0, 0);
+        section.Children.Add(hint);
         return slider;
     }
 
@@ -350,7 +355,9 @@ internal sealed class SettingsWindow : Window
     private static Grid ChoiceRow(string title, Control choice)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
-        row.Children.Add(new TextBlock { Text = title, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+        var label = PageStyles.Label(title);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(label);
         Grid.SetColumn(choice, 1);
         row.Children.Add(choice);
         return row;
@@ -359,11 +366,10 @@ internal sealed class SettingsWindow : Window
     private static StackPanel Section(string title, string subtitle)
     {
         var stack = new StackPanel { Spacing = 8 };
-        stack.Children.Add(new TextBlock { Text = title, FontSize = 17, FontWeight = FontWeight.SemiBold });
-        stack.Children.Add(Hint(subtitle));
+        stack.Children.Add(PageStyles.SectionTitle(title));
+        stack.Children.Add(PageStyles.Hint(subtitle));
         return stack;
     }
 
-    private static TextBlock Hint(string text) => new() { Text = text, FontSize = 12, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap, LineHeight = 20 };
     private static Border Card(Control content) => PageStyles.Card(content);
 }

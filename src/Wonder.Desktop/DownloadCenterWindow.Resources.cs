@@ -122,7 +122,7 @@ internal sealed partial class DownloadCenterWindow
     {
         var back = ActionButton("返回资源列表", () => ShowResourceResults(restoreScroll: true));
         _projectIcon = new ResourceIconView(72) { VerticalAlignment = VerticalAlignment.Top };
-        _projectTitle = Heading("", 22);
+        _projectTitle = PageStyles.PageTitle("");
         _projectDescription = PageStyles.Hint("");
         _projectAuthor = PageStyles.Hint("");
         _projectCoverage = PageStyles.Hint("");
@@ -164,9 +164,9 @@ internal sealed partial class DownloadCenterWindow
         _retryVersions = ActionButton("重试获取发布包", () => { if (_selectedProject is { } selected) UiOperation.Start(() => SelectProjectAsync(selected), () => _closed); });
         _retryVersions.IsVisible = false;
         return Stack(PageStyles.Card(Stack(back, overview)),
-            PageStyles.Card(Stack(Heading("下载"), Pair(Field("下载方式", _resourceDownloadMode), destination, "190,12,*"),
+            PageStyles.Card(Stack(PageStyles.SectionTitle("下载"), Pair(Field("下载方式", _resourceDownloadMode), destination, "190,12,*"),
                 _installTargetDescription, Pair(_selectedRelease, _installResource, "*,12,Auto"))),
-            PageStyles.Card(Stack(Heading("版本选择"), _versionDetails, _retryVersions, families, _versionGroups)));
+            PageStyles.Card(Stack(PageStyles.SectionTitle("版本选择"), _versionDetails, _retryVersions, families, _versionGroups)));
     }
 
     private static Grid Pair(Control left, Control right, string columns)
@@ -357,7 +357,7 @@ internal sealed partial class DownloadCenterWindow
         var icon = new ResourceIconView(52);
         icon.SetProject(project);
         var button = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12) };
-        var title = Heading(project.Title, 16);
+        var title = PageStyles.SectionTitle(project.Title);
         title.MaxLines = 1; title.TextTrimming = TextTrimming.CharacterEllipsis;
         var description = PageStyles.Hint(project.Description);
         description.MaxLines = 2; description.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -365,7 +365,7 @@ internal sealed partial class DownloadCenterWindow
         var text = new StackPanel { Spacing = 4, Children = { title, description, summary } };
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,12,*,20"), Children = { icon, text } };
         Grid.SetColumn(text, 2);
-        var arrow = new TextBlock { Text = "›", FontSize = 22, Foreground = Palette.Accent, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
+        var arrow = PageStyles.Chevron();
         Grid.SetColumn(arrow, 3); row.Children.Add(arrow);
         button.Content = row;
         AutomationProperties.SetName(button, "资源项目·" + project.Id);
@@ -518,21 +518,29 @@ internal sealed partial class DownloadCenterWindow
     {
         var (symbol, channel) = ReleaseChannel(version.ReleaseType);
         var button = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 8) };
-        var label = new TextBlock { Text = $"{symbol}  {channel}", Foreground = version.ReleaseType is "beta" or "alpha" ? Palette.Error : Palette.Accent };
-        var name = Heading(version.Name == version.VersionNumber ? version.Name : version.Name + " · " + version.VersionNumber, 14);
+        var label = new TextBlock { Text = $"{symbol}  {channel}", Foreground = version.ReleaseType is "beta" or "alpha" ? Palette.Accent : Palette.Muted };
+        var name = PageStyles.SectionTitle(version.Name == version.VersionNumber ? version.Name : version.Name + " · " + version.VersionNumber);
         var date = version.PublishedAt?.ToLocalTime().ToString("yyyy-MM-dd") ?? "";
         var details = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*,Auto"), Children = { label, name } };
         Grid.SetColumn(name, 1);
         var time = PageStyles.Hint(date); Grid.SetColumn(time, 2); details.Children.Add(time);
         button.Content = details;
         button.Classes.Set("resource-release", true);
-        button.Background = _selectedResourceVersion?.Id == version.Id ? Palette.Active : Palette.Surface;
+        var selected = _selectedResourceVersion?.Id == version.Id;
+        button.Background = selected ? Palette.Active : Palette.Surface;
+        button.BorderBrush = selected ? Palette.Accent : Palette.Line;
+        button.BorderThickness = new Thickness(selected ? 2 : 1);
         AutomationProperties.SetName(button, "资源发布包·" + version.Id);
         button.Click += (_, _) =>
         {
             _selectedResourceVersion = version;
             foreach (var release in _versionGroups.GetVisualDescendants().OfType<Button>().Where(x => x.Classes.Contains("resource-release")))
-                release.Background = AutomationProperties.GetName(release) == "资源发布包·" + version.Id ? Palette.Active : Palette.Surface;
+            {
+                var isSelected = AutomationProperties.GetName(release) == "资源发布包·" + version.Id;
+                release.Background = isSelected ? Palette.Active : Palette.Surface;
+                release.BorderBrush = isSelected ? Palette.Accent : Palette.Line;
+                release.BorderThickness = new Thickness(isSelected ? 2 : 1);
+            }
             UpdateResourceInstall();
         };
         return button;

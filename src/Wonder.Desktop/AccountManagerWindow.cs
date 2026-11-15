@@ -58,12 +58,13 @@ internal sealed partial class AccountManagerWindow : Window
         _openBrowser = openBrowser ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }));
         Title = "账户中心 · Wonder Launcher"; Width = 1100; Height = 800; MinWidth = 880; MinHeight = 660;
         Background = Palette.Background; Foreground = Palette.Text; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(28, 24) };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
         var title = new StackPanel { Spacing = 5 };
-        title.Children.Add(new TextBlock { Text = "账户中心", FontSize = 28, FontWeight = FontWeight.SemiBold });
+        title.Children.Add(PageStyles.PageTitle("账户中心"));
         title.Children.Add(PageStyles.Hint("你的游戏身份、角色外观与认证服务器")); header.Children.Add(title);
-        var servers = Button("认证服务器", "管理认证服务器", () => Navigate("servers"));
+        var servers = PageStyles.Button("认证服务器", "管理认证服务器", () => Navigate("servers"));
         servers.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(servers, 1); header.Children.Add(servers); layout.Children.Add(header);
         var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("280,24,*") };
         var left = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
@@ -71,14 +72,15 @@ internal sealed partial class AccountManagerWindow : Window
         AutomationProperties.SetName(_search, "搜索账户"); _search.TextChanged += (_, _) => RefreshAccounts();
         _search.Margin = new Thickness(0, 0, 0, 12); Grid.SetRow(_search, 1); left.Children.Add(_search);
         var accountScroll = Scroll(_accounts); Grid.SetRow(accountScroll, 2); left.Children.Add(accountScroll);
-        var add = Button("＋ 添加账户", "添加账户", () => { _reauthenticateId = null; Navigate("add"); });
+        var add = PageStyles.Button("＋ 添加账户", "添加账户", () => { _reauthenticateId = null; Navigate("add"); });
         add.HorizontalAlignment = HorizontalAlignment.Stretch; add.HorizontalContentAlignment = HorizontalAlignment.Center; add.Margin = new Thickness(0, 12, 0, 0);
         Grid.SetRow(add, 3); left.Children.Add(add); columns.Children.Add(left);
         Grid.SetColumn(_page, 2); columns.Children.Add(_page); Grid.SetRow(columns, 1); layout.Children.Add(columns);
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 18, 0, 0) };
         _status.MaxLines = 3; footer.Children.Add(_status);
-        _cancel = Button("取消登录", "取消账户操作", () => { _service.CancelLogin(); if (_password is not null) _password.Text = ""; Refresh(); });
-        _copyError = Button("复制诊断", "复制账户诊断", async () => { if (_service.Error is { } error) await CopyText(error); });
+        _cancel = PageStyles.Button("取消登录", "取消账户操作", () => { _service.CancelLogin(); if (_password is not null) _password.Text = ""; Refresh(); });
+        _copyError = PageStyles.Button("复制诊断", "复制账户诊断", () =>
+            UiOperation.Start(async () => { if (_service.Error is { } error) await CopyText(error); }, () => _closed));
         var footerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 }; footerActions.Children.Add(_copyError); footerActions.Children.Add(_cancel);
         Grid.SetColumn(footerActions, 1); footer.Children.Add(footerActions); Grid.SetRow(footer, 2); layout.Children.Add(footer);
         Content = layout; service.Changed += OnChanged;
@@ -109,23 +111,24 @@ internal sealed partial class AccountManagerWindow : Window
         _renderedSelectedId = _service.SelectedAccount?.Id;
         if (profile is null)
         {
-            var empty = Page(); empty.Children.Add(Heading("开始你的旅程"));
+            var empty = Page(); empty.Children.Add(PageStyles.PageTitle("开始你的旅程"));
             empty.Children.Add(PageStyles.Hint("添加微软正版、自定义认证服务器或离线账户。添加后可在桌面组件中快速切换。"));
-            empty.Children.Add(Button("添加第一个账户", "添加第一个账户", () => Navigate("add"))); return PageStyles.Card(empty);
+            empty.Children.Add(PageStyles.Button("添加第一个账户", "添加第一个账户", () => Navigate("add"))); return PageStyles.Card(empty);
         }
         var body = Page();
         var identity = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         var labels = new StackPanel { Spacing = 7 };
-        labels.Children.Add(Heading(profile.Username));
+        labels.Children.Add(PageStyles.PageTitle(profile.Username));
         labels.Children.Add(PageStyles.Hint(AccountService.KindLabel(profile.Kind) + (profile.Id == _service.SelectedAccount?.Id ? "  ·  当前启动账户" : "  ·  可切换使用")));
         labels.Children.Add(PageStyles.Hint(profile.Kind == AccountKind.Offline ? "本地身份 · 不进行正版认证" : profile.LastValidatedAt is { } time ? "最近验证 " + time.ToLocalTime().ToString("MM-dd HH:mm") : "登录资料已保存 · 启动前自动验证"));
         identity.Children.Add(labels);
         var use = IdleButton("使用此账户", "选择账户 " + profile.Username, async () => await Run(() => _service.SelectAsync(profile.Id)));
         use.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(use, 1); identity.Children.Add(use); body.Children.Add(identity);
         var uuid = new StackPanel { Spacing = 5 };
-        uuid.Children.Add(PageStyles.Hint("UUID")); uuid.Children.Add(new SelectableTextBlock { Text = profile.Uuid, FontSize = 12, Foreground = Palette.Muted });
-        uuid.Children.Add(Button("复制 UUID", "复制账户 UUID", async () => await CopyText(profile.Uuid)));
-        if (profile.ServerUrl is { } server) uuid.Children.Add(PageStyles.Hint("认证服务器  " + ServerName(server) + "\n" + server));
+        uuid.Children.Add(PageStyles.Label("UUID")); uuid.Children.Add(PageStyles.Code(profile.Uuid, selectable: true));
+        uuid.Children.Add(PageStyles.Button("复制 UUID", "复制账户 UUID", () =>
+            UiOperation.Start(async () => await CopyText(profile.Uuid), () => _closed)));
+        if (profile.ServerUrl is { } server) uuid.Children.Add(PageStyles.Code("认证服务器  " + ServerName(server) + "\n" + server, selectable: true));
         body.Children.Add(PageStyles.Card(uuid, new Thickness(16, 12)));
         var actions = new WrapPanel { Orientation = Orientation.Horizontal };
         if (profile.Kind != AccountKind.Offline)
@@ -142,7 +145,7 @@ internal sealed partial class AccountManagerWindow : Window
         foreach (Control c in actions.Children) c.Margin = new Thickness(0, 0, 8, 6); body.Children.Add(actions);
         if (profile.Kind == AccountKind.Offline)
         {
-            body.Children.Add(Heading("离线身份"));
+            body.Children.Add(PageStyles.SectionTitle("离线身份"));
             body.Children.Add(PageStyles.Hint("修改玩家名会生成新的离线 UUID，游戏可能把它视为另一位玩家，原存档中的背包和权限不会自动迁移。"));
             var rename = Field(body, "玩家名", "修改离线玩家名", profile.Username, 16);
             body.Children.Add(IdleButton("确认修改名字与 UUID", "重命名离线账户", async () => await Run(() => _service.RenameOfflineAsync(profile.Id, rename.Text ?? ""))));
@@ -151,7 +154,7 @@ internal sealed partial class AccountManagerWindow : Window
         else if (profile.Kind == AccountKind.Microsoft) BuildAppearance(body, profile);
         else
         {
-            body.Children.Add(Heading("第三方角色"));
+            body.Children.Add(PageStyles.SectionTitle("第三方角色"));
             body.Children.Add(PageStyles.Hint("皮肤、披风和角色资料由认证服务器管理。添加账户可选择该账号拥有的其他角色。"));
             body.Children.Add(BuildCharacterPreview(profile));
             BuildActiveCape(body, profile);
@@ -161,7 +164,7 @@ internal sealed partial class AccountManagerWindow : Window
             {
                 body.Children.Add(IdleButton("选择皮肤 · 打开认证网站 ↗", "选择第三方皮肤", () => OpenWebsite(home)));
                 body.Children.Add(PageStyles.Hint("将在默认浏览器中打开：\n" + home + "\n请在该网站登录并选择皮肤。Wonder 不向浏览器传递密码或令牌。"));
-                body.Children.Add(Button("设置皮肤管理网站", "设置第三方皮肤网站", () => Navigate("servers")));
+                body.Children.Add(PageStyles.Button("设置皮肤管理网站", "设置第三方皮肤网站", () => Navigate("servers")));
             }
         }
         return Scroll(body);
@@ -178,7 +181,7 @@ internal sealed partial class AccountManagerWindow : Window
             if (!_closed && revision == _pageRevision) Navigate("details");
         }));
         Border? card = null;
-        content.Children.Add(Button("保留账户", "取消删除账户", () => body.Children.Remove(card!)));
+        content.Children.Add(PageStyles.Button("保留账户", "取消删除账户", () => body.Children.Remove(card!)));
         card = PageStyles.Card(content); card.Name = "DeleteConfirmation"; body.Children.Insert(3, card);
     }
     private void Refresh()
@@ -261,22 +264,14 @@ internal sealed partial class AccountManagerWindow : Window
     }
     private string ServerName(string url) => _service.Servers.FirstOrDefault(x => x.ApiUrl == url)?.Name ?? new Uri(url).Host;
     private Button IdleButton(string text, string automation, Action action)
-    { var button = Button(text, automation, action); _idle.Add(button); return button; }
+    { var button = PageStyles.Button(text, automation, action); _idle.Add(button); return button; }
     private Button IdleButton(string text, string automation, Func<Task> action)
-    { var button = Button(text, automation, action); _idle.Add(button); return button; }
+    { var button = PageStyles.Button(text, automation, () => UiOperation.Start(action, () => _closed)); _idle.Add(button); return button; }
     private TextBox Field(StackPanel parent, string label, string automation, string text, int length)
     {
-        parent.Children.Add(PageStyles.Hint(label)); var box = new TextBox { Text = text, MaxLength = length };
+        parent.Children.Add(PageStyles.Label(label)); var box = new TextBox { Text = text, MaxLength = length };
         AutomationProperties.SetName(box, automation); parent.Children.Add(box); _idle.Add(box); return box;
     }
-    private static Button Button(string text, string automation, Action action)
-    {
-        var button = new Button { Content = text, MinHeight = 36 }; AutomationProperties.SetName(button, automation);
-        button.Click += (_, _) => action(); return button;
-    }
-    private Button Button(string text, string automation, Func<Task> action) =>
-        Button(text, automation, () => UiOperation.Start(action, () => _closed));
     private static StackPanel Page() => new() { Spacing = 16, Margin = new Thickness(2, 0, 8, 14) };
-    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 21, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     private static ScrollViewer Scroll(Control content) => new() { Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 }

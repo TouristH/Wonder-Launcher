@@ -48,6 +48,7 @@ public sealed partial class MainWindow : Window
         FontFamily = new FontFamily(OperatingSystem.IsLinux()
             ? "Noto Sans CJK SC,Noto Sans CJK TC,WenQuanYi Micro Hei,DejaVu Sans,sans-serif"
             : "Microsoft YaHei UI,Microsoft YaHei,Segoe UI,sans-serif");
+        WonderMark.ApplyIcon(this);
         _workspacePath = workspacePath ?? LauncherDataPaths.WorkspacePath;
         _store = new WorkspaceStore(_workspacePath);
         _settingsPath = settingsPath ?? (workspacePath is null ? LauncherDataPaths.SettingsPath : System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(_workspacePath))!, "settings.json"));
@@ -114,11 +115,13 @@ public sealed partial class MainWindow : Window
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), Background = Palette.Header };
         var brand = new Button { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(22, 10), HorizontalContentAlignment = HorizontalAlignment.Left };
         var brandContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
-        var logo = new Polygon { Points = new Points { new(0, 0), new(8, 5), new(16, 0), new(12, 22), new(4, 22) }, Fill = Palette.Accent, Width = 18, Height = 24, VerticalAlignment = VerticalAlignment.Center };
-        var brandText = new StackPanel { Spacing = 1 };
-        brandText.Children.Add(new TextBlock { Text = "W O N D E R  ⌄", FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text });
-        brandText.Children.Add(new TextBlock { Text = "奇想我的世界启动器", FontSize = 10, Foreground = Palette.Muted });
-        brandContent.Children.Add(logo);
+        brandContent.Children.Add(WonderMark.Create(30));
+        var brandText = new StackPanel { Spacing = 2 };
+        var wordmark = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        wordmark.Children.Add(new TextBlock { Text = "WONDER", FontFamily = new FontFamily("Bahnschrift,Segoe UI,sans-serif"), FontSize = 15, FontWeight = FontWeight.SemiBold, LetterSpacing = 1, Foreground = Palette.Text, VerticalAlignment = VerticalAlignment.Center });
+        wordmark.Children.Add(new TextBlock { Text = "⌄", FontSize = 13, Foreground = Palette.Muted, VerticalAlignment = VerticalAlignment.Center });
+        brandText.Children.Add(wordmark);
+        brandText.Children.Add(new TextBlock { Text = "奇想启动器", FontSize = 11, Foreground = Palette.Muted });
         brandContent.Children.Add(brandText);
         brand.Content = brandContent;
         ToolTip.SetTip(brand, "工作区菜单 · 添加功能区与组件");
@@ -144,10 +147,16 @@ public sealed partial class MainWindow : Window
         ToolTip.SetTip(_saveStatus, "点击查看操作说明或存储状态");
         Grid.SetColumn(_saveStatus, 2);
         top.Children.Add(_saveStatus);
-        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
-        windowButtons.Children.Add(WindowButton("—", "最小化", () => WindowState = WindowState.Minimized));
-        windowButtons.Children.Add(WindowButton("□", "最大化 / 还原", ToggleMaximize));
-        windowButtons.Children.Add(WindowButton("×", "关闭", Close));
+        var windowButtons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Stretch };
+        windowButtons.Children.Add(WindowButton("最小化", () => WindowState = WindowState.Minimized, WindowGlyph.Glyph.Minimize).Button);
+        var maximizeButton = WindowButton("最大化 / 还原", ToggleMaximize, WindowGlyph.Glyph.Maximize);
+        windowButtons.Children.Add(maximizeButton.Button);
+        windowButtons.Children.Add(WindowButton("关闭", Close, WindowGlyph.Glyph.Close, danger: true).Button);
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == WindowStateProperty)
+                maximizeButton.Glyph.Kind = WindowState == WindowState.Maximized ? WindowGlyph.Glyph.Restore : WindowGlyph.Glyph.Maximize;
+        };
         Grid.SetColumn(windowButtons, 3);
         top.Children.Add(windowButtons);
         layout.Children.Add(new Border { BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1), Child = top });
@@ -158,13 +167,45 @@ public sealed partial class MainWindow : Window
         UpdateStorageStatus();
     }
 
-    private Button WindowButton(string glyph, string tip, Action action)
+    /// <summary>
+    /// A window control built from a stroked vector glyph rather than a text character, so it is
+    /// optically centred in its box and scales with the surface instead of depending on font metrics.
+    /// </summary>
+    private (Button Button, WindowGlyph Glyph) WindowButton(string tip, Action action, WindowGlyph.Glyph kind, bool danger = false)
     {
-        var button = new Button { Content = glyph, Width = 44, Height = 42, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = Palette.Muted, FontSize = 18 };
+        // A custom-rendered Control measures to zero unless it is given a size, so the glyph would
+        // never reach Render; the box also sets the scale the glyph proportions itself against.
+        var glyph = new WindowGlyph(kind) { IsHitTestVisible = false, Width = 46, Height = 46, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        var surface = new Border
+        {
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(8),
+            Transitions = PageStyles.HoverTransitions(),
+            Child = glyph,
+        };
+        var button = new Button
+        {
+            Content = surface,
+            Width = 46,
+            Height = 64,
+            Padding = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Stretch,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+        };
         ToolTip.SetTip(button, tip);
         Avalonia.Automation.AutomationProperties.SetName(button, tip);
         button.Click += (_, _) => action();
-        return button;
+        button.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != IsPointerOverProperty && e.Property != Button.IsPressedProperty) return;
+            var active = button.IsPointerOver || button.IsPressed;
+            surface.Background = button.IsPressed ? Palette.Pressed : active ? Palette.Hover : Brushes.Transparent;
+            glyph.Stroke = active ? (danger ? Palette.Error : Palette.Text) : Palette.Muted;
+            glyph.InvalidateVisual();
+        };
+        return (button, glyph);
     }
 
     private void ToggleMaximize() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
@@ -265,6 +306,7 @@ public sealed partial class MainWindow : Window
     private async Task ShowMessage(string title, string message, Action? retry = null, string retryLabel = "重试保存", Action? forceClose = null)
     {
         var dialog = new Window { Title = title, Width = 570, Height = 470, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Palette.Background, Foreground = Palette.Text, FontFamily = FontFamily };
+        WonderMark.ApplyIcon(dialog);
         var stack = new StackPanel { Margin = new Thickness(28), Spacing = 18 };
         stack.Children.Add(new TextBlock { Text = title, FontSize = 21, FontWeight = FontWeight.SemiBold });
         stack.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = 13, LineHeight = 23, Foreground = Palette.Muted });

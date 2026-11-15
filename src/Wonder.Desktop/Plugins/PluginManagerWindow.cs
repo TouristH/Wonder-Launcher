@@ -44,8 +44,9 @@ internal sealed partial class PluginManagerWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.Background;
         Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
-        layout.Children.Add(Heading("插件", 28));
+        layout.Children.Add(PageStyles.PageTitle("插件"));
         _content = new Grid { Margin = new Thickness(0, 20, 0, 16) };
         var tabs = new TabControl();
         tabs.Items.Add(new TabItem { Header = "已安装", Content = BuildInstalledPage() });
@@ -271,18 +272,11 @@ internal sealed partial class PluginManagerWindow : Window
         _status.Foreground = error ? Palette.Error : Palette.Muted;
     }
 
-    private static TextBlock Heading(string text, double size = 17) => new()
-    {
-        Text = text, FontSize = size, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, TextWrapping = TextWrapping.Wrap
-    };
-    private static TextBlock Hint(string? text) => new() { Text = text, FontSize = 12, Foreground = Palette.Muted, TextWrapping = TextWrapping.Wrap };
-    private static Button ActionButton(string text, Action action, string? accessibleName = null)
-    {
-        var button = new Button { Content = text, MinHeight = 34, Margin = new Thickness(0, 0, 8, 4) };
-        AutomationProperties.SetName(button, accessibleName ?? text);
-        button.Click += (_, _) => action();
-        return button;
-    }
+    private static TextBlock Heading(string text, double size = 17) =>
+        size >= 23 ? PageStyles.PageTitle(text) : PageStyles.SectionTitle(text);
+    private static TextBlock Hint(string? text) => PageStyles.Hint(text ?? "");
+    private static Button ActionButton(string text, Action action, string? accessibleName = null) =>
+        PageStyles.Button(text, accessibleName ?? text, action);
     private static ScrollViewer Scroll(Control content) => new()
     {
         Content = content, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,

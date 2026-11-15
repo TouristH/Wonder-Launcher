@@ -37,10 +37,11 @@ internal sealed partial class DownloadCenterWindow : Window
         _showCurseForge = showCurseForge;
         Title = "下载 · Wonder Launcher"; Width = 1120; Height = 810; MinWidth = 860; MinHeight = 580;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Palette.Background; Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
         var heading = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 22) };
         var brand = new StackPanel { Spacing = 5 };
-        brand.Children.Add(Heading("下载", 29));
+        brand.Children.Add(PageStyles.PageTitle("下载"));
         _source = PageStyles.Hint(""); brand.Children.Add(_source); heading.Children.Add(brand);
         var settings = ActionButton("下载设置", openSettings); settings.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(settings, 1); heading.Children.Add(settings); layout.Children.Add(heading);
@@ -56,7 +57,7 @@ internal sealed partial class DownloadCenterWindow : Window
         }
         content.Children.Add(new ScrollViewer { Content = nav, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         var body = new StackPanel { Spacing = 15, Margin = new Thickness(0, 0, 6, 18) };
-        _title = Heading("", 23); _subtitle = PageStyles.Hint(""); body.Children.Add(_title); body.Children.Add(_subtitle);
+        _title = PageStyles.PageTitle(""); _subtitle = PageStyles.Hint(""); body.Children.Add(_title); body.Children.Add(_subtitle);
         _gamePage = BuildGamePage(); _resourcesPage = BuildResourcesPage(resourceProvider); _tasksPage = BuildTasksPage();
         body.Children.Add(_gamePage); body.Children.Add(_resourcesPage); body.Children.Add(_tasksPage);
         _scroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -127,7 +128,6 @@ internal sealed partial class DownloadCenterWindow : Window
     internal static string SourceLabel(DownloadSource source) => source switch { DownloadSource.Official => "官方", DownloadSource.BmclApi => "BMCLAPI", _ => "自动（镜像优先）" };
     private void ShowStatus(string message, bool error = false) { if (_closed) return; _status.Text = message; _status.Foreground = error ? Palette.Error : Palette.Muted; }
     private void Queued(string title) { ShowStatus(title + " 已加入下载队列。关闭窗口不影响下载。"); SelectPage(5); }
-    private static TextBlock Heading(string text, double size = 17) => new() { Text = text, FontSize = size, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     private static Button ActionButton(string title, Action action)
     {
         var button = new Button { Content = title, MinHeight = 34 }; AutomationProperties.SetName(button, title);

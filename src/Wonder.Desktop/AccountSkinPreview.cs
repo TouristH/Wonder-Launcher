@@ -158,7 +158,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             var capeScale = Math.Min(Bounds.Width / 12, Bounds.Height / 18);
             var capeRect = new Rect((Bounds.Width - 10 * capeScale) / 2, (Bounds.Height - 16 * capeScale) / 2, 10 * capeScale, 16 * capeScale);
             if (_cape is not null) DrawTexture(context, _cape, new Rect(1, 1, 10, 16), capeRect);
-            else context.DrawRectangle(Palette.Hover, null, capeRect);
+            else context.DrawRectangle(Palette.Sunken, null, capeRect);
             return;
         }
         if (HeadOnly)
@@ -172,7 +172,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             }
             else
             {
-                context.DrawRectangle(Palette.Active, null, rect);
+                context.DrawRectangle(Palette.Sunken, null, rect);
                 var unit = size / 8;
                 context.DrawRectangle(Palette.Accent, null, new Rect(rect.X + 2 * unit, rect.Y + 3 * unit, unit, unit));
                 context.DrawRectangle(Palette.Accent, null, new Rect(rect.X + 5 * unit, rect.Y + 3 * unit, unit, unit));
@@ -189,9 +189,9 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         if (_skin is null)
         {
             context.DrawRectangle(Palette.Accent, null, Dest(4, 0, 8, 8));
-            context.DrawRectangle(Palette.Hover, null, Dest(4, 8, 8, 12));
-            context.DrawRectangle(Palette.Active, null, Dest(4 - arm, 8, arm, 12));
-            context.DrawRectangle(Palette.Active, null, Dest(12, 8, arm, 12));
+            context.DrawRectangle(Palette.Raised, null, Dest(4, 8, 8, 12));
+            context.DrawRectangle(Palette.Sunken, null, Dest(4 - arm, 8, arm, 12));
+            context.DrawRectangle(Palette.Sunken, null, Dest(12, 8, arm, 12));
             context.DrawRectangle(Palette.Line, null, Dest(4, 20, 4, 12));
             context.DrawRectangle(Palette.Line, null, Dest(8, 20, 4, 12));
             if (_back && _cape is not null) DrawTexture(context, _cape, new Rect(1, 1, 10, 16), Dest(3, 8, 10, 16));

@@ -55,7 +55,7 @@ internal sealed partial class DownloadCenterWindow
             UpdateGameInstall();
             UiOperation.Start(LoadGameAddonsAsync, () => _closed);
         };
-        var optional = Stack(Heading("可选组件"));
+        var optional = Stack(PageStyles.SectionTitle("可选组件"));
         foreach (var (kind, title) in new[] { (GameAddonKind.OptiFine, "OptiFine"), (GameAddonKind.FabricApi, "Fabric API"), (GameAddonKind.QuiltApi, "Quilted Fabric API / QSL") })
         {
             var choice = Choice(title, ["不安装"]); choice.SelectedIndex = 0;
@@ -64,7 +64,7 @@ internal sealed partial class DownloadCenterWindow
             optional.Children.Add(field);
         }
         _addonStatus = PageStyles.Hint("选择 Minecraft 版本后查询可用组件。"); optional.Children.Add(_addonStatus);
-        var versionCard = Stack(Heading("选择版本"), Field("版本分类", _gameType), _gameQuery,
+        var versionCard = Stack(PageStyles.SectionTitle("选择版本"), Field("版本分类", _gameType), _gameQuery,
             Field("Minecraft", _gameVersions), Field("加载器", _loader), Field("加载器版本", _loaderVersions), _gameStatus,
             ActionButton("刷新游戏版本", () => UiOperation.Start(LoadGameVersionsAsync, () => _closed)));
         _gameName = Input("新实例名称", "给这个实例取个名字");
@@ -73,7 +73,7 @@ internal sealed partial class DownloadCenterWindow
         _javaPath = Input("安装器 Java 路径", "留空自动安装游戏所需 Java", _instances.Catalog.GlobalSettings.JavaPath);
         _installGame = ActionButton("安装游戏", QueueGame); _installGame.IsEnabled = false; _installGame.HorizontalAlignment = HorizontalAlignment.Left;
         _isolationHint = PageStyles.Hint(""); RefreshGameInstallDirectory();
-        var destination = Stack(Heading("安装位置"), Field("实例名称", _gameName), DirectoryField("游戏保存目录", _gameParent),
+        var destination = Stack(PageStyles.SectionTitle("安装位置"), Field("实例名称", _gameName), DirectoryField("游戏保存目录", _gameParent),
             Field("Java 可执行文件（留空自动安装）", _javaPath), _isolationHint, _installGame);
         return Stack(PageStyles.Card(versionCard), PageStyles.Card(optional), PageStyles.Card(destination));
     }

@@ -17,10 +17,13 @@ internal sealed class DeleteConfirmationWindow : Window
     {
         Title = "删除确认 · Wonder Launcher"; Width = 560; Height = 440; MinWidth = 460; MinHeight = 360;
         Background = Palette.Background; Foreground = Palette.Text; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), Margin = new Thickness(24) };
         var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(new TextBlock { Text = "移入系统回收站", FontSize = 23, FontWeight = FontWeight.SemiBold, Foreground = Palette.Error });
-        content.Children.Add(new TextBlock { Text = title, FontSize = 16, TextWrapping = TextWrapping.Wrap });
+        var heading = PageStyles.PageTitle("移入系统回收站");
+        heading.Foreground = Palette.Error;
+        content.Children.Add(heading);
+        content.Children.Add(PageStyles.SectionTitle(title));
         content.Children.Add(new SelectableTextBlock { Text = path, FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Palette.Accent });
         content.Children.Add(PageStyles.Hint(description));
         content.Children.Add(PageStyles.Hint(instructions ?? "将移走上述目录中的文件并移除登记。请核对路径，然后准确输入小写 sure。取消不会修改文件。"));

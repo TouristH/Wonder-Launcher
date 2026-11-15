@@ -18,6 +18,7 @@ public sealed class WonderApplication : Avalonia.Application
             LauncherDiagnostics.Error("Avalonia.Dispatcher", args.Exception);
         RequestedThemeVariant = ThemeVariant.Dark;
         Styles.Add(new FluentTheme());
+        WonderTheme.Install();
         HoverTipBehavior.Initialize();
         ButtonClickRipples.Initialize();
     }

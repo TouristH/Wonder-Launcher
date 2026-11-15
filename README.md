@@ -4,6 +4,8 @@
 
 **当前版本：0.7.2 开发预览。** 项目原创代码按 **[GNU GPLv3（仅第 3 版）](LICENSE)** 开源，并适用第 7 条允许的[署名、修改标识与商标附加条款](ADDITIONAL_TERMS.md)。分发修改版须保留相应的源码开放义务；Wonder 品牌使用另见[品牌政策](BRANDING.md)。
 
+标志是一枚带亮芯的星芒，拖一条更浅的尾迹飞向左上：星芒是忽然出现的惊奇，尾迹是仍在追问、还想知道的那部分 wonder。图形资源在 `src/Wonder.Desktop/Assets/Brand/`，界面内由 `WonderMark.cs` 按当前强调色实时绘制。
+
 维护者：[TouristH](https://github.com/TouristH) · 项目联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)
 
 [使用说明](Wonder.md) · [帮助目录](Guides/README.md) · [隐私说明](PRIVACY.md) · [第三方声明](THIRD-PARTY-NOTICES.md)

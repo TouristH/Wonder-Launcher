@@ -59,10 +59,11 @@ try {
             $relative = [IO.Path]::GetRelativePath($root, $item.FullName)
             if ($relative -match '(^|[\\/])(bin|obj|WonderData)([\\/]|$)') { continue }
             $instanceLogo = $relative.Replace('\','/') -match '^src/Wonder.Desktop/Assets/InstanceIcons/[^/]+\.png$'
+            $brandAsset = $relative.Replace('\','/') -match '^src/Wonder.Desktop/Assets/Brand/[^/]+\.(png|ico|svg|md)$'
             $pluginSource = $relative.Replace('\','/') -in @(
                 'src/Wonder.Plugin.PleaseWait/plugin.json','src/Wonder.Plugin.PleaseWait/README.md',
                 'src/Wonder.Desktop/Plugins/index.json')
-            if (!$instanceLogo -and !$pluginSource -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.sh','.plist')) { throw "Review new source file type: $relative" }
+            if (!$instanceLogo -and !$brandAsset -and !$pluginSource -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.sh','.plist')) { throw "Review new source file type: $relative" }
             $destination = Join-Path $source $relative
             New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
             Copy-Item -LiteralPath $item.FullName -Destination $destination
@@ -83,9 +84,22 @@ try {
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false `
             -p:DebugType=None -p:DebugSymbols=false -o $publish --nologo
         if ($LASTEXITCODE -ne 0) { throw "Publish failed: $targetRuntime" }
+        # The self-contained check below expects the application alone in $app, so documents go in
+        # after it for win/linux and before the tar for macOS.
+        $copyDocs = {
+            # Clear first: copying a directory onto an existing one nests it instead of merging, so
+            # a second run would otherwise keep stale guides and add a Guides/Guides duplicate.
+            $guideTarget = Join-Path $app 'Guides'
+            $licenceTarget = Join-Path $app 'ThirdPartyLicenses'
+            if (Test-Path -LiteralPath $guideTarget) { Remove-Item -LiteralPath $guideTarget -Recurse -Force }
+            if (Test-Path -LiteralPath $licenceTarget) { Remove-Item -LiteralPath $licenceTarget -Recurse -Force }
+            New-Item -ItemType Directory -Path $guideTarget -Force | Out-Null
+            foreach ($name in $documents) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $app -Force }
+            foreach ($name in $guides) { Copy-Item -LiteralPath (Join-Path $source "Guides/$name") -Destination $guideTarget -Force }
+            Copy-Item -LiteralPath (Join-Path $source 'ThirdPartyLicenses') -Destination $app -Recurse -Force
+        }
         if ($macOS) {
-            foreach ($name in $documents) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $app }
-            foreach ($folder in @('Guides','ThirdPartyLicenses')) { Copy-Item -LiteralPath (Join-Path $source $folder) -Destination $app -Recurse }
+            & $copyDocs
             $plist = [IO.File]::ReadAllText((Join-Path $source 'packaging/Wonder.Info.plist')).Replace('@VERSION@',$version)
             [IO.File]::WriteAllText((Join-Path $app 'Wonder Launcher.app/Contents/Info.plist'), $plist, [Text.UTF8Encoding]::new($false))
             Copy-Item -LiteralPath (Join-Path $source 'packaging/Wonder.macOS.entitlements.plist') -Destination $app
@@ -111,10 +125,17 @@ try {
             $archive = Join-Path $artifactRoot "Wonder-$version-$targetRuntime$extension"
             Copy-Item -LiteralPath (Join-Path $app $executable) -Destination $archive -Force
             if (!$IsWindows -and $targetRuntime -eq 'linux-x64') { [IO.File]::SetUnixFileMode($archive, [IO.UnixFileMode]493) }
+            & $copyDocs
         }
         $archives += $archive
         # Copy generated files only; keep existing WonderData and running Windows sessions.
         New-Item -ItemType Directory -Path $output -Force | Out-Null
+        # Directory copies merge, so documents and licences left by an older run would survive the
+        # whitelist. Clear those two from the output before copying the current set in.
+        foreach ($folder in @('Guides','ThirdPartyLicenses')) {
+            $stale = Join-Path $output $folder
+            if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force }
+        }
         foreach ($item in (Get-ChildItem -LiteralPath $app)) {
             $destination = Join-Path $output $item.Name
             $previousExecutable = $null

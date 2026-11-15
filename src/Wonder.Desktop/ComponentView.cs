@@ -279,7 +279,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
             Content = title, FontSize = 11, Padding = new Thickness(10, 3),
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center,
-            Background = Palette.Active, Foreground = Palette.Text, BorderBrush = Palette.Accent,
+            Background = Palette.Active, Foreground = Palette.Text, BorderBrush = Palette.Line,
             BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), IsEnabled = !_preview
         };
         AutomationProperties.SetName(button, "打开" + title);
@@ -290,7 +290,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
             else if (entry.ActionId is not null) context.Invoke(entry.ActionId);
             else OpenDetails();
         };
-        return new ComponentContent(button, select: selected => button.BorderBrush = selected ? Palette.Emphasis : Palette.Accent);
+        return new ComponentContent(button, select: selected => button.BorderBrush = selected ? Palette.Emphasis : Palette.Line);
     }
 
     private void OpenDetails()

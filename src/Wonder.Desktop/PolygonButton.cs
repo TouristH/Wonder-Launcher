@@ -90,7 +90,7 @@ internal sealed class PolygonButton : Button, ICustomHitTest
         if (_polygon is null) return;
         var emphasized = _selected || IsPressed || IsFocused;
         _polygon.Fill = IsPressed || _selected ? Palette.Pressed : IsPointerOver || IsFocused ? Palette.Hover : _restingFill;
-        _polygon.Stroke = emphasized ? Palette.Emphasis : Palette.Accent;
+        _polygon.Stroke = emphasized ? Palette.Emphasis : IsPointerOver ? Palette.LineStrong : Palette.Line;
         _polygon.StrokeThickness = emphasized ? 2.6 : IsPointerOver ? 1.8 : 1.2;
     }
 }

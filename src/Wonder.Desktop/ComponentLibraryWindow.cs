@@ -21,6 +21,7 @@ internal sealed class ComponentLibraryWindow : Window
         MinHeight = 440;
         Background = Palette.Background;
         Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
         _library = new ComponentLibraryView(workspace, items, Close);
         Content = _library;
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { Close(); e.Handled = true; } };

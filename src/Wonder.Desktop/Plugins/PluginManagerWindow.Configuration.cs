@@ -30,7 +30,7 @@ internal sealed partial class PluginManagerWindow
             var input = new TextBox
             {
                 Text = _manager.ReadConfiguration(plugin.Manifest.Id), AcceptsReturn = true, AcceptsTab = true,
-                TextWrapping = TextWrapping.NoWrap, FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace"),
+                TextWrapping = TextWrapping.NoWrap, FontFamily = PageStyles.MonoFamily,
                 VerticalAlignment = VerticalAlignment.Stretch, Margin = new Thickness(0, 14, 0, 12)
             };
             AutomationProperties.SetName(input, "插件 JSON 配置");

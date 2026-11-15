@@ -62,7 +62,7 @@ internal sealed class InstanceBrowserCard : Border
 
     private static Button ActionButton(string label, string name, Action action)
     {
-        var button = new Button { Content = label, FontSize = 11, Padding = new Thickness(6, 4), MinWidth = 36, MinHeight = 28 };
+        var button = new Button { Content = label, FontSize = 12, Padding = new Thickness(10, 6), MinWidth = 56, MinHeight = 34 };
         AutomationProperties.SetName(button, name); ToolTip.SetTip(button, name);
         button.Click += (_, e) => { e.Handled = true; action(); };
         return button;

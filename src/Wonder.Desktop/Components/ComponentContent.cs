@@ -34,7 +34,7 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
     public static ComponentContent Text(ComponentPresentationContext context, string text)
     {
         var body = new StackPanel { Spacing = 12, Margin = new Thickness(16) };
-        body.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 15, FontWeight = FontWeight.SemiBold, Foreground = Palette.Accent });
+        body.Children.Add(new TextBlock { Text = context.Definition.Title, FontSize = 13, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text });
         body.Children.Add(new TextBlock { Text = text, FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Palette.Text });
         return Card(body);
     }
@@ -43,7 +43,8 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         Action refresh, Func<bool>? enabled = null, Func<string>? description = null)
     {
         body.IsHitTestVisible = false;
-        var surface = new Border { CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 12), ClipToBounds = true, Child = body };
+        var surface = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(16, 12), ClipToBounds = true, Child = body, Transitions = PageStyles.HoverTransitions() };
+        PageStyles.EnablePressFeedback(surface);
         var button = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
@@ -55,9 +56,10 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         void Paint()
         {
             surface.Background = button.IsPressed ? Palette.Pressed : button.IsPointerOver ? Palette.Hover : Palette.Active;
-            surface.BorderBrush = selected || button.IsFocused ? Palette.Emphasis : Palette.Accent;
-            surface.BorderThickness = new Thickness(selected || button.IsFocused ? 2.6 : 1);
+            surface.BorderBrush = selected || button.IsFocused ? Palette.Emphasis : button.IsPointerOver ? Palette.LineStrong : Palette.Line;
+            surface.BorderThickness = new Thickness(selected || button.IsFocused ? 2 : 1);
             body.Opacity = button.IsEnabled || context.IsPreview ? 1 : .55;
+            PageStyles.PaintPressScale(surface, button.IsPressed);
         }
         button.PropertyChanged += (_, args) =>
         {
@@ -81,13 +83,13 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
     {
         var border = new Border
         {
-            Background = Palette.Surface, BorderBrush = Palette.Accent, BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14), ClipToBounds = true, Child = body
+            Background = Palette.Raised, BorderBrush = Palette.Line, BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12), ClipToBounds = true, Child = body
         };
         return new ComponentContent(border, refresh, selected =>
         {
-            border.BorderBrush = selected ? Palette.Emphasis : Palette.Accent;
-            border.BorderThickness = new Thickness(selected ? 2.6 : 1);
+            border.BorderBrush = selected ? Palette.Emphasis : Palette.Line;
+            border.BorderThickness = new Thickness(selected ? 2 : 1);
         }, canStartDrag, dispose);
     }
 }

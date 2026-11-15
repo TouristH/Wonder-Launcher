@@ -27,9 +27,10 @@ internal sealed class LaunchCrashWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.Background;
         Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
 
         var details = new StackPanel { Spacing = 10 };
-        details.Children.Add(new TextBlock { Text = Title, FontSize = 22, FontWeight = FontWeight.SemiBold });
+        details.Children.Add(PageStyles.PageTitle(Title));
         details.Children.Add(PageStyles.Hint(report.ExitCode is { } code ? $"{report.InstanceName} · 退出代码 {code}" : report.InstanceName));
         details.Children.Add(PageStyles.Hint(report.Reason));
         var prompt = PageStyles.Hint("是否将本次启动记录、游戏日志、崩溃报告和运行环境信息打包成 ZIP 保存到本机？");
@@ -90,7 +91,7 @@ internal sealed class LaunchCrashWindow : Window
         actions.Children.Add(openDirectory);
         actions.Children.Add(dismiss);
         actions.Children.Add(save);
-        var layout = new StackPanel { Margin = new Thickness(22), Spacing = 16 };
+        var layout = new StackPanel { Margin = new Thickness(24), Spacing = 16 };
         layout.Children.Add(new ScrollViewer { Content = details, MaxHeight = 340, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         layout.Children.Add(actions);
         Content = layout;

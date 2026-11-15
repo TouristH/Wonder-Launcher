@@ -63,7 +63,7 @@ internal sealed class ClickRipple : Control
         var y = Math.Max(_origin.Y, Bounds.Height - _origin.Y);
         var radius = 4 + (Math.Sqrt(x * x + y * y) - 4) * (1 - Math.Pow(1 - _progress, 3));
         using (context.PushGeometryClip(_clip))
-        using (context.PushOpacity(.30 * Math.Pow(1 - _progress, 1.5)))
+        using (context.PushOpacity(.18 * Math.Pow(1 - _progress, 1.5)))
             context.DrawEllipse(Palette.Accent, new Pen(Palette.Accent, 1.5), _origin, radius, radius);
     }
 }

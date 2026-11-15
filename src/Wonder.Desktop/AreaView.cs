@@ -34,9 +34,9 @@ internal sealed class AreaView : Border, IDisposable
         CornerRadius = new CornerRadius(16);
         ClipToBounds = true;
         var grid = new Grid { RowDefinitions = new RowDefinitions("46,*") };
-        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(17, 0, 17, 0) };
-        _number = new TextBlock { Text = (index + 1).ToString("00"), Foreground = Palette.Muted, FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0), IsVisible = showNumber };
-        var title = new TextBlock { Text = area.Title, FontSize = 12, FontWeight = FontWeight.Medium, Foreground = Palette.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(17, 0, 17, 0), Background = Brushes.Transparent };
+        _number = new TextBlock { Text = (index + 1).ToString("00"), FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace"), Foreground = Palette.Muted, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0), IsVisible = showNumber };
+        var title = new TextBlock { Text = area.Title, FontSize = 14, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 10, 0) };
         ToolTip.SetTip(title, area.Title + "\n右键可重命名功能区");
         _hint = new TextBlock { Text = "⠿", FontSize = 18, Foreground = Palette.Muted, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(title, 1);

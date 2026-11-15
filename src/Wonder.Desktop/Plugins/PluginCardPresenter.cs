@@ -58,13 +58,13 @@ internal static class PluginCardPresenter
                 TextWrapping = card.Scrollable ? TextWrapping.Wrap : TextWrapping.NoWrap,
                 TextTrimming = card.Scrollable ? TextTrimming.None : TextTrimming.CharacterEllipsis
             };
-            if (row.Monospace) value.FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace");
+            if (row.Monospace) value.FontFamily = PageStyles.MonoFamily;
             Grid.SetColumn(value, 1);
             line.Children.Add(value);
             TextBlock? secondary = null;
             if (row.SecondaryValueKey is not null)
             {
-                secondary = new TextBlock { FontSize = 11, LineHeight = card.RowLineHeight, Foreground = Brush.Parse(style.TitleColor) };
+                secondary = new TextBlock { FontSize = 12, LineHeight = card.RowLineHeight, Foreground = Brush.Parse(style.TitleColor) };
                 Grid.SetColumn(secondary, 2);
                 line.Children.Add(secondary);
             }

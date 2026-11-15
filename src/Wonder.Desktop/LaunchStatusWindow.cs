@@ -26,9 +26,10 @@ internal sealed class LaunchStatusWindow : Window, IDisposable
         _service = service;
         Title = "启动状态 · Wonder"; Width = 740; Height = 520; MinWidth = 480; MinHeight = 320;
         Background = Palette.Background;
-        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(22), RowSpacing = 14 };
+        WonderMark.ApplyIcon(this);
+        var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24), RowSpacing = 14 };
         var header = new StackPanel { Spacing = 8 };
-        header.Children.Add(new TextBlock { Text = "启动状态", FontSize = 22, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text });
+        header.Children.Add(PageStyles.PageTitle("启动状态"));
         AutomationProperties.SetName(_status, "当前启动状态"); header.Children.Add(_status);
         layout.Children.Add(header);
         AutomationProperties.SetName(_logs, "最近启动日志");

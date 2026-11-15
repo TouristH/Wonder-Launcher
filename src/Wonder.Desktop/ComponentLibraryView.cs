@@ -45,7 +45,7 @@ internal sealed class ComponentLibraryView : Border
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto") };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 24) };
         var headings = new StackPanel { Spacing = 8 };
-        headings.Children.Add(new TextBlock { Text = "组件库", FontSize = 28, FontWeight = FontWeight.SemiBold });
+        headings.Children.Add(PageStyles.PageTitle("组件库"));
         headings.Children.Add(new TextBlock { Text = "在这里直接使用，也可拖到功能区。", Foreground = Palette.Muted, FontSize = 13, TextWrapping = TextWrapping.Wrap });
         header.Children.Add(headings);
         var back = new Button { Content = "收起组件库", VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(12, 10) };
@@ -165,7 +165,7 @@ internal sealed class ComponentLibraryView : Border
             _views.Add(preview);
             ToolTip.SetTip(preview, "点击使用 · 拖动到功能区创建快捷方式");
             WireDrag(preview, item, entry.Title, preview);
-            var handle = new Border { Background = Brushes.Transparent, Padding = new Thickness(0, 4, 0, 8), Cursor = new Cursor(StandardCursorType.Hand), Child = new TextBlock { Text = "⠿  " + entry.Title + "  ↗", FontSize = 17, FontWeight = FontWeight.SemiBold } };
+            var handle = new Border { Background = Brushes.Transparent, Padding = new Thickness(0, 4, 0, 8), Cursor = new Cursor(StandardCursorType.Hand), Child = PageStyles.SectionTitle("⠿  " + entry.Title + "  ↗") };
             AutomationProperties.SetName(handle, "拖动" + entry.Title);
             ToolTip.SetTip(handle, "拖到功能区创建快捷方式");
             WireDrag(handle, item, entry.Title);
@@ -173,7 +173,7 @@ internal sealed class ComponentLibraryView : Border
             var previewHeight = entry.Id is ComponentIds.Instances or ComponentIds.Accounts or ComponentIds.Downloads ? preview.Height : Math.Max(184, preview.Height);
             card.Children.Add(new Border { Height = previewHeight, Child = preview });
             card.Children.Add(new TextBlock { Text = entry.Description, Foreground = Palette.Muted, FontSize = 12, TextWrapping = TextWrapping.Wrap, MinHeight = 38 });
-            _cards.Children.Add(new Border { Width = 292, Background = Palette.Surface, BorderBrush = Palette.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(18), Margin = new Thickness(0, 0, 16, 16), Child = card });
+            _cards.Children.Add(new Border { Width = 292, Background = Palette.Surface, BorderBrush = Palette.Line, BorderThickness = new Thickness(1), CornerRadius = PageStyles.CardRadius, Margin = new Thickness(0, 0, 16, 16), Child = card });
         }
         if (_cards.Children.Count == 0)
             _cards.Children.Add(new TextBlock { Text = "没有找到匹配组件。", Foreground = Palette.Muted, Margin = new Thickness(6, 24) });

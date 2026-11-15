@@ -34,6 +34,8 @@ internal sealed class InstanceManagerWindow : Window
     private readonly InstanceIconView _detailIcon = new(48);
     private readonly Dictionary<string, TextBox> _fields = new();
     private readonly Dictionary<string, Draft> _drafts = new();
+    private readonly Dictionary<string, Slider> _memorySliders = new();
+    private bool _balanced;
     private readonly ComboBox _fullscreen = new() { ItemsSource = new[] { "继承来源", "窗口", "全屏" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly CheckBox _clearJvm = new() { Content = "清空来源的额外 JVM 参数" }, _clearGame = new() { Content = "清空来源的额外游戏参数" };
     private readonly TextBlock _details = Text(), _effective = Text(), _status = Text(), _error = Text(), _draftStatus = Text();
@@ -51,6 +53,7 @@ internal sealed class InstanceManagerWindow : Window
         _contentPage = new InstanceContentPage(service, this, browseResources) { Margin = new Thickness(0, 12, 0, 0) };
         Title = "实例管理 · Wonder Launcher"; Width = 1050; Height = 820; MinWidth = 800; MinHeight = 580;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Palette.Background; Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
         var heading = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 0, 20) };
         heading.Children.Add(new TextBlock { Text = "实例管理", FontSize = 28, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text });
@@ -118,7 +121,9 @@ internal sealed class InstanceManagerWindow : Window
         _editor.Children.Add(PageStyles.Card(basic));
         var runtime = SettingSection("Java 与内存", "留空使用全局偏好或来源配置，单实例设置优先。");
         AddField(runtime, "java", "Java 路径", "继承全局或来源；未指定时自动查找 Java");
-        var memory = Pair(); AddField(memory.Left, "min", "最小内存 MiB"); AddField(memory.Right, "max", "最大内存 MiB"); runtime.Children.Add(memory.Grid);
+        AddSliderField(runtime, "min", "最小内存 MiB");
+        AddSliderField(runtime, "max", "最大内存 MiB");
+        LinkMemory();
         _editor.Children.Add(PageStyles.Card(runtime));
         var display = SettingSection("游戏窗口", "为此实例指定窗口尺寸和显示模式。");
         var dimensions = Pair(); AddField(dimensions.Left, "width", "窗口宽度"); AddField(dimensions.Right, "height", "窗口高度"); display.Children.Add(dimensions.Grid);
@@ -133,11 +138,17 @@ internal sealed class InstanceManagerWindow : Window
         _clearGame.IsCheckedChanged += (_, _) => { _fields["game"].IsEnabled = _clearGame.IsChecked != true; MarkDraft(); };
         _fullscreen.SelectionChanged += (_, _) => MarkDraft();
         _editor.Children.Add(Text("数值和路径留空表示继承。保存后用于下次启动，不改写来源启动器的配置。"));
-        _saveActions.Children.Add(Button("保存实例设置", "保存设置", async () => await SaveAsync()));
-        _saveActions.Children.Add(Button("恢复来源设置", "清除实例覆盖", async () =>
+        var saveInstance = Button("保存实例设置", "保存设置", async () => await SaveAsync());
+        saveInstance.Background = Palette.Accent; saveInstance.Foreground = Palette.OnAccent; saveInstance.MinHeight = 36; saveInstance.Padding = new Thickness(18, 8);
+        var resetInstance = Button("恢复来源设置", "清除实例覆盖", async () =>
         {
             if (_currentId is { } id) await SaveSettingsAsync(id, () => _service.UpdateSettingsAsync(id, new()));
-        }));
+        });
+        resetInstance.Background = Brushes.Transparent; resetInstance.BorderThickness = new Thickness(0); resetInstance.Foreground = Palette.Muted;
+        resetInstance.Margin = new Thickness(0, 0, 20, 0);
+        ToolTip.SetTip(resetInstance, "清除此实例的全部覆盖设置，回到来源配置。");
+        _saveActions.Spacing = 10; _saveActions.HorizontalAlignment = HorizontalAlignment.Right;
+        _saveActions.Children.Add(resetInstance); _saveActions.Children.Add(saveInstance);
         var saveFooter = new StackPanel { Spacing = 6, Margin = new Thickness(0, 10, 0, 0) };
         saveFooter.Children.Add(_saveActions); saveFooter.Children.Add(_draftStatus);
         form.Children.Add(new Expander { Header = "当前有效设置与来源诊断", Content = _effective, HorizontalAlignment = HorizontalAlignment.Stretch });
@@ -353,6 +364,74 @@ internal sealed class InstanceManagerWindow : Window
         AutomationProperties.SetName(input, label); input.PropertyChanged += (_, args) => { if (args.Property == TextBox.TextProperty) MarkDraft(); };
         _fields[key] = input; panel.Children.Add(input); parent.Children.Add(panel);
     }
+    /// <summary>A field plus a slider for the common case; the box keeps exact values and inheritance.</summary>
+    private void AddSliderField(StackPanel parent, string key, string label)
+    {
+        AddField(parent, key, label);
+        var panel = (StackPanel)parent.Children[^1];
+        var box = _fields[key];
+        // Value starts at the floor: left at the default 0, the first layout pass coerces it up to
+        // Minimum and Avalonia reports that as a value change the handler would write into the box.
+        var slider = new Slider
+        {
+            Minimum = 512, Maximum = 32768, Value = 512, SmallChange = 512, LargeChange = 1024, TickFrequency = 512,
+            IsSnapToTickEnabled = true, MinHeight = 30, Margin = new Thickness(0, 2, 0, 0),
+        };
+        AutomationProperties.SetName(slider, label + "滑块");
+        AutomationProperties.SetHelpText(slider, "拖动调整，或在上方直接输入精确值；留空表示继承。");
+        var syncing = false;
+        void PushToSlider()
+        {
+            if (syncing) return;
+            syncing = true;
+            try { if (int.TryParse(box.Text, out var value)) slider.Value = Math.Clamp(value, slider.Minimum, slider.Maximum); }
+            finally { syncing = false; }
+        }
+        slider.PropertyChanged += (_, e) =>
+        {
+            // A range change coerces Value too; that is not the user choosing a number, and writing
+            // it back would turn an inherited (empty) field into a concrete value.
+            if (e.Property != RangeBase.ValueProperty || syncing || _balanced) return;
+            syncing = true;
+            try
+            {
+                var rounded = (int)Math.Round(slider.Value / 512) * 512;
+                if (box.Text != rounded.ToString()) box.Text = rounded.ToString();
+            }
+            finally { syncing = false; }
+        };
+        box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) PushToSlider(); };
+        panel.Children.Add(slider);
+        _memorySliders[key] = slider;
+    }
+
+    /// <summary>The floor and the ceiling move each other's range; the text stays the source of truth.</summary>
+    private void LinkMemory()
+    {
+        foreach (var key in new[] { "min", "max" })
+            _fields[key].PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) RebalanceMemory(); };
+        foreach (var slider in _memorySliders.Values)
+            slider.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) RebalanceMemory(); };
+        RebalanceMemory();
+    }
+
+    private void RebalanceMemory()
+    {
+        if (_balanced || !_memorySliders.TryGetValue("min", out var min) || !_memorySliders.TryGetValue("max", out var max)) return;
+        _balanced = true;
+        try
+        {
+            var hasMin = int.TryParse(_fields["min"].Text, out var minimum);
+            var hasMax = int.TryParse(_fields["max"].Text, out var maximum);
+            min.Maximum = hasMax ? Math.Clamp(maximum - 512, 512, 32768) : 32768;
+            max.Minimum = hasMin ? Math.Clamp(minimum + 512, 512, 32768) : 512;
+            // An empty box means "inherit": the slider still sits at the inherited default and stays
+            // draggable — dragging is how a value stops being inherited — it is only dimmed.
+            min.Opacity = hasMin ? 1 : .6; max.Opacity = hasMax ? 1 : .6;
+        }
+        finally { _balanced = false; }
+    }
+
     private static (Grid Grid, StackPanel Left, StackPanel Right) Pair()
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,16,*") }; var left = new StackPanel(); var right = new StackPanel();

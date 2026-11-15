@@ -46,7 +46,7 @@ internal sealed partial class AccountManagerWindow
         }
         if (children.Count == 0) children.Add(PageStyles.Hint(_service.IsReadBlocked ? _service.IsBusy ? "正在读取账户库…" : "账户库暂不可用。" : profiles.Length == 0 ? "还没有账户，先添加一个吧。" : "没有匹配的账户。"));
         if (_service.IsReadBlocked && !_service.IsBusy)
-            children.Add(Button("重新读取账户库", "重新读取账户库", async () => await Run(_service.ReloadAsync)));
+            children.Add(PageStyles.Button("重新读取账户库", "重新读取账户库", () => UiOperation.Start(async () => await Run(_service.ReloadAsync), () => _closed)));
         foreach (var child in _accounts.Children.Where(x => !children.Contains(x)).ToArray()) _accounts.Children.Remove(child);
         for (var i = 0; i < children.Count; i++)
         {
@@ -59,7 +59,7 @@ internal sealed partial class AccountManagerWindow
     {
         public Button Button { get; }
         private readonly Grid _content = new() { ColumnDefinitions = new ColumnDefinitions("40,12,*") };
-        private readonly TextBlock _name = new() { FontWeight = FontWeight.SemiBold, FontSize = 15, TextTrimming = TextTrimming.CharacterEllipsis };
+        private readonly TextBlock _name = PageStyles.SectionTitle("");
         private readonly TextBlock _kind = PageStyles.Hint("");
         private readonly TextBlock _server = PageStyles.Hint("");
         private readonly Border _surface;
@@ -70,13 +70,15 @@ internal sealed partial class AccountManagerWindow
         {
             var labels = new StackPanel { Spacing = 6 };
             labels.Children.Add(_name); labels.Children.Add(_kind); labels.Children.Add(_server);
+            _name.TextWrapping = TextWrapping.NoWrap; _name.TextTrimming = TextTrimming.CharacterEllipsis;
             _server.MaxLines = 1; _server.TextTrimming = TextTrimming.CharacterEllipsis;
             Grid.SetColumn(labels, 2); _content.Children.Add(labels);
-            _surface = PageStyles.Card(_content, new Thickness(12));
-            Button = AccountManagerWindow.Button("", "", select);
+            _surface = PageStyles.Card(_content, new Thickness(11));
+            Button = PageStyles.Button("", "", select);
             Button.Content = _surface; Button.HorizontalAlignment = HorizontalAlignment.Stretch;
             Button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             Button.Padding = new Thickness(0); Button.BorderThickness = new Thickness(0); Button.Background = Palette.Surface;
+            Button.Margin = new Thickness(0);
         }
 
         public void Update(AccountProfile account, GameInstance? instance, IReadOnlyList<GameInstance>? alternatives, Func<string, CancellationToken, Task<byte[]>>? download,
@@ -88,6 +90,7 @@ internal sealed partial class AccountManagerWindow
             AutomationProperties.SetName(Button, "查看账户 " + account.Username);
             _surface.Background = viewed ? Palette.Active : Palette.Surface;
             _surface.BorderBrush = viewed ? Palette.Accent : Palette.Line;
+            _surface.BorderThickness = new Thickness(viewed ? 2 : 1);
             var key = AccountAvatarLoader.Key(account, instance, alternatives);
             if (_avatarKey == key) return;
             _avatarKey = key;

@@ -33,8 +33,8 @@ internal sealed class ResourceIconView : Border
         Width = Height = size;
         CornerRadius = new CornerRadius(8);
         ClipToBounds = true;
-        Background = Palette.Active;
-        _fallback.FontSize = size * .34;
+        Background = Palette.Sunken;
+        _fallback.FontSize = size >= 64 ? 23 : 13;
         Child = new Grid { Children = { _fallback, _image } };
         IsHitTestVisible = false;
         AttachedToVisualTree += (_, _) => { _attached = true; Refresh(); };

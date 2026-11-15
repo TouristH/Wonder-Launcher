@@ -6,6 +6,7 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 
 namespace Wonder.Desktop;
 
@@ -17,17 +18,48 @@ internal sealed class DirectorySettingsWindow : Window
     {
         Title = "游戏目录设置 · Wonder Launcher"; Width = 610; Height = 480; MinWidth = 480; MinHeight = 400;
         Background = Palette.Background; Foreground = Palette.Text; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        WonderMark.ApplyIcon(this);
         var layout = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), Margin = new Thickness(24) };
         var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(new TextBlock { Text = "游戏目录设置", FontSize = 23, FontWeight = FontWeight.SemiBold });
+        content.Children.Add(PageStyles.PageTitle("游戏目录设置"));
         content.Children.Add(PageStyles.Hint("将实际移动或重命名文件夹，并更新 Wonder 中的实例路径。修改前请关闭使用此目录的游戏和其他启动器。"));
-        content.Children.Add(new SelectableTextBlock { Text = "当前：" + path, FontSize = 12, TextWrapping = TextWrapping.Wrap, Foreground = Palette.Muted });
-        content.Children.Add(PageStyles.Hint("父目录路径"));
-        var parent = new TextBox { Text = Path.GetDirectoryName(path), MaxLength = 32767 }; AutomationProperties.SetName(parent, "目录父路径"); content.Children.Add(parent);
-        content.Children.Add(PageStyles.Hint("目录昵称（实际文件夹名）"));
-        var name = new TextBox { Text = Path.GetFileName(path), MaxLength = 120 }; AutomationProperties.SetName(name, "目录昵称"); content.Children.Add(name);
-        var preview = PageStyles.Hint(""); preview.Foreground = Palette.Accent; content.Children.Add(preview);
-        var error = PageStyles.Hint(""); error.Foreground = Palette.Error; content.Children.Add(error);
+
+        var current = new StackPanel { Spacing = 6 };
+        current.Children.Add(PageStyles.SectionTitle("当前目录"));
+        current.Children.Add(PageStyles.Code("当前：" + path, selectable: true));
+        content.Children.Add(PageStyles.Card(current));
+
+        var parent = new TextBox { Text = Path.GetDirectoryName(path), MaxLength = 32767 }; AutomationProperties.SetName(parent, "目录父路径");
+        var name = new TextBox { Text = Path.GetFileName(path), MaxLength = 120 }; AutomationProperties.SetName(name, "目录昵称");
+        var preview = PageStyles.Hint(""); preview.Foreground = Palette.Accent;
+        var error = PageStyles.Hint(""); error.Foreground = Palette.Error;
+        // Moving a directory is not the place to make people type an absolute path from memory.
+        var browse = PageStyles.Button("浏览…", "选择父目录", () => { });
+        browse.Margin = new Thickness(0);
+        browse.Click += async (_, _) => UiOperation.Start(async () =>
+        {
+            if (StorageProvider.CanPickFolder)
+            {
+                var picked = (await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "选择新的父目录", AllowMultiple = false })).FirstOrDefault()?.TryGetLocalPath();
+                if (!string.IsNullOrWhiteSpace(picked)) parent.Text = picked;
+            }
+            else error.Text = "当前平台不支持目录选择，请手动填写完整路径。";
+        }, () => !_working);
+        var parentRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,8,Auto") };
+        parentRow.Children.Add(parent);
+        Grid.SetColumn(browse, 2); parentRow.Children.Add(browse);
+        var moveTo = new StackPanel { Spacing = 12 };
+        moveTo.Children.Add(PageStyles.SectionTitle("移动到新位置"));
+        var parentField = new StackPanel { Spacing = 6 };
+        parentField.Children.Add(PageStyles.Label("父目录路径")); parentField.Children.Add(parentRow);
+        moveTo.Children.Add(parentField);
+        var nameField = new StackPanel { Spacing = 6 };
+        nameField.Children.Add(PageStyles.Label("目录昵称（实际文件夹名）")); nameField.Children.Add(name);
+        moveTo.Children.Add(nameField);
+        moveTo.Children.Add(preview);
+        moveTo.Children.Add(error);
+        content.Children.Add(PageStyles.Card(moveTo));
+
         string Target()
         {
             var folderName = name.Text ?? ""; var parentPath = parent.Text ?? "";

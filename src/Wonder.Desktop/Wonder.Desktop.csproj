@@ -8,10 +8,13 @@
     <AssemblyName>Wonder.Desktop</AssemblyName>
     <RootNamespace>Wonder.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/Brand/wonder.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Wonder.Desktop.Tests" />
     <AvaloniaResource Include="Assets/InstanceIcons/*.png" />
+    <AvaloniaResource Include="Assets/Brand/*.png" />
+    <AvaloniaResource Include="Assets/Brand/*.svg" />
     <EmbeddedResource Include="Plugins/index.json" LogicalName="Wonder.PluginCatalog" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />

@@ -383,6 +383,7 @@ internal sealed class InstanceContentPage : UserControl, IDisposable
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Palette.Background,
             Foreground = Palette.Text, FontFamily = _owner.FontFamily, Content = body
         };
+        WonderMark.ApplyIcon(dialog);
         var close = ActionButton("关闭", dialog.Close, "关闭截图预览");
         close.HorizontalAlignment = HorizontalAlignment.Right;
         close.Margin = new Thickness(0, 12, 0, 0);

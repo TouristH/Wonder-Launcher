@@ -22,9 +22,10 @@ internal sealed class AreaRenameWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = Palette.Background;
         Foreground = Palette.Text;
+        WonderMark.ApplyIcon(this);
 
         var body = new StackPanel { Margin = new Thickness(24), Spacing = 10 };
-        body.Children.Add(new TextBlock { Text = "功能区名称", FontSize = 16, FontWeight = FontWeight.SemiBold });
+        body.Children.Add(PageStyles.SectionTitle("功能区名称"));
         var input = new TextBox { Text = title, PlaceholderText = "输入功能区名称", AcceptsReturn = false };
         AutomationProperties.SetName(input, "功能区名称");
         body.Children.Add(input);

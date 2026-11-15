@@ -81,7 +81,7 @@ public sealed partial class WorkspaceView : Panel
         Focusable = true;
         ClipToBounds = true;
         _dragText = new TextBlock { FontSize = 12, Foreground = Palette.Accent };
-        _dragLabel = new Border { Child = _dragText, Background = Palette.Background, BorderBrush = Palette.Accent, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 8), IsHitTestVisible = false, IsVisible = false };
+        _dragLabel = new Border { Child = _dragText, Background = Palette.Raised, BorderBrush = Palette.LineStrong, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8), IsHitTestVisible = false, IsVisible = false };
         _holdTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(HoldMilliseconds) };
         _holdTimer.Tick += (_, _) => ActivateGesture();
         _componentDragTimer.Tick += (_, _) => AdvanceComponentDrag();
@@ -335,6 +335,7 @@ public sealed partial class WorkspaceView : Panel
             _libraryPreviewBounds = LibraryPlacement(data.Item, data.GrabOffset, point, preview.Footprint, target);
         }
         _dragText.Text = !allowed ? "此处无法放置" : data.Source != null ? "松开放入功能区" : target == null ? "松开创建功能区并放置快捷方式" : "松开创建快捷方式";
+        _dragLabel.BoxShadow = Palette.Elevation;
         _dragLabel.IsVisible = true;
         UpdateHighlights();
         InvalidateMeasure();
@@ -627,6 +628,7 @@ public sealed partial class WorkspaceView : Panel
         Focus();
         Cursor = new Cursor(_gesture.Split != null ? (_gesture.Split.Axis == SplitAxis.Horizontal ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth) : StandardCursorType.SizeAll);
         _dragText.Text = _gesture.SidebarArea != null ? "松开保持侧边栏 · Esc 取消" : _gesture.Split != null ? "调整大小 · Esc 取消" : _gesture.Component != null ? "拖入功能区放置 · Esc 取消" : "拖到目标边缘摆放，中央交换 · Esc 取消";
+        _dragLabel.BoxShadow = Palette.Elevation;
         _dragLabel.IsVisible = true;
         UpdateHighlights();
         InvalidateMeasure();

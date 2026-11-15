@@ -4,6 +4,7 @@
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -22,7 +23,9 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     private bool _usernameDirty;
     private readonly Dictionary<string, TextBox> _fields = [];
     private readonly StackPanel _form = new() { Spacing = 16 };
-    private readonly ComboBox _fullscreen = new() { ItemsSource = new[] { "继承实例原配置", "窗口模式", "全屏模式" }, HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _fullscreen = new() { ItemsSource = new[] { "继承实例原配置", "窗口模式", "全屏模式" }, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 200 };
+    private readonly Dictionary<string, Slider> _memorySliders = [];
+    private bool _balanced;
     private readonly CheckBox _clearJvm = new() { Content = "清空额外 JVM 参数" };
     private readonly CheckBox _clearGame = new() { Content = "清空额外游戏参数" };
     private readonly ToggleSwitch _versionIsolation = new() { OnContent = "开启", OffContent = "关闭" };
@@ -60,13 +63,15 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         _form.Children.Add(PageStyles.Card(isolation));
         var java = Section("Java 与内存", "Java 留空时沿用实例配置；未配置时自动查找。内存单位为 MiB。");
         java.Children.Add(Field("java", "全局 Java 路径", "继承实例原配置 / 自动查找"));
-        java.Children.Add(Pair(Field("min", "全局最小内存", "继承 / 默认 512"), Field("max", "全局最大内存", "继承 / 默认 4096")));
+        java.Children.Add(MemoryRow("min", "全局最小内存", "继承 / 默认 512", 512));
+        java.Children.Add(MemoryRow("max", "全局最大内存", "继承 / 默认 4096", 4096));
+        LinkMemory();
         _form.Children.Add(PageStyles.Card(java));
         var window = Section("游戏窗口", "分辨率与全屏模式应用于下次启动。");
         window.Children.Add(Pair(Field("width", "全局窗口宽度", "继承 / 默认 854"), Field("height", "全局窗口高度", "继承 / 默认 480")));
         AutomationProperties.SetName(_fullscreen, "全局窗口模式");
         _fullscreen.SelectionChanged += (_, _) => MarkDirty();
-        window.Children.Add(_fullscreen);
+        window.Children.Add(PageStyles.Field("窗口模式", _fullscreen));
         _form.Children.Add(PageStyles.Card(window));
         var arguments = Section("额外启动参数", "留空继续继承；勾选清空可明确移除继承的额外参数。");
         arguments.Children.Add(Field("jvm", "全局额外 JVM 参数", "例如 -XX:+UseG1GC"));
@@ -88,7 +93,12 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
             if (error is not null) Report(error, true);
             else { LoadValues(); Report("已恢复继承 · 实例的独立设置保持不变", false); }
         }), () => _disposed);
-        _actions.Children.Add(save); _actions.Children.Add(reset);
+        // Saving is the primary action; restoring inheritance is destructive and stays quiet on the left.
+        save.Background = Palette.Accent; save.Foreground = Palette.OnAccent; save.MinHeight = 36; save.Padding = new Thickness(18, 8);
+        reset.Background = Brushes.Transparent; reset.BorderThickness = new Thickness(0); reset.Foreground = Palette.Muted; reset.Margin = new Thickness(0, 0, 20, 0);
+        ToolTip.SetTip(reset, "将清空全部全局设置并回到继承实例原配置。");
+        _actions.HorizontalAlignment = HorizontalAlignment.Right;
+        _actions.Children.Add(reset); _actions.Children.Add(save);
         _status.Name = "GlobalSettingsStatus";
         AutomationProperties.SetName(_retry, "重试全局设置读取");
         _retry.Click += (_, _) => UiOperation.Start(_service.ReloadAsync, () => _disposed);
@@ -158,6 +168,7 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         _clearJvm.IsChecked = _loaded.JvmArguments == "";
         _clearGame.IsChecked = _loaded.GameArguments == "";
         _dirty = false; _updating = false;
+        RebalanceMemory();
         Report("已载入 · 编辑后点击保存全局设置", false);
     }
 
@@ -198,6 +209,86 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         field.Children.Add(new TextBlock { Text = label.Replace("全局", ""), FontSize = 13 }); field.Children.Add(box);
         return field;
     }
+    /// <summary>
+    /// A memory field: the number box stays for exact values and for inheritance (empty = inherit),
+    /// with a slider underneath for the common case. Dragging writes into the box, so both paths
+    /// produce the same saved value and everything that reads the box keeps working.
+    /// </summary>
+    private Control MemoryRow(string key, string label, string placeholder, int inherited)
+    {
+        var field = Field(key, label, placeholder);
+        var box = _fields[key];
+        // Value starts at a real number: left at the default 0, the first layout pass coerces it up
+        // to Minimum and Avalonia reports that as a value change the handler would write into the box.
+        var slider = new Slider
+        {
+            Minimum = 512, Maximum = 32768, Value = inherited, SmallChange = 512, LargeChange = 1024, TickFrequency = 512,
+            IsSnapToTickEnabled = true, MinHeight = 30, Margin = new Thickness(0, 2, 0, 0),
+        };
+        AutomationProperties.SetName(slider, label + "滑块");
+        AutomationProperties.SetHelpText(slider, "拖动调整，或在上方直接输入精确值；留空表示继承。");
+        var syncing = false;
+        void PushToSlider()
+        {
+            if (syncing) return;
+            syncing = true;
+            try { if (int.TryParse(box.Text, out var value)) slider.Value = Math.Clamp(value, slider.Minimum, slider.Maximum); }
+            finally { syncing = false; }
+        }
+        slider.PropertyChanged += (_, e) =>
+        {
+            // A range change coerces Value too; that is not the user choosing a number, and writing
+            // it back would turn an inherited (empty) field into a concrete value.
+            if (e.Property != RangeBase.ValueProperty || syncing || _balanced) return;
+            syncing = true;
+            try
+            {
+                var box1 = _fields[key];
+                var rounded = (int)Math.Round(slider.Value / 512) * 512;
+                if (box1.Text != rounded.ToString()) box1.Text = rounded.ToString();
+            }
+            finally { syncing = false; }
+        };
+        box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) PushToSlider(); };
+        ((StackPanel)field).Children.Add(slider);
+        _memorySliders[key] = slider;
+        return field;
+    }
+
+    /// <summary>
+    /// Minimum and maximum memory taken together: the floor cannot pass the ceiling. The range is
+    /// what moves, never the text — the box stays the single source of truth (and the place an
+    /// inherited or exact value is written), so <see cref="RebalanceMemory"/> only narrows the
+    /// sliders and lets <c>Validate()</c> have the last word on save.
+    /// </summary>
+    private void LinkMemory()
+    {
+        _fields["min"].PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) RebalanceMemory(); };
+        _fields["max"].PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) RebalanceMemory(); };
+        foreach (var slider in _memorySliders.Values)
+            slider.PropertyChanged += (_, e) => { if (e.Property == RangeBase.ValueProperty) RebalanceMemory(); };
+        RebalanceMemory();
+    }
+
+    private void RebalanceMemory()
+    {
+        if (_balanced) return;
+        _balanced = true;
+        try
+        {
+            var min = _memorySliders["min"];
+            var max = _memorySliders["max"];
+            var hasMin = int.TryParse(_fields["min"].Text, out var minimum);
+            var hasMax = int.TryParse(_fields["max"].Text, out var maximum);
+            min.Maximum = hasMax ? Math.Clamp(maximum - 512, 512, 32768) : 32768;
+            max.Minimum = hasMin ? Math.Clamp(minimum + 512, 512, 32768) : 512;
+            // An empty box means "inherit": the slider still sits at the inherited default and stays
+            // draggable — dragging is how a value stops being inherited — it is only dimmed.
+            min.Opacity = hasMin ? 1 : .6; max.Opacity = hasMax ? 1 : .6;
+        }
+        finally { _balanced = false; }
+    }
+
     private static Grid Pair(Control left, Control right)
     {
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,14,*") };

@@ -124,7 +124,7 @@ internal sealed class StartupCometLogo : Canvas
     {
         for (var index = 0; index < _parts.Sparks.Length; index++)
         {
-            var release = FlightMilliseconds * (.54 + index * .10);
+            var release = FlightMilliseconds * .38 + index * 160;
             var progress = Math.Clamp((elapsed - release) / 720, 0, 1);
             var travel = Smooth(progress);
             var initialTravel = Smooth(release / FlightMilliseconds);
@@ -136,7 +136,9 @@ internal sealed class StartupCometLogo : Canvas
             var arc = new Vector(-direction.Y, direction.X) * side;
             var position = Curve(start, start + direction * 8 + arc * 10,
                 target - direction * 8 + arc * 8, target, travel);
-            var initialScale = Math.Max(1.8, _headReach * (.08 + .92 * initialTravel) * .55 / _sparkReaches[index]);
+            var headReach = _headReach * (.08 + .92 * initialTravel);
+            var initialScale = Math.Min(Math.Max(1.8, headReach * .55 / _sparkReaches[index]),
+                headReach * .85 / _sparkReaches[index]);
             _sparkScales[index].ScaleX = _sparkScales[index].ScaleY = initialScale + (1 - initialScale) * travel;
             _sparkRotations[index].Angle = -225 * (1 - initialTravel) * (1 - travel);
             _sparkTranslations[index].X = (position.X - target.X) / 64 * _size;

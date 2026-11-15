@@ -1,8 +1,8 @@
 # Linux x64 试发行
 
-适用版本：**Wonder Launcher 0.7.2 Linux x64 preview**。本应用与 Windows、macOS 共用源码及业务实现，保留桌面、功能区、组件库、实例管理、账户与启动功能，面向 Ubuntu 24.04 x64 等 glibc 桌面系统。`Wonder-0.7.2-linux-x64` 是 Linux ELF 单文件应用，包含 Linux .NET 运行时，不通过 Wine 运行 Windows EXE；系统图形库和游戏 Java 仍须由系统提供。完整平台清单见[三端发行说明](32-native-cross-platform.md)。
+适用版本：**Wonder Launcher 0.8.0 Linux x64 preview**。本应用与 Windows、macOS 共用源码及业务实现，保留桌面、功能区、组件库、实例管理、账户与启动功能，面向 Ubuntu 24.04 x64 等 glibc 桌面系统。`Wonder-0.8.0-linux-x64` 是 Linux ELF 单文件应用，包含 Linux .NET 运行时，不通过 Wine 运行 Windows EXE；系统图形库和游戏 Java 仍须由系统提供。完整平台清单见[三端发行说明](32-native-cross-platform.md)。
 
-**当前为交叉构建试发行，Linux 桌面实机验收尚未完成。** Windows 上的构建、自动化测试和产物检查不能代替 Linux 窗口、密钥环、回收站、在线登录和真实游戏启动验证。本应用不适用于 ARM64 或 Alpine/musl，也未提供 AppImage、deb、rpm 安装器。
+**Linux 当前仍为试发行。** 本次已在 Ubuntu 24.04 x64 的 WSL2/WSLg 环境执行自动化回归，并验证原生窗口、中文、主题图标、设置/布局重开恢复和 Secret Service 合成账户加密。裸机 GPU、其他发行版、默认浏览器/文件选择器、回收站体验、真实在线登录和游戏启动仍待目标桌面验收，具体范围见文末。本应用不适用于 ARM64 或 Alpine/musl，也未提供 AppImage、deb、rpm 安装器。
 
 ## 准备系统
 
@@ -30,19 +30,20 @@ sudo apt install ca-certificates libc6 libgcc-s1 libgssapi-krb5-2 \
 
 | 文件 | 用途 |
 | --- | --- |
-| `Wonder-0.7.2-linux-x64` | 自包含 ELF 单文件应用 |
-| `Wonder-0.7.2-source.tar.gz` | 各平台共用的对应源码、构建与发布材料、公开文档及项目和第三方许可与通知；运行应用无需下载 |
-| `Wonder-0.7.2-SHA256SUMS` | 本次实际发布的应用和源码包的 SHA-256 清单 |
+| `Wonder-0.8.0-linux-x64` | 自包含 ELF 单文件应用 |
+| `Wonder-0.8.0-linux-x64-lightweight.tar.gz` | 不含 .NET 的轻量版；完整解压后运行 `./Wonder.sh`，缺少运行库时经用户同意安装 |
+| `Wonder-0.8.0-source.tar.gz` | 各平台共用的对应源码、构建与发布材料、公开文档及项目和第三方许可与通知；运行应用无需下载 |
+| `Wonder-0.8.0-SHA256SUMS` | 本次实际发布的应用和源码包的 SHA-256 清单 |
 
-下载 Linux 应用与校验文件到同一个可写目录，先校验，再赋予执行权限并启动。以下命令跳过未下载的其他平台文件；确认 `Wonder-0.7.2-linux-x64` 显示 `OK`。如另外下载了源码包，也应确认它显示 `OK`：
+下载 Linux 应用与校验文件到同一个可写目录，先校验，再赋予执行权限并启动。以下命令跳过未下载的其他平台文件；确认 `Wonder-0.8.0-linux-x64` 显示 `OK`。如另外下载了源码包，也应确认它显示 `OK`：
 
 ```bash
-sha256sum --ignore-missing -c Wonder-0.7.2-SHA256SUMS
-chmod +x Wonder-0.7.2-linux-x64
-./Wonder-0.7.2-linux-x64
+sha256sum --ignore-missing -c Wonder-0.8.0-SHA256SUMS
+chmod +x Wonder-0.8.0-linux-x64
+./Wonder-0.8.0-linux-x64
 ```
 
-应用无需解压，也无需 `.sh` 启动脚本、相邻文档或源码包；复制或重新下载后若失去执行权限，再执行上述 `chmod` 命令。仍须满足前文的 CPU 架构、图形会话、系统依赖和目录写入要求。
+上述**标准版**无需解压，也无需 `.sh` 启动脚本、相邻文档或源码包；复制或重新下载后若失去执行权限，再执行上述 `chmod` 命令。**轻量版**需要完整解压 tar.gz，保留包内脚本并执行 `./Wonder.sh`；首次启动会检查 .NET，缺少时经用户同意下载和安装，安装位置及离线使用见[轻量版帮助](37-lightweight-distribution.md)。两种版本仍须满足前文的 CPU 架构、图形会话、系统依赖和目录写入要求。
 
 数据在应用旁边的 `WonderData/`，与从哪个工作目录运行无关。首次启动 .NET 可能解包原生库；“单文件”不代表运行中不会使用系统临时/缓存目录。
 
@@ -52,7 +53,7 @@ Linux 将账户资料与令牌加密保存在 `WonderData/accounts.linux.dat`；
 
 Windows 的 `accounts.dat` 保留原样，不在 Linux 自动转换或解密。复制 `WonderData/` 不会复制系统密钥；更换系统或桌面用户后需重新登录。不要发布自己的数据目录。Linux 的密钥环条目也不会随删除数据目录自动移除。
 
-游戏需要适合其版本的 **Linux Java**。在全局或实例设置中填写实际 `java` 可执行文件，或使用 `JAVA_HOME`/`PATH` 中的 Java。通过来源启动器在 Linux 补全实例原生库、资源和加载器；Windows 的 `java.exe`、DLL 与绝对路径不能直接使用。Wonder 当前不下载或修复游戏依赖，缺失时会停止并提示。迁移时重新选择游戏目录，核对全局与实例覆盖设置；原存档不作为测试材料。
+游戏需要适合其版本的 **Linux Java**。在全局或实例设置中填写实际 `java` 可执行文件，或使用 `JAVA_HOME`/`PATH` 中的 Java。通过来源启动器在 Linux 补全导入实例的原生库、资源和加载器；Windows 的 `java.exe`、DLL 与绝对路径不能直接使用。Wonder 下载中心可以安装新游戏及其依赖，但启动已有实例时不会自动下载或修复缺失项，缺失时会停止并提示。迁移时重新选择游戏目录，核对全局与实例覆盖设置；原存档不作为测试材料。
 
 删除实例或目录仍须确认范围并输入 `sure`。Linux 调用 `gio trash`；工具缺失、回收站不受支持或操作失败时提示错误，不改为永久删除。操作失败或超时时，应核对文件管理器和回收站中的实际状态后再重试。
 
@@ -67,15 +68,26 @@ dotnet build Wonder.slnx -c Release
 pwsh -File packaging/Wonder.Publish.ps1 -Runtime linux-x64
 ```
 
-脚本先生成统一源码快照，再构建解决方案并发布所选目标；上面的 `-Runtime linux-x64` 直接生成 `artifacts/Wonder-0.7.2-linux-x64`，`artifacts/Wonder-linux-x64/` 为发布工作目录。省略参数时默认 `all`，制作 Windows x64、Linux x64 应用和两个 macOS 架构的本地 `.app` 试发行包，共用 `Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS`。校验文件只列出本次实际生成的应用产物和源码包；本次 Release 仅上传 Windows、Linux 应用与源码包，并提供对应校验清单。所有产物在 `artifacts/`。
+脚本先生成统一源码快照，再构建解决方案并发布所选目标；上面的 `-Runtime linux-x64` 直接生成标准版 `artifacts/Wonder-0.8.0-linux-x64`，`artifacts/Wonder-linux-x64/` 为发布工作目录。追加 `-IncludeLightweight` 同时生成对应轻量版。省略目标参数时默认 `all`，制作 Windows x64、Linux x64 应用和两个 macOS 架构的本地 `.app` 试发行包，共用 `Wonder-0.8.0-source.tar.gz` 与 `Wonder-0.8.0-SHA256SUMS`。校验文件只列出本次实际生成的应用产物和源码包；本次 Release 上传 Windows/Linux 标准版、两种轻量版与源码包，并提供对应校验清单，不上传 macOS 包。所有产物在 `artifacts/`。
 
 对应源码包纳入同一份源码、构建与发布材料、公开文档，以及全部适用的项目和原始第三方许可、版权与通知，排除游戏、账户、测试数据、探针、编译缓存与 Git 历史。主题和工作区使用共用格式；平台凭据保护、游戏路径和 Java 的差异见[三端发行说明](32-native-cross-platform.md)。
 
 分发应用时须按 [GPL-3.0-only](../LICENSE)、[附加条款](../ADDITIONAL_TERMS.md)及适用的第三方许可提供对应源码与必要声明；本次发行通过独立源码包提供这些材料，无需与应用放在同一目录。不要以另一版本的源码替代实际分发版本。
 
-## Linux 实机验收清单
+## 本次 Linux 验证范围
 
-以下项目尚待在目标 Linux 桌面逐项执行，请使用独立试用目录和临时游戏副本：
+在 Ubuntu 24.04 x64、WSL2/WSLg、.NET 10.0.15 环境，使用独立目录和合成数据完成以下验证：
+
+- Linux 上的游戏业务、工作区、插件与桌面自动化回归；修正了 Unix 只读文件/原子替换与 Windows 不同而导致的两处测试夹具，并修复卡片按压缩小时边缘点击丢失的问题。
+- 原生 X11 主窗口与中文绘制；通过窗口 `_NET_WM_ICON` 确认图标随主题和强调色变化，正常关闭并重开后恢复主题与合成布局。
+- 实际 Secret Service 工厂保存并读取合成账户，账户文件为加密内容且权限为 `0600`；密钥服务不可用时拒绝读写，原文件逐字节保留，恢复原会话后仍可读取。
+- 轻量入口对运行库缺失、拒绝安装、首次安装和已有运行库复用的检查。它仍需要前文列出的系统图形与桌面依赖。
+
+WSLg 入口测试出现过虚拟 GPU 退出调用阻塞；仅对测试进程启用 Mesa 软件渲染后正常打开并关闭，生产默认渲染配置未改动。这些结果不代表所有裸机 GPU、桌面或发行版均通过验收。
+
+## 目标桌面后续验收
+
+以下项目仍需在实际目标 Linux 桌面逐项执行；WSL 已覆盖的基础项目也应复核，请使用独立试用目录和临时游戏副本：
 
 1. 校验应用文件，赋予执行权限；从含空格的路径启动，确认中文、缩放、窗口、菜单与文件选择器正常。
 2. 移动功能区和组件、编辑便笺、切换主题，关闭重开后确认保存；从另一工作目录启动仍读取同一数据目录。
@@ -85,4 +97,4 @@ pwsh -File packaging/Wonder.Publish.ps1 -Runtime linux-x64
 6. 导入已经补全 Linux 依赖的临时实例，指定 Linux Java，核对启动日志、原生库加载和游戏退出状态。
 7. 对临时副本执行移动和回收，确认回收站可恢复；记录桌面环境、发行版、错误和已脱敏日志，勿提交令牌、账号库或个人路径。
 
-Windows 自动化测试通过也不等于以上项目已通过；Linux 实机问题在试发行阶段仍可能出现。
+自动化测试与 WSLg 验证不能代替上述目标桌面验收；真实在线账户与游戏启动尚未验证，Minecraft AppID 状态不因这些测试而改变。

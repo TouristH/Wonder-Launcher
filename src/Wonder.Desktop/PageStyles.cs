@@ -24,8 +24,7 @@ internal static class PageStyles
     /// <summary>
     /// The hover/press easing shared by every hand-painted surface. Without this, state changes
     /// snap between palette steps and the whole desktop reads as stiff; with it the same colours
-    /// arrive over one short beat. Property values still change instantly, so snapshots and
-    /// assertions see the target colour, not an interpolated one.
+    /// arrive over one short beat. Rendered property values interpolate until the transition ends.
     /// </summary>
     public static Transitions HoverTransitions() => new()
     {
@@ -44,7 +43,8 @@ internal static class PageStyles
     {
         surface.RenderTransformOrigin = RelativePoint.Center;
         surface.RenderTransform = TransformOperations.Parse("scale(1)");
-        surface.Transitions = PressTransitions();
+        surface.Transitions ??= new Transitions();
+        foreach (var transition in PressTransitions()) surface.Transitions.Add(transition);
     }
 
     /// <summary>Leans the surface in while pressed, back out when released.</summary>
@@ -192,7 +192,9 @@ internal static class PageStyles
             }
             _surface = new Border { CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Padding = new Thickness(18, 15), Child = body, Transitions = HoverTransitions() };
             EnablePressFeedback(_surface);
-            Template = new FuncControlTemplate<Button>((_, _) => _surface);
+            // Keep pointer hits stable while the painted surface shrinks during a press.
+            var hitTarget = new Border { Background = Brushes.Transparent, CornerRadius = _surface.CornerRadius, Child = _surface };
+            Template = new FuncControlTemplate<Button>((_, _) => hitTarget);
             ToolTip.SetTip(this, string.Join("\n", new[] { title, subtitle, detail }.Where(x => !string.IsNullOrWhiteSpace(x))));
             PropertyChanged += (_, e) =>
             {
@@ -222,6 +224,7 @@ internal static class PageStyles
             _surface.BorderBrush = IsFocused || _selected ? Palette.Emphasis : IsPointerOver ? Palette.LineStrong : Palette.Line;
             _surface.BorderThickness = new Thickness(IsFocused || _selected ? 2 : 1);
             _surface.Opacity = IsEnabled ? 1 : .5;
+            PaintPressScale(_surface, IsPressed);
         }
     }
 }

@@ -305,6 +305,7 @@ internal sealed class ComponentView : Viewbox, IDisposable
             MinWidth = _definition.Width + 32, MinHeight = _definition.Height + 32,
             Background = Palette.Background, Content = new Border { Padding = new Thickness(16), Child = component }
         };
+        WonderMark.ApplyIcon(details);
         if (owner is not null) details.FontFamily = owner.FontFamily;
         details.Closed += (_, _) => { component.Dispose(); _detailsWindow = null; };
         _detailsWindow = details;

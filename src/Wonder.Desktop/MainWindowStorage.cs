@@ -89,14 +89,19 @@ public sealed partial class MainWindow
     protected override void OnClosing(WindowClosingEventArgs args)
     {
         base.OnClosing(args);
-        if (args.Cancel || _forceClose) return;
+        if (args.Cancel)
+        {
+            if (!_waitingToClose) _downloads.CancelShutdown();
+            return;
+        }
+        if (_forceClose) return;
         if (_waitingToClose) { args.Cancel = true; return; }
 
         _closeError = null;
         try
         {
             var accounts = _accounts.WaitForIdleAsync();
-            var instances = _instances.WaitForPersistenceAsync();
+            var instances = WaitForDownloadsAndInstancesAsync(_downloads.PrepareForShutdownAsync());
             if (!accounts.IsCompletedSuccessfully || !instances.IsCompletedSuccessfully)
             {
                 args.Cancel = true;
@@ -107,15 +112,27 @@ public sealed partial class MainWindow
                 return;
             }
             CloseWorkspace(args);
-            if (args.Cancel) SetCloseError("布局保存未完成。");
+            if (args.Cancel)
+            {
+                _downloads.CancelShutdown();
+                SetCloseError("布局保存未完成。");
+            }
         }
         catch (Exception error)
         {
             _waitingToClose = false;
             args.Cancel = true;
+            _downloads.CancelShutdown();
             LauncherDiagnostics.Warn("CloseLauncher", error);
             SetCloseError("本地存储操作异常。");
         }
+    }
+
+    private async Task WaitForDownloadsAndInstancesAsync(Task downloads)
+    {
+        // An in-flight download can begin instance registration after an earlier storage snapshot.
+        await downloads.ConfigureAwait(false);
+        await _instances.WaitForPersistenceAsync().ConfigureAwait(false);
     }
 
     internal async Task CloseAfterStorageAsync(Task accounts, Task instances)
@@ -130,7 +147,8 @@ public sealed partial class MainWindow
         catch (Exception error)
         {
             LauncherDiagnostics.Warn("WaitForStorageOnClose", pending.Exception ?? error);
-            if (!_workspaceStorageClosed) SetCloseError("等待账户或实例存储操作时失败。");
+            _downloads.CancelShutdown();
+            if (!_workspaceStorageClosed) SetCloseError("等待下载、账户或实例存储操作时失败。");
             return;
         }
         finally

@@ -14,6 +14,7 @@ public sealed partial class InstanceService
     private readonly IInstanceDiscovery _discovery;
     private readonly IGameLauncher _launcher;
     private readonly string _cacheDirectory;
+    private readonly GameFileOperationCoordinator _fileCoordinator;
     private readonly ILaunchAccountProvider? _accounts;
     private readonly Func<LaunchCrashReport, Task>? _offerCrashReport;
     private InstanceCatalog _catalog = new();
@@ -45,9 +46,10 @@ public sealed partial class InstanceService
 
     public InstanceService(IInstanceStore store, IInstanceDiscovery discovery, IGameLauncher launcher, string cacheDirectory,
         IInstanceFileOperations? fileOperations = null, ILaunchAccountProvider? accounts = null, Func<LaunchCrashReport, Task>? offerCrashReport = null,
-        bool loadImmediately = true)
+        bool loadImmediately = true, GameFileOperationCoordinator? fileCoordinator = null)
     {
         _store = store; _discovery = discovery; _launcher = launcher; _cacheDirectory = cacheDirectory;
+        _fileCoordinator = fileCoordinator ?? new();
         _files = fileOperations; _accounts = accounts; _offerCrashReport = offerCrashReport;
         _pendingLoad = true;
         if (loadImmediately) Reload();

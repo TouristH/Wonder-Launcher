@@ -217,7 +217,6 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     private Control MemoryRow(string key, string label, string placeholder, int inherited)
     {
         var field = Field(key, label, placeholder);
-        var box = _fields[key];
         // Value starts at a real number: left at the default 0, the first layout pass coerces it up
         // to Minimum and Avalonia reports that as a value change the handler would write into the box.
         var slider = new Slider
@@ -228,13 +227,6 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
         AutomationProperties.SetName(slider, label + "滑块");
         AutomationProperties.SetHelpText(slider, "拖动调整，或在上方直接输入精确值；留空表示继承。");
         var syncing = false;
-        void PushToSlider()
-        {
-            if (syncing) return;
-            syncing = true;
-            try { if (int.TryParse(box.Text, out var value)) slider.Value = Math.Clamp(value, slider.Minimum, slider.Maximum); }
-            finally { syncing = false; }
-        }
         slider.PropertyChanged += (_, e) =>
         {
             // A range change coerces Value too; that is not the user choosing a number, and writing
@@ -249,7 +241,6 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
             }
             finally { syncing = false; }
         };
-        box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) PushToSlider(); };
         ((StackPanel)field).Children.Add(slider);
         _memorySliders[key] = slider;
         return field;
@@ -258,8 +249,8 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
     /// <summary>
     /// Minimum and maximum memory taken together: the floor cannot pass the ceiling. The range is
     /// what moves, never the text — the box stays the single source of truth (and the place an
-    /// inherited or exact value is written), so <see cref="RebalanceMemory"/> only narrows the
-    /// sliders and lets <c>Validate()</c> have the last word on save.
+    /// inherited or exact value is written). Rebalancing updates both ranges and positions;
+    /// <c>Validate()</c> has the last word on save.
     /// </summary>
     private void LinkMemory()
     {
@@ -280,10 +271,13 @@ internal sealed class GlobalGameSettingsEditor : UserControl, IDisposable
             var max = _memorySliders["max"];
             var hasMin = int.TryParse(_fields["min"].Text, out var minimum);
             var hasMax = int.TryParse(_fields["max"].Text, out var maximum);
-            min.Maximum = hasMax ? Math.Clamp(maximum - 512, 512, 32768) : 32768;
-            max.Minimum = hasMin ? Math.Clamp(minimum + 512, 512, 32768) : 512;
-            // An empty box means "inherit": the slider still sits at the inherited default and stays
-            // draggable — dragging is how a value stops being inherited — it is only dimmed.
+            if (!hasMin) minimum = InstanceSettings.Defaults.MinimumMemoryMb!.Value;
+            if (!hasMax) maximum = InstanceSettings.Defaults.MaximumMemoryMb!.Value;
+            min.Maximum = Math.Clamp(maximum, 512, 32768);
+            max.Minimum = Math.Clamp(minimum, 512, 32768);
+            // Keep text as the source of truth even when the previous range clipped a value.
+            min.Value = Math.Clamp(minimum, min.Minimum, min.Maximum);
+            max.Value = Math.Clamp(maximum, max.Minimum, max.Maximum);
             min.Opacity = hasMin ? 1 : .6; max.Opacity = hasMax ? 1 : .6;
         }
         finally { _balanced = false; }

@@ -28,17 +28,31 @@ public static class DownloadSourceResolver
     }
 
     internal static Uri RequireUrl(string? value, params string[] hosts)
+        => RequireUrl(value, mirrorCdn: false, hosts);
+
+    internal static Uri RequireRedirectUrl(Uri origin, string value, bool metadata)
+        => RequireUrl(value, mirrorCdn: !metadata && origin.IdnHost == MirrorHost, []);
+
+    private static Uri RequireUrl(string? value, bool mirrorCdn, string[] hosts)
     {
         if (value is null || value.Any(char.IsControl) || value.Contains('\\') ||
             !Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
-            !uri.IsDefaultPort || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 ||
-            uri.HostNameType != UriHostNameType.Dns || !KnownHost(uri.IdnHost) ||
+            (!mirrorCdn && !uri.IsDefaultPort) || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0 ||
+            uri.HostNameType != UriHostNameType.Dns || (!mirrorCdn && !KnownHost(uri.IdnHost)) ||
             (hosts.Length != 0 && !hosts.Contains(uri.IdnHost, StringComparer.OrdinalIgnoreCase)))
             throw new InvalidDataException("下载地址必须使用受支持主机的默认 HTTPS 端口，且不能包含凭据或片段。");
         var authority = value.AsSpan(value.IndexOf("://", StringComparison.Ordinal) + 3);
         var end = authority.IndexOfAny('/', '?', '#');
         if ((end < 0 ? authority : authority[..end]).Contains('@'))
             throw new InvalidDataException("下载地址不能包含凭据。");
+        if (mirrorCdn)
+        {
+            // BMCLAPI selects public OpenBMCLAPI nodes, including nodes on non-default ports.
+            // The engine still checks DNS addresses on connect and verifies the trusted file hash.
+            try { TextureConnectionPolicy.CheckLiteralTarget(uri, allowPrivateNetwork: false); }
+            catch (Wonder.Application.AccountAuthenticationException error)
+            { throw new InvalidDataException("下载镜像重定向指向受限网络。", error); }
+        }
         return uri;
     }
 
@@ -61,6 +75,7 @@ public static class DownloadSourceResolver
         if (from is "launchermeta.mojang.com" && to is "piston-meta.mojang.com") return true;
         if (from is "files.minecraftforge.net" && to is "maven.minecraftforge.net") return true;
         if (metadata) return false;
+        if (from == MirrorHost) return true;
         return (from, to) switch
         {
             ("github.com", "release-assets.githubusercontent.com" or "objects.githubusercontent.com" or "raw.githubusercontent.com") => true,

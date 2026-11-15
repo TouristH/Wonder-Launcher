@@ -80,16 +80,19 @@ public sealed partial class MainWindow : Window
         _accounts = new AccountService(accountStore, new MicrosoftAuthenticator(), new YggdrasilAuthenticator(),
             new AuthenticationServerDirectory(), new AuthenticationAdapterProvider(System.IO.Path.Combine(dataDirectory, "cache", "authentication")), loadImmediately: false);
         Opened += (_, _) => UiOperation.Start(_accounts.ReloadAsync, () => _workspaceStorageClosed);
+        var gameFileOperations = new GameFileOperationCoordinator();
         _instances = new InstanceService(new InstanceStore(System.IO.Path.Combine(dataDirectory, "instances.json")), new InstanceDiscovery(),
             new LocalGameLauncher(launcherVersion: LauncherBuildInfo.Version), System.IO.Path.Combine(dataDirectory, "cache"),
-            new InstanceFileOperations(), _accounts, offerCrashReport: report => LaunchCrashWindow.OfferAsync(this, report), loadImmediately: false);
+            new InstanceFileOperations(), _accounts, offerCrashReport: report => LaunchCrashWindow.OfferAsync(this, report), loadImmediately: false,
+            fileCoordinator: gameFileOperations);
         Opened += (_, _) => UiOperation.Start(async () =>
         {
             await _instances.ReloadAsync();
             if (IsVisible && !_waitingToClose && !_workspaceStorageClosed) await _instances.ReadRegisteredDirectoriesAsync();
         }, () => _workspaceStorageClosed);
         _downloadEngine = new DownloadEngine();
-        _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine, GetCurseForgeApiKey), System.IO.Path.Combine(dataDirectory, "downloads.json"), ImportDownloadedInstanceAsync);
+        _downloads = new DownloadService(new MinecraftDownloadCatalog(_downloadEngine, GetCurseForgeApiKey), System.IO.Path.Combine(dataDirectory, "downloads.json"),
+            ImportDownloadedInstanceAsync, gameFileOperations);
         var registry = BuiltInComponents.CreateRegistry(() => _workspace!.OpenSettings(), dataDirectory);
         GameComponents.Register(registry, _instances, OpenInstanceManager, _accounts);
         AccountComponents.Register(registry, _accounts, OpenAccountManager, _instances);

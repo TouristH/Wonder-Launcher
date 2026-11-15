@@ -40,6 +40,7 @@ internal sealed partial class PluginManagerWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = Palette.Background, Foreground = Palette.Text, FontFamily = FontFamily
         };
+        WonderMark.ApplyIcon(dialog);
         var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto"), Margin = new Thickness(24) };
         var title = new StackPanel { Spacing = 8, Margin = new Thickness(0, 0, 0, 18) };
         title.Children.Add(Heading("启用前请了解这个插件", 23));

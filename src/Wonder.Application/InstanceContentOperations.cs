@@ -32,6 +32,7 @@ public sealed partial class InstanceService
     public Task<bool> SetContentEnabledAsync(string id, InstanceContent item, bool enabled) => RunFileOperationAsync(catalog =>
     {
         var directory = ResolveContentDirectory(catalog, id);
+        using var reservation = _fileCoordinator.ReserveMutation(directory);
         ValidateContentScope(item.Path);
         ContentFiles().SetContentEnabled(directory, item, enabled);
         return Task.FromResult(true);
@@ -40,6 +41,7 @@ public sealed partial class InstanceService
     public Task<bool> DeleteContentAsync(string id, InstanceContent item) => RunFileOperationAsync(async catalog =>
     {
         var directory = ResolveContentDirectory(catalog, id);
+        using var reservation = _fileCoordinator.ReserveMutation(directory);
         ValidateContentScope(item.Path);
         await ContentFiles().RecycleContentAsync(directory, item).ConfigureAwait(false);
         return true;

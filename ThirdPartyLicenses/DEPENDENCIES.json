@@ -286,6 +286,50 @@
     "Repository": "https://github.com/dotnet/dotnet"
   },
   {
+    "Package": "Microsoft.NETCore.App.Runtime.linux-x64",
+    "Version": "10.0.15",
+    "Authors": "Microsoft",
+    "Copyright": "© Microsoft Corporation. All rights reserved.",
+    "LicenseType": "expression",
+    "License": "MIT",
+    "LicenseUrl": "https://licenses.nuget.org/MIT",
+    "ProjectUrl": "https://dot.net/",
+    "Repository": "https://github.com/dotnet/dotnet"
+  },
+  {
+    "Package": "Microsoft.NETCore.App.Runtime.osx-arm64",
+    "Version": "10.0.15",
+    "Authors": "Microsoft",
+    "Copyright": "© Microsoft Corporation. All rights reserved.",
+    "LicenseType": "expression",
+    "License": "MIT",
+    "LicenseUrl": "https://licenses.nuget.org/MIT",
+    "ProjectUrl": "https://dot.net/",
+    "Repository": "https://github.com/dotnet/dotnet"
+  },
+  {
+    "Package": "Microsoft.NETCore.App.Runtime.osx-x64",
+    "Version": "10.0.15",
+    "Authors": "Microsoft",
+    "Copyright": "© Microsoft Corporation. All rights reserved.",
+    "LicenseType": "expression",
+    "License": "MIT",
+    "LicenseUrl": "https://licenses.nuget.org/MIT",
+    "ProjectUrl": "https://dot.net/",
+    "Repository": "https://github.com/dotnet/dotnet"
+  },
+  {
+    "Package": "Microsoft.NETCore.App.Runtime.win-x64",
+    "Version": "10.0.15",
+    "Authors": "Microsoft",
+    "Copyright": "© Microsoft Corporation. All rights reserved.",
+    "LicenseType": "expression",
+    "License": "MIT",
+    "LicenseUrl": "https://licenses.nuget.org/MIT",
+    "ProjectUrl": "https://dot.net/",
+    "Repository": "https://github.com/dotnet/dotnet"
+  },
+  {
     "Package": "Microsoft.NET.Test.Sdk",
     "Version": "17.12.0",
     "Authors": "Microsoft",

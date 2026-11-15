@@ -1,6 +1,12 @@
 # 奇想我的世界启动器 · Wonder Minecraft Launcher
 
-当前版本：**0.7.2 账户中心与角色外观**。同一份源码提供 Windows x64、Linux x64 和 macOS Intel/Apple Silicon 桌面应用；Linux 与 macOS 当前为试发行。源代码构建方法见 [README](README.md#从源码构建)。
+当前版本：**0.8.0 开发预览**。同一份源码提供 Windows x64、Linux x64 和 macOS Intel/Apple Silicon 桌面应用；Linux 与 macOS 当前为试发行。源代码构建方法见 [README](README.md#从源码构建)。
+
+0.8.0 修复下载期间移动或删除目录造成的路径冲突、Modrinth 跨类型依赖安装和 BMCLAPI CDN 跳转。下载任务会保留相关目录占用；第三方账户手动刷新资料时，有效的现有会话不会被替换。界面修复覆盖内存滑块与输入、继承值的联动、目录浏览按钮、实例卡片文字避让，以及按钮和分类卡的悬停、按压反馈。
+
+正常退出会先暂停下载，等待当前下载和已开始的实例登记收尾，再完成实例及工作区保存。保存失败或取消关闭后可继续操作，暂停的下载需手动继续。
+
+个性化设置中的明暗主题和强调色也会更新运行中窗口图标，已打开与新开的窗口使用当前配色，采用窗口图标的任务栏项同步变化。EXE 文件、固定快捷方式和启动项的静态图标保持发行资源。操作说明见[个性化设置](Guides/14-settings-component.md)。
 
 开发分支提供独立插件《请稍候》。API 2 插件通过声明式定义注册多张卡片、配置参数、按序首次放置和入场动画。观察 API 只覆盖启动器及所属窗口，提供点击和滚动、组件/功能区拖动、菜单和其它宿主操作，不包含其它程序活动或输入正文。观察卡使用滚动查看近期行为。侧栏原生组件缩为单行页面入口，普通入口卡统一为 280×140，网格吸附按缩放后的 20 DIP 对齐但不绘制网格线。当前插件包通过 `pwsh -File packaging/Wonder.PackagePleaseWait.ps1` 本地构建，启用前需在插件管理中导入并同意行为提示。插件指南见[开发文档](Guides/36-plugin-development.md)。
 
@@ -16,6 +22,8 @@ NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR 
 
 点击下载组件任意位置即可打开下载中心。安装游戏时可选兼容的 OptiFine、Fabric API 或 QFAPI/QSL。资源详情支持按大版本、具体版本和加载器查看发布包，可安装到实例或将文件保存到自选目录。任务卡显示当前步骤和百分比。
 
+Modrinth 必需依赖按依赖项目自身的 `project_type` 分别安装到模组、资源包或光影目录；模组依赖按目标实例的加载器选择并校验版本。排队、运行、暂停和失败任务都会占用目标目录，相关目录不能移动、删除或修改资源。完成任务后解除占用；取消任务后须等后台工作停止，再执行文件操作。
+
 新实例默认用 Minecraft 版本和加载器版本命名，手动编辑后会保留自定义名称。新游戏默认归入当前所选游戏目录，版本隔离默认开启，可在“设置 → 游戏全局设置”修改。启动器会在启动、添加或修改目录、退出实例详情和下载实例后读取相应游戏目录。
 
 在 **设置 → 启动器设置** 选择自动、官方或 BMCLAPI 游戏下载源并调整并发。版本清单与校验值始终取自官方，镜像用于传输可校验的文件。下载策略修改对新任务生效。安装目录、OptiFine 校验覆盖范围和资源兼容性见[下载组件帮助](Guides/33-download-center.md)。
@@ -28,15 +36,15 @@ NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR 
 
 从组件库打开“插件”，在“已安装”中管理本地代码插件，启用、关闭、修改配置或打开插件目录。在“在线仓库”中按版本查看人工验证状态：已验证标绿，其余标红，均可下载；也可导入本地 ZIP。首次启用前，启动器静态分析插件代码并展示检测到的行为、分析限制和作者补充说明。选择同意才会加载插件，不同意则保持关闭。文件变化后需要重新确认；修改普通配置会重新激活已启用插件。代码插件与启动器共享系统用户权限，不受逐项权限限制或安全沙箱约束。在线仓库内置 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins) 的索引，可在 GitHub 原版源与 jsDelivr 镜像源之间切换。仓库使用 C# 工具核对包与自动生成的权限报告。详见[插件管理](Guides/35-plugins.md)。
 
-Windows、Linux、macOS 使用同一套源码与设置/工作区格式，各自输出本机原生入口并自带对应 .NET 运行时；无需 Wine 或 Windows EXE，也不意味着启用了 Native AOT。本次 Release 只提供 Windows 与 Linux 应用，macOS Intel/Apple Silicon `.app` 保留本地构建；试用、本地签名、系统钥匙串和迁移边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。macOS 数据放在 `.app` 旁边的 `WonderData/`，运行时不写入应用包内部。
+Windows、Linux、macOS 使用同一套源码与设置/工作区格式，各自输出本机原生入口；标准版自带对应 .NET 运行时，Windows/Linux 轻量版复用或按需安装运行库。无需 Wine 或 Windows EXE，也不意味着启用了 Native AOT。本次 Release 只提供 Windows 与 Linux 应用，macOS Intel/Apple Silicon `.app` 保留本地构建；试用、本地签名、系统钥匙串和迁移边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。macOS 数据放在 `.app` 旁边的 `WonderData/`，运行时不写入应用包内部。
 
-Windows 用户下载 `Wonder-0.7.2-win-x64.exe`，放到可写目录后双击运行；本地发布产物位于 `artifacts/Wonder-0.7.2-win-x64.exe`。它是 Windows x64 自包含单文件应用，不要求预装 .NET；首次运行会按 .NET 的机制解包必要原生库。
+Windows 用户下载 `Wonder-0.8.0-win-x64.exe`，放到可写目录后双击运行；本地发布产物位于 `artifacts/Wonder-0.8.0-win-x64.exe`。它是 Windows x64 自包含单文件应用，不要求预装 .NET；首次运行会按 .NET 的机制解包必要原生库。
 
-另有本地可构建的 Windows x64 最小版 `artifacts/Wonder-0.7.2-win-x64-minimal.exe`，七个 Wonder 自身程序集仍内置、功能完整，所有第三方依赖由用户准备：在系统安装 .NET 10 x64 运行时，并按同名 `.dependencies.json` 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方 DLL 放在 EXE 同目录；系统 .NET 运行时无需放在 EXE 旁。用 .NET 10 SDK 和 PowerShell 7.4+ 执行 `pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies`，还会在 `artifacts/Wonder-minimal-dependencies-win-x64/` 准备可复制到 EXE 旁的 DLL，这些 DLL 不内置于最小版 EXE。依赖不齐无法运行；普通用户使用原自包含版更省步骤，默认 Release 仍为自包含版。构建及准备步骤见[最小版说明](Guides/32-native-cross-platform.md#windows-x64-可选最小版)。
+同时提供 Windows ZIP 和 Linux tar.gz **轻量版**：下载 `Wonder-0.8.0-win-x64-lightweight.zip` 或 `Wonder-0.8.0-linux-x64-lightweight.tar.gz`，完整解压后运行 `Wonder.cmd` 或 `./Wonder.sh`。轻量应用保留 Avalonia、Skia、HarfBuzz 等全部应用依赖，无需自行准备 DLL。首次启动优先复用系统已有的 .NET 10 x64 正式版；缺失时询问用户，同意后从微软下载 .NET Runtime 10.0.15、核对 SHA-512 并安装到用户目录，然后启动应用。以后复用，不要求管理员或 sudo，不改永久 PATH。拒绝或下载失败不会启动应用，可重新运行入口重试；完全离线且没有运行库时使用标准版。详细安装位置与步骤见[轻量版帮助](Guides/37-lightweight-distribution.md)。
 
-Linux 用户下载 `Wonder-0.7.2-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.7.2-linux-x64`，再执行 `./Wonder-0.7.2-linux-x64`；本地发布产物位于 `artifacts/Wonder-0.7.2-linux-x64`。它是自带 .NET 的 ELF 单文件应用，仍需系统图形库、X11/XWayland 和用于保存账户的已解锁 Secret Service 密钥环。依赖安装、校验和限制见 [Linux 试发行说明](Guides/31-linux-trial.md)；Linux 图形桌面与真实游戏启动尚待实机验收。
+Linux 用户下载标准版 `Wonder-0.8.0-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.8.0-linux-x64`，再执行 `./Wonder-0.8.0-linux-x64`；本地发布产物位于 `artifacts/Wonder-0.8.0-linux-x64`。它是自带 .NET 的 ELF 单文件应用，仍需系统图形库、X11/XWayland 和用于保存账户的已解锁 Secret Service 密钥环。Ubuntu 24.04 x64 的 WSL2/WSLg 环境已验证原生窗口、中文、主题图标与设置/布局重开恢复、Secret Service 合成账户加密和失败保全；部分入口测试使用软件渲染。裸机 GPU、其他发行版、默认浏览器/文件选择器、真实在线账户与游戏启动仍待目标桌面验收。依赖安装、校验和限制见 [Linux 试发行说明](Guides/31-linux-trial.md)。
 
-Windows/Linux 应用运行无需相邻文档、启动脚本或源码包。Release 独立提供 `Wonder-0.7.2-source.tar.gz`，其中保留对应源码、构建材料、公开文档和全部适用的项目与第三方许可及通知；只使用应用时无需下载它。
+Windows/Linux 标准版运行无需相邻文档、启动脚本或源码包；轻量版需保留包内入口脚本与应用。两种发行都使用应用旁的 `WonderData/`。Release 独立提供 `Wonder-0.8.0-source.tar.gz`，其中保留对应源码、构建材料、公开文档和全部适用的项目与第三方许可及通知；只使用应用时无需下载它。
 
 启动时在应用旁创建 `WonderData/`（macOS 在 `.app` 同级），集中存放设置、工作区、`plugins/` 安装包和 `plugin-data/` 插件配置与数据。移动应用时一并移动此文件夹可保留文件数据，账户解密仍依赖原系统用户的密钥服务；分发程序时须一并提供适用的项目许可与第三方声明，不携带用户数据。所在目录需要可写，写入失败会明确提示，不自动切换到其他数据目录。
 
@@ -80,7 +88,7 @@ dotnet run --project src/Wonder.Desktop/Wonder.Desktop.csproj
 - **启动日志**：独立组件显示共享的任务状态、错误和最近 200 行脱敏日志，提供“取消启动准备”和“查看启动状态”；后者打开已有的状态窗口。日志组件可见时实时更新，隐藏后再显示会恢复当前状态与最近日志。两个组件可分别从组件库拖入工作区；隐藏组件、移除快捷方式或关闭状态窗口不会结束后台任务或游戏。
 - 游戏崩溃时，Wonder 自动弹出保存确认，即使没有打开“启动日志”组件。确认后，诊断包以 ZIP 保存到 `WonderData/CrashReports/`。包内文件及分享前的检查见[崩溃诊断包](Guides/18-instance-management-and-launch.md#保存崩溃诊断包)。
 
-已有第三方账户刷新时，已验证的新凭据先保存，再查询外观；取消启动准备不会丢弃已保存的新会话，也不会继续启动游戏。新会话保存失败时请保持程序打开，恢复数据目录写入后重试“刷新资料”或启动；提前退出可能需要重新登录。详见[账户说明](Guides/26-account-management.md)。
+第三方账户手动“刷新资料”先向认证服务器验证现有会话；有效时保留令牌并重新查询外观，只有服务器明确判定令牌无效才刷新会话。网络或服务错误会停止本次操作，不触发令牌轮换。启动前仍刷新会话并验证身份；取得有效且身份一致的新凭据后先保存，再查询外观。取消启动准备不会丢弃已保存的新会话，也不会继续启动游戏。新会话保存失败时请保持程序打开，恢复数据目录写入后重试“刷新资料”或启动；提前退出可能需要重新登录。详见[账户说明](Guides/26-account-management.md)。
 
 账户库和实例索引在后台加载和保存。保存完成后显示已提交的设置，保存失败时保留先前的数据并显示错误。
 
@@ -110,7 +118,7 @@ dotnet run --project src/Wonder.Desktop/Wonder.Desktop.csproj
 
 Windows 账户库 `accounts.dat` 由原 Windows 用户在原系统解密；Linux 的 `accounts.linux.dat` 和 macOS 的 `accounts.macos.dat` 共用加密库格式，密钥分别保存在原用户的 Secret Service 和系统钥匙串。复制数据目录不会复制系统密钥，也不会自动转换平台账户文件；换系统或用户后需重新登录。先保留备份，勿覆盖或删除无法解密的原文件。Windows 支持读取本项目早期版本产生的加密账户库，已有第三方账户的认证地址会进入服务器列表，不导入其他启动器的凭据。
 
-Linux/macOS 需安装适合游戏版本与本机架构的 Java，并通过来源启动器补全当前系统的原生库；从 Windows 复制的绝对路径、`java.exe` 和 DLL 不能直接使用。Linux 目录删除使用 `gio trash`，macOS 使用 Finder 废纸篓并可能请求自动化权限；无法完成回收时会报错，不改为永久删除。两端图形桌面与真实游戏启动尚待实机验收。
+Linux/macOS 需安装适合游戏版本与本机架构的 Java，并通过来源启动器补全当前系统的原生库；从 Windows 复制的绝对路径、`java.exe` 和 DLL 不能直接使用。Linux 目录删除使用 `gio trash`，macOS 使用 Finder 废纸篓并可能请求自动化权限；无法完成回收时会报错，不改为永久删除。Linux 的 WSL 验证范围见前文；两端真实游戏启动、目标桌面回收体验及 macOS 图形桌面仍待实机验收。
 
 第三方旧账户升级后点击“刷新资料”取得皮肤与披风；网站更换外观后也使用此操作同步。保存布局失败时请保持程序打开并恢复目录写入条件，再重试保存或关闭。强制结束进程或断电可能丢失尚未落盘的编辑。
 

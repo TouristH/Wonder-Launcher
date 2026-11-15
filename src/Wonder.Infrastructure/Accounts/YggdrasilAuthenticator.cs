@@ -10,7 +10,7 @@ using Wonder.Core;
 
 namespace Wonder.Infrastructure;
 
-public sealed partial class YggdrasilAuthenticator : IYggdrasilAuthenticator, IYggdrasilAccountAppearance
+public sealed partial class YggdrasilAuthenticator : IYggdrasilAuthenticator, IYggdrasilAccountAppearance, IYggdrasilSessionValidator
 {
     private const int MaximumResponseBytes = 1024 * 1024;
     private static readonly HttpClient DefaultClient = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
@@ -78,6 +78,31 @@ public sealed partial class YggdrasilAuthenticator : IYggdrasilAuthenticator, IY
         var result = ReadBound(json!.RootElement, profileId, login.Credentials.ClientToken);
         ct.ThrowIfCancellationRequested();
         return await ReadAccountAppearanceAsync(Account(server, result.Profile, result.Credentials), ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> ValidateAsync(AccountProfile profile, AccountCredentials credentials, CancellationToken ct = default)
+    {
+        var server = ValidateExisting(profile, credentials);
+        ct.ThrowIfCancellationRequested();
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new { accessToken = credentials.AccessToken, clientToken = credentials.ClientToken });
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(new Uri(server), "authserver/validate"));
+            request.Content = new ByteArrayContent(bytes);
+            request.Content.Headers.ContentType = new("application/json") { CharSet = "utf-8" };
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            // Yggdrasil defines 403 for an invalid token. Other failures do not justify rotation.
+            if (response.StatusCode == HttpStatusCode.Forbidden) return false;
+            if (response.StatusCode != HttpStatusCode.NoContent)
+                throw Error("第三方会话验证未完成，请检查服务地址和服务器状态后重试。");
+            ct.ThrowIfCancellationRequested();
+            return true;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw Error("第三方认证服务连接超时，请稍后重试。"); }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        { throw Error("无法安全连接第三方认证服务，请检查网络和 HTTPS 证书。"); }
+        finally { CryptographicOperations.ZeroMemory(bytes); }
     }
 
     public async Task<AuthenticatedAccount> RefreshAsync(AccountProfile profile, AccountCredentials credentials, CancellationToken ct = default)

@@ -5,8 +5,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using ShapePath = Avalonia.Controls.Shapes.Path;
-using Avalonia.Platform;
+using Wonder.Core;
 
 namespace Wonder.Desktop;
 
@@ -25,32 +26,81 @@ internal static class WonderMark
     // Concavity of the star's sides: 0 is a diamond, 1 collapses to the centre.
     private const double Waist = .20;
 
-    private static readonly Uri IconUri = new("avares://Wonder.Desktop/Assets/Brand/wonder.ico");
+    private static readonly List<WeakReference<Window>> Windows = [];
+    private static WindowIcon? _windowIcon;
+    private static MarkColors? _iconColors;
 
     /// <summary>
-    /// The packaged multi-size icon, shared by every window. Loaded once and reused so the
-    /// window chrome does not decode the .ico for each instance.
+    /// One rendered icon for the current mark colours, shared by all running windows.
+    /// The executable's packaged icon remains the fallback if rendering is unavailable.
     /// </summary>
-    public static WindowIcon? WindowIcon { get; } = LoadIcon();
-
-    private static WindowIcon? LoadIcon()
+    public static WindowIcon? WindowIcon
     {
-        try
+        get
         {
-            using var stream = AssetLoader.Open(IconUri);
-            return new WindowIcon(stream);
-        }
-        catch (Exception)
-        {
-            // A missing icon must never stop a window from opening.
-            return null;
+            var colors = new MarkColors(Palette.MarkTop.Color, Palette.MarkLeft.Color,
+                Palette.MarkRight.Color, Palette.MarkCore.Color, Palette.MarkTrail.Color);
+            if (_windowIcon is not null && _iconColors == colors) return _windowIcon;
+            try
+            {
+                using var stream = new MemoryStream(RenderIconPng(), writable: false);
+                var icon = new WindowIcon(stream);
+                _windowIcon = icon;
+                _iconColors = colors;
+            }
+            catch (Exception error)
+            {
+                LauncherDiagnostics.Warn("RenderWindowIcon", error);
+            }
+            return _windowIcon;
         }
     }
 
-    /// <summary>Gives a window the Wonder icon; safe to call when the asset failed to load.</summary>
+    /// <summary>Registers a window without retaining it after its owner releases it.</summary>
     public static void ApplyIcon(Window window)
     {
+        RemoveWindows(null);
+        if (!Windows.Any(reference => reference.TryGetTarget(out var existing) && ReferenceEquals(existing, window)))
+        {
+            Windows.Add(new WeakReference<Window>(window));
+            window.Closed += WindowClosed;
+        }
         if (WindowIcon is { } icon) window.Icon = icon;
+    }
+
+    /// <summary>Called once after the complete palette update, never for individual brush changes.</summary>
+    public static void RefreshWindowIcons()
+    {
+        RemoveWindows(null);
+        if (Windows.Count == 0 || WindowIcon is not { } icon) return;
+        foreach (var reference in Windows)
+            if (reference.TryGetTarget(out var window) && !ReferenceEquals(window.Icon, icon))
+                window.Icon = icon;
+    }
+
+    private static void WindowClosed(object? sender, EventArgs args)
+    {
+        if (sender is not Window window) return;
+        window.Closed -= WindowClosed;
+        RemoveWindows(window);
+    }
+
+    private static void RemoveWindows(Window? closed) => Windows.RemoveAll(reference =>
+        !reference.TryGetTarget(out var window) || ReferenceEquals(window, closed));
+
+    private readonly record struct MarkColors(Color Top, Color Left, Color Right, Color Core, Color Trail);
+
+    internal static byte[] RenderIconPng()
+    {
+        const int size = 128;
+        var mark = Create(size);
+        mark.Measure(new Size(size, size));
+        mark.Arrange(new Rect(0, 0, size, size));
+        using var bitmap = new RenderTargetBitmap(new PixelSize(size, size), new Vector(96, 96));
+        bitmap.Render(mark);
+        using var stream = new MemoryStream();
+        bitmap.Save(stream, PngBitmapEncoderOptions.Default);
+        return stream.ToArray();
     }
 
     /// <summary>Draws the mark at the given size, following the current accent.</summary>

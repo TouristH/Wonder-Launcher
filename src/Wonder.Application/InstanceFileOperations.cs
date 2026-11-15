@@ -83,6 +83,7 @@ public sealed partial class InstanceService
     {
         if (confirmation != "sure") throw new ArgumentException("请准确输入小写 sure。");
         if (!ReferenceEquals(plan.Owner, _planOwner)) throw new ArgumentException("删除确认已失效，请重新打开。");
+        using var reservation = _fileCoordinator.ReserveMutation(plan.Path);
         var current = plan.InstanceId is { } id ? PrepareDeleteInstance(catalog, id) : PrepareDeleteDirectory(catalog, plan.Path);
         if (!Same(current.Path, plan.Path) || current.Identity != plan.Identity || !current.Ids.SequenceEqual(plan.Ids)) throw new InvalidOperationException("目录或实例发生变化，请重新核对后删除。");
         var next = Copy(catalog); next.Instances.RemoveAll(x => plan.Ids.Contains(x.Id));
@@ -112,6 +113,7 @@ public sealed partial class InstanceService
         if (!Path.IsPathFullyQualified(rootDirectory) || !Path.IsPathFullyQualified(targetFullPath)) throw new ArgumentException("目录路径必须是完整路径。");
         var source = Full(rootDirectory); var target = Full(targetFullPath);
         if (!catalog.GameDirectories.Any(root => Same(root, source))) throw new ArgumentException("游戏目录未登记。");
+        using var reservation = _fileCoordinator.ReserveMutation(source, target);
         _files!.EnsureGameRoot(source);
         EnsureNoOtherReferences(catalog, source, catalog.Instances.Where(x => Same(x.GameDirectoryGroup, source)).Select(x => x.Id).ToArray());
         ValidateOwnedPath(source); ValidateOwnedPath(target);

@@ -124,7 +124,7 @@ public sealed partial class MinecraftDownloadCatalog
             EnsureDownloadable(version, provider);
             foreach (var dependency in version.Dependencies.Where(x => x.Type == "required"))
             {
-                var (resolved, dependencyKind) = await ResolveResourceDependency(dependency, provider, kind, request, options, ct);
+                var (resolved, dependencyKind) = await ResolveResourceDependency(dependency, provider, request, options, ct);
                 await Resolve(resolved, dependencyKind);
             }
             var folder = ResourceDirectory(kind);
@@ -145,7 +145,7 @@ public sealed partial class MinecraftDownloadCatalog
     }
 
     private async Task<(ResourceVersion Version, DownloadResourceKind Kind)> ResolveResourceDependency(ResourceDependency dependency, ResourceProvider provider,
-        DownloadResourceKind kind, ResourceInstallRequest request, DownloadOptions options, CancellationToken ct)
+        ResourceInstallRequest request, DownloadOptions options, CancellationToken ct)
     {
         if (provider == ResourceProvider.CurseForge && dependency.ProjectId is { } curseForgeId)
         {
@@ -159,13 +159,26 @@ public sealed partial class MinecraftDownloadCatalog
             var version = versions.FirstOrDefault(candidate => candidate.Files.Count > 0) ?? versions.FirstOrDefault();
             return (version ?? throw new InvalidDataException("必需依赖没有兼容版本：" + curseForgeId), dependencyKind);
         }
-        if (provider == ResourceProvider.Modrinth && dependency.VersionId is { } versionId)
-            return (ParseResourceVersion(await GetJson($"{Modrinth}/version/{Escape(versionId)}", options, ct)), kind);
-        if (provider == ResourceProvider.Modrinth && dependency.ProjectId is { } projectId)
+        if (provider == ResourceProvider.Modrinth)
         {
+            var pinned = dependency.VersionId is { } versionId
+                ? ParseResourceVersion(await GetJson($"{Modrinth}/version/{Escape(versionId)}", options, ct)) : null;
+            var projectId = pinned?.ProjectId ?? dependency.ProjectId;
+            if (string.IsNullOrWhiteSpace(projectId)) throw new InvalidDataException("必需依赖缺少项目或版本 ID。");
+            if (pinned is not null && dependency.ProjectId is { } expectedProject && expectedProject != pinned.ProjectId)
+                throw new InvalidDataException("必需依赖版本不属于指定项目。");
+            var project = await GetJson($"{Modrinth}/project/{Escape(projectId)}", options, ct);
+            var dependencyKind = project.Get("project_type").Text() switch
+            {
+                "mod" => DownloadResourceKind.Mod,
+                "resourcepack" => DownloadResourceKind.ResourcePack,
+                "shader" => DownloadResourceKind.Shader,
+                _ => throw new InvalidDataException("必需依赖的资源类型不能安装到现有实例。")
+            };
+            if (pinned is not null) return (pinned, dependencyKind);
             var versions = await GetResourceVersionsAsync(projectId, request.MinecraftVersion,
-                kind == DownloadResourceKind.Mod ? request.Loader : null, options, ct);
-            return (versions.FirstOrDefault() ?? throw new InvalidDataException("必需依赖没有兼容版本：" + projectId), kind);
+                dependencyKind == DownloadResourceKind.Mod ? request.Loader : null, options, ct);
+            return (versions.FirstOrDefault() ?? throw new InvalidDataException("必需依赖没有兼容版本：" + projectId), dependencyKind);
         }
         throw new InvalidDataException("必需依赖缺少项目或版本 ID。");
     }

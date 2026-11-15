@@ -12,17 +12,21 @@ public sealed class DownloadService : IDisposable
     private readonly List<Job> _jobs = [];
     private readonly string? _journalPath;
     private readonly Func<string, Task>? _import;
+    private readonly GameFileOperationCoordinator _fileCoordinator;
     private DownloadOptions _options = new();
-    private bool _draining, _disposed, _journalBlocked;
+    private bool _draining, _disposed, _journalBlocked, _shutdownRequested;
+    private Task _drainTask = Task.CompletedTask;
     public IDownloadCatalog Catalog { get; }
     public event EventHandler? Changed;
     public string? StorageError { get; private set; }
     public DownloadOptions Options { get { lock (_gate) return _options; } }
     public IReadOnlyList<DownloadTaskSnapshot> Tasks { get { lock (_gate) return _jobs.Select(x => x.Snapshot).ToArray(); } }
 
-    public DownloadService(IDownloadCatalog catalog, string? journalPath = null, Func<string, Task>? import = null)
+    public DownloadService(IDownloadCatalog catalog, string? journalPath = null, Func<string, Task>? import = null,
+        GameFileOperationCoordinator? fileCoordinator = null)
     {
         Catalog = catalog; _journalPath = journalPath; _import = import;
+        _fileCoordinator = fileCoordinator ?? new();
         if (journalPath is null || !File.Exists(journalPath)) return;
         try
         {
@@ -40,9 +44,12 @@ public sealed class DownloadService : IDisposable
                     snapshot = snapshot with { State = DownloadTaskState.Paused, Progress = snapshot.Progress with { Stage = "上次未完成，点击继续", BytesPerSecond = 0 } };
                 _jobs.Add(new(snapshot, item.Options, item.Game, SnapshotResource(item.Resource)));
             }
+            foreach (var job in _jobs.Where(x => x.Snapshot.State is not (DownloadTaskState.Completed or DownloadTaskState.Cancelled)))
+                job.Reservation = _fileCoordinator.ReserveDownload(Destination(job.Game, job.Resource));
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException or NullReferenceException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException or ArgumentException or NullReferenceException or InvalidOperationException)
         {
+            foreach (var job in _jobs) ReleaseReservation(job);
             _jobs.Clear(); _journalBlocked = true;
             StorageError = "下载任务记录读取失败，原文件已保留；本次任务仅在当前会话中保存。" + ex.Message;
         }
@@ -60,11 +67,14 @@ public sealed class DownloadService : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_shutdownRequested) throw new InvalidOperationException("启动器正在等待下载收尾，请取消关闭后重试。");
             if (_jobs.Count >= 500) throw new InvalidOperationException("下载记录已满，请先清除已结束任务。");
             resource = SnapshotResource(resource);
             EnsureNoConflict(game, resource);
             id = Guid.NewGuid().ToString("N");
-            _jobs.Add(new(new(id, title, DownloadTaskState.Queued, new("等待下载"), null, null, DateTimeOffset.UtcNow), _options, game, resource));
+            var reservation = _fileCoordinator.ReserveDownload(Destination(game, resource));
+            _jobs.Add(new(new(id, title, DownloadTaskState.Queued, new("等待下载"), null, null, DateTimeOffset.UtcNow), _options, game, resource)
+            { Reservation = reservation });
             Save(); Schedule();
         }
         Notify(); return id;
@@ -88,9 +98,11 @@ public sealed class DownloadService : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_shutdownRequested) throw new InvalidOperationException("启动器正在等待下载收尾，请取消关闭后重试。");
             var job = Find(id);
             if (job is null || !states.Contains(job.Snapshot.State)) return;
             EnsureNoConflict(job.Game, job.Resource, job);
+            job.Reservation ??= _fileCoordinator.ReserveDownload(Destination(job.Game, job.Resource));
             job.Snapshot = job.Snapshot with { State = DownloadTaskState.Queued, Error = null, Progress = new("等待继续") };
             Save(); Schedule();
         }
@@ -103,7 +115,9 @@ public sealed class DownloadService : IDisposable
             var job = Find(id);
             if (job is null || job.Snapshot.State is DownloadTaskState.Completed or DownloadTaskState.Cancelled) return;
             job.Snapshot = job.Snapshot with { State = DownloadTaskState.Cancelled, Progress = job.Snapshot.Progress with { Stage = "已取消", BytesPerSecond = 0 } };
-            job.Cancellation?.Cancel(); Save();
+            job.Cancellation?.Cancel();
+            if (job.Cancellation is null) ReleaseReservation(job);
+            Save();
         }
         Notify();
     }
@@ -150,7 +164,7 @@ public sealed class DownloadService : IDisposable
         return request with { Version = version with { GameVersions = version.GameVersions.ToArray(), Loaders = version.Loaders.ToArray(), Files = version.Files.ToArray(), Dependencies = version.Dependencies.ToArray() } };
     }
     private void Schedule()
-    { if (!_draining && !_disposed) { _draining = true; _ = Task.Run(DrainAsync); } }
+    { if (!_draining && !_disposed && !_shutdownRequested) { _draining = true; _drainTask = Task.Run(DrainAsync); } }
     private async Task DrainAsync()
     {
         while (true)
@@ -160,7 +174,7 @@ public sealed class DownloadService : IDisposable
             lock (_gate)
             {
                 var next = _jobs.FirstOrDefault(x => x.Snapshot.State == DownloadTaskState.Queued);
-                if (_disposed || next is null) { _draining = false; return; }
+                if (_disposed || _shutdownRequested || next is null) { _draining = false; return; }
                 job = next; cancel = job.Cancellation = new();
                 job.Snapshot = job.Snapshot with { State = DownloadTaskState.Running, Error = null, Progress = new("准备下载") }; Save();
             }
@@ -179,19 +193,22 @@ public sealed class DownloadService : IDisposable
                 var path = job.Game is { } game
                     ? await Catalog.InstallGameAsync(game, job.Options, progress, cancel.Token).ConfigureAwait(false)
                     : await Catalog.InstallResourceAsync(job.Resource!, job.Options, progress, cancel.Token).ConfigureAwait(false);
-                // A final filesystem rename can finish while shutdown cancellation is arriving.
-                // Leave the persisted paused job recoverable; do not mutate the instance index
-                // after the owner has closed and released its data-directory guard.
-                lock (_gate) if (_disposed) return;
-                string? warning = null;
-                if (_import is not null && CreatesInstance(job.Game, job.Resource))
+                // A final rename may finish after shutdown cancellation. Keep that job paused
+                // for recovery; shutdown also awaits this drain if an import already started.
+                bool stopping;
+                lock (_gate) stopping = _disposed || _shutdownRequested;
+                if (!stopping)
                 {
-                    try { await _import(path).ConfigureAwait(false); }
-                    catch (Exception ex) { warning = "文件已安装，实例登记尚未完成：" + ex.Message + "。可在实例管理中导入安装目录。"; }
+                    string? warning = null;
+                    if (_import is not null && CreatesInstance(job.Game, job.Resource))
+                    {
+                        try { await _import(path).ConfigureAwait(false); }
+                        catch (Exception ex) { warning = "文件已安装，实例登记尚未完成：" + ex.Message + "。可在实例管理中导入安装目录。"; }
+                    }
+                    lock (_gate)
+                        job.Snapshot = job.Snapshot with { State = DownloadTaskState.Completed, ResultPath = path, Error = warning,
+                            Progress = job.Snapshot.Progress with { Stage = warning is null ? "安装完成" : "安装完成 · 请导入实例", BytesPerSecond = 0 } };
                 }
-                lock (_gate)
-                    job.Snapshot = job.Snapshot with { State = DownloadTaskState.Completed, ResultPath = path, Error = warning,
-                        Progress = job.Snapshot.Progress with { Stage = warning is null ? "安装完成" : "安装完成 · 请导入实例", BytesPerSecond = 0 } };
             }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested)
             {
@@ -207,7 +224,12 @@ public sealed class DownloadService : IDisposable
             }
             finally
             {
-                lock (_gate) { job.Cancellation = null; cancel.Dispose(); if (!_disposed) Save(); }
+                lock (_gate)
+                {
+                    job.Cancellation = null; cancel.Dispose();
+                    if (_disposed || job.Snapshot.State is DownloadTaskState.Completed or DownloadTaskState.Cancelled) ReleaseReservation(job);
+                    if (!_disposed) Save();
+                }
                 Notify();
             }
         }
@@ -234,6 +256,35 @@ public sealed class DownloadService : IDisposable
             try { handler(this, EventArgs.Empty); }
             catch (Exception ex) { LauncherDiagnostics.Warn("NotifyDownloadsChanged", ex); }
     }
+    /// <summary>Pauses work and waits for the active install and any started import to finish.</summary>
+    public Task PrepareForShutdownAsync()
+    {
+        Task pending;
+        lock (_gate)
+        {
+            if (_disposed) return _drainTask;
+            _shutdownRequested = true;
+            foreach (var job in _jobs.Where(x => x.Snapshot.State is DownloadTaskState.Running or DownloadTaskState.Queued))
+                job.Snapshot = job.Snapshot with { State = DownloadTaskState.Paused, Progress = job.Snapshot.Progress with { Stage = "已暂停", BytesPerSecond = 0 } };
+            foreach (var job in _jobs) job.Cancellation?.Cancel();
+            Save();
+            pending = _drainTask;
+        }
+        Notify();
+        return pending;
+    }
+
+    /// <summary>Allows work again after the owner cancels shutdown; paused jobs stay paused.</summary>
+    public void CancelShutdown()
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _shutdownRequested = false;
+        }
+        Notify();
+    }
+
     public void Dispose()
     {
         lock (_gate)
@@ -242,9 +293,18 @@ public sealed class DownloadService : IDisposable
             foreach (var job in _jobs.Where(x => x.Snapshot.State is DownloadTaskState.Running or DownloadTaskState.Queued))
                 job.Snapshot = job.Snapshot with { State = DownloadTaskState.Paused, Progress = job.Snapshot.Progress with { Stage = "已暂停", BytesPerSecond = 0 } };
             Save(); _disposed = true;
-            foreach (var job in _jobs) job.Cancellation?.Cancel();
+            foreach (var job in _jobs)
+            {
+                job.Cancellation?.Cancel();
+                if (job.Cancellation is null) ReleaseReservation(job);
+            }
             Changed = null;
         }
+    }
+    private static void ReleaseReservation(Job job)
+    {
+        job.Reservation?.Dispose();
+        job.Reservation = null;
     }
     private sealed class Job(DownloadTaskSnapshot snapshot, DownloadOptions options, GameInstallRequest? game, ResourceInstallRequest? resource)
     {
@@ -253,6 +313,7 @@ public sealed class DownloadService : IDisposable
         public readonly GameInstallRequest? Game = game;
         public readonly ResourceInstallRequest? Resource = resource;
         public CancellationTokenSource? Cancellation;
+        public IDisposable? Reservation;
     }
     public sealed record SavedJob(DownloadTaskSnapshot Snapshot, DownloadOptions Options, GameInstallRequest? Game, ResourceInstallRequest? Resource);
     private sealed class DirectProgress(Action<DownloadProgress> report) : IProgress<DownloadProgress>

@@ -2,13 +2,19 @@
 
 **Wonder Launcher 是面向 Minecraft Java Edition 的独立第三方桌面启动器，与 Mojang 和 Microsoft 无关联，也未获其背书。** 自由组合功能区和组件，在自己的工作区管理实例、启动游戏和使用日常工具。
 
-**当前版本：0.7.2 开发预览。** 项目原创代码按 **[GNU GPLv3（仅第 3 版）](LICENSE)** 开源，并适用第 7 条允许的[署名、修改标识与商标附加条款](ADDITIONAL_TERMS.md)。分发修改版须保留相应的源码开放义务；Wonder 品牌使用另见[品牌政策](BRANDING.md)。
+**当前版本：0.8.0 开发预览。** 项目原创代码按 **[GNU GPLv3（仅第 3 版）](LICENSE)** 开源，并适用第 7 条允许的[署名、修改标识与商标附加条款](ADDITIONAL_TERMS.md)。分发修改版须保留相应的源码开放义务；Wonder 品牌使用另见[品牌政策](BRANDING.md)。
 
-标志是一枚带亮芯的星芒，拖一条更浅的尾迹飞向左上：星芒是忽然出现的惊奇，尾迹是仍在追问、还想知道的那部分 wonder。图形资源在 `src/Wonder.Desktop/Assets/Brand/`，界面内由 `WonderMark.cs` 按当前强调色实时绘制。
+标志是一枚带亮芯的星芒，拖一条更浅的尾迹飞向左上：星芒是忽然出现的惊奇，尾迹是仍在追问、还想知道的那部分 wonder。图形资源在 `src/Wonder.Desktop/Assets/Brand/`，界面标志和运行中窗口图标由 `WonderMark.cs` 按明暗主题与强调色生成；已打开和新开的窗口使用当前配色，采用窗口图标的任务栏项随之更新。EXE 文件、固定快捷方式及启动项的静态图标仍使用打包资源。
 
 维护者：[TouristH](https://github.com/TouristH) · 项目联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)
 
 [使用说明](Wonder.md) · [帮助目录](Guides/README.md) · [隐私说明](PRIVACY.md) · [第三方声明](THIRD-PARTY-NOTICES.md)
+
+## 0.8.0 更新
+
+本版修复下载与目录操作的冲突、Modrinth 跨类型依赖安装和 BMCLAPI CDN 跳转问题。排队、运行、暂停及失败任务会保留目标目录占用，取消后等待后台停止才允许相关文件操作；第三方账户手动刷新资料先验证现有会话，有效时保留令牌并更新外观。界面同步修复内存滑块与输入、继承值的联动，恢复目录浏览按钮，并调整实例卡片文字避让及悬停、按压反馈。操作细节见[下载中心](Guides/33-download-center.md)、[目录操作](Guides/22-instance-selection-and-directory-actions.md)和[账户管理](Guides/26-account-management.md)。
+
+正常退出会暂停下载，等待当前下载和已开始的实例登记收尾后完成保存；保存失败或取消关闭后仍可操作，暂停的下载需手动继续。
 
 ## 已实现的功能
 
@@ -28,7 +34,7 @@
 - Java 路径留空且没有继承路径时，Wonder 按实例需要的 Java 主版本查找本机运行时。找不到匹配版本时会提示所需版本。见[启动与 Java 设置](Guides/18-instance-management-and-launch.md#启动与-java)。
 - 导入的旧实例可以使用经 SHA‑1 核对的旧名资源索引。见[资源索引兼容](Guides/18-instance-management-and-launch.md#资源索引兼容)。
 - 游戏崩溃时自动询问是否保存诊断包。确认后在 `WonderData/CrashReports/` 生成 ZIP，汇总启动器与游戏输出、崩溃报告及本次运行信息。见[崩溃诊断包](Guides/18-instance-management-and-launch.md#保存崩溃诊断包)。
-- 同一份源码发布 Windows x64、Linux x64、macOS Intel/Apple Silicon 原生应用，自带各平台 .NET 运行时；Linux 和 macOS 当前为试发行。设置、布局和实例登记保存在应用旁的 `WonderData/`，macOS 放在 `.app` 外部。
+- 同一份源码发布 Windows x64、Linux x64、macOS Intel/Apple Silicon 原生应用；标准版自带对应 .NET 运行时，Windows/Linux 另提供可复用或按需安装运行库的轻量版。Linux 和 macOS 当前为试发行。设置、布局和实例登记保存在应用旁的 `WonderData/`，macOS 放在 `.app` 外部。
 - 同一数据目录只允许一个启动器进程写入；Windows 再次打开会尝试激活已有窗口，Linux/macOS 将提示写入终端并退出。不同便携目录可独立运行。
 
 “插件”组件可打开本地插件库，启用或关闭插件、编辑 JSON 配置、导入 ZIP，并从 Wonder 在线仓库下载安装。在线版本按人工验证状态标绿或标红，均可下载。首次启用前自动分析插件代码并提示检测到的行为与分析限制，用户整体同意后才加载；作者说明只作补充。插件使用独立的 Wonder API，以当前系统用户权限运行。在线仓库内置 [Wonder Plugins](https://github.com/TouristH/Wonder-Plugins) 的索引，可在 GitHub 原版源与 jsDelivr 镜像源之间切换。仓库使用 C# 工具核对包与自动生成的权限报告。使用与开发方式见[插件帮助](Guides/35-plugins.md)及[API 2 开发指南](Guides/36-plugin-development.md)。
@@ -47,16 +53,18 @@
 
 ## 三端原生发行
 
-Windows、Linux 与 macOS 由同一份源码生成原生应用，共用一个 `Wonder-0.7.2-source.tar.gz`。本次 Release 提供可直接运行的 Windows 和 Linux 应用：
+Windows、Linux 与 macOS 由同一份源码生成原生应用，共用一个 `Wonder-0.8.0-source.tar.gz`。本次 Release 提供可直接运行的 Windows 和 Linux 应用：
 
-- Windows x64：下载 `Wonder-0.7.2-win-x64.exe`，放到可写目录后双击运行。
-- Linux x64：下载 `Wonder-0.7.2-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.7.2-linux-x64`，再执行 `./Wonder-0.7.2-linux-x64`。
+- Windows x64：下载 `Wonder-0.8.0-win-x64.exe`，放到可写目录后双击运行。
+- Linux x64：下载 `Wonder-0.8.0-linux-x64`，放到可写目录后执行 `chmod +x Wonder-0.8.0-linux-x64`，再执行 `./Wonder-0.8.0-linux-x64`。
 
 两者均为自带 .NET 运行时的单文件应用，运行无需另行下载源码包或在旁边放置文档、启动脚本。独立源码包包含对应源码、构建与发布材料、公开文档及项目和第三方许可与通知。macOS Intel 与 Apple Silicon `.app` 试发行仍可在本地构建，本次 Release 不上传；本地签名、运行和互通边界见[三端原生发行说明](Guides/32-native-cross-platform.md)。
 
+本次同时提供 **轻量版**：`Wonder-0.8.0-win-x64-lightweight.zip` 和 `Wonder-0.8.0-linux-x64-lightweight.tar.gz`。完整解压后分别运行 `Wonder.cmd` 或 `./Wonder.sh`。Avalonia、Skia 等应用依赖仍完整内置，只移出 .NET 运行库；优先复用系统 .NET 10 x64 正式版，缺少时在用户确认后从微软下载 .NET Runtime 10.0.15，核对 SHA-512 并安装到用户目录，再自动启动。以后复用，无需管理员或 sudo，不修改永久 PATH。首次无网络且无运行库时请选择标准版。安装位置、取消与重试见[轻量版帮助](Guides/37-lightweight-distribution.md)。
+
 Linux 面向 Ubuntu 24.04 x64 等 glibc 桌面环境，仍需系统图形库及 X11 或 Wayland 桌面的 XWayland；账户保存需要 `secret-tool` 和已解锁的 Secret Service 密钥环。系统依赖、校验、数据迁移与实机验收步骤见 [Linux 试发行说明](Guides/31-linux-trial.md)。
 
-Linux 与 macOS 图形桌面、系统密钥服务和真实游戏启动仍待实机验收。macOS 包尚未进行 Developer ID 签名和 Apple 公证，试用需按说明在 Mac 上执行本地临时签名。Linux 未提供 ARM64、Alpine/musl、AppImage、deb 或 rpm 包，也不声明原生 Wayland 支持。
+Linux 已在 Ubuntu 24.04 x64 的 WSL2/WSLg 环境完成自动化回归、原生窗口与中文绘制、主题图标及设置/布局重开恢复、Secret Service 合成账户加密与失败保全验证；WSLg 部分入口测试使用软件渲染。裸机 GPU、其他发行版、默认浏览器/文件选择器、真实在线账户与游戏启动仍待目标桌面验收，详见 Linux 说明。macOS 尚未实机验收、Developer ID 签名或 Apple 公证，试用需按说明在 Mac 上执行本地临时签名。Linux 未提供 ARM64、Alpine/musl、AppImage、deb 或 rpm 包，也不声明原生 Wayland 支持。
 
 ## 从源码构建
 
@@ -91,26 +99,24 @@ pwsh -File packaging/Wonder.Publish.ps1
 
 | 目标 | 应用产物 |
 | --- | --- |
-| Windows x64 | `artifacts/Wonder-0.7.2-win-x64.exe` |
-| Linux x64 | `artifacts/Wonder-0.7.2-linux-x64` |
+| Windows x64 | `artifacts/Wonder-0.8.0-win-x64.exe` |
+| Linux x64 | `artifacts/Wonder-0.8.0-linux-x64` |
 | macOS Intel | `artifacts/Wonder-osx-x64/Wonder Launcher.app` |
 | macOS Apple Silicon | `artifacts/Wonder-osx-arm64/Wonder Launcher.app` |
 
 可以交叉构建其他系统的产物；运行验收仍须在相应系统进行。Linux 的系统依赖见[Linux 试发行说明](Guides/31-linux-trial.md)；macOS 应用构建后须在 Mac 上按[三端发行说明](Guides/32-native-cross-platform.md)完成本地签名与试用，交叉构建不等于已经签名、公证或实机验证。
 
-`artifacts/Wonder-win-x64/`、`artifacts/Wonder-linux-x64/` 为发布工作目录；macOS 同时生成原命名的试发行压缩包。`Wonder-0.7.2-source.tar.gz` 与 `Wonder-0.7.2-SHA256SUMS` 同样位于 `artifacts/`；校验文件按本次实际生成的应用产物和源码包列出 SHA-256，单独指定目标时只包含该次产物。上传本次 Release 时使用 Windows、Linux 应用及独立源码包，并提供与实际上传文件一致的校验清单。
+`artifacts/Wonder-win-x64/`、`artifacts/Wonder-linux-x64/` 为发布工作目录；macOS 同时生成原命名的试发行压缩包。`Wonder-0.8.0-source.tar.gz` 与 `Wonder-0.8.0-SHA256SUMS` 同样位于 `artifacts/`；校验文件按本次实际生成的应用产物和源码包列出 SHA-256，单独指定目标时只包含该次产物。上传本次 Release 时使用 Windows、Linux 应用及独立源码包，并提供与实际上传文件一致的校验清单。
 
-### Windows x64 可选最小版
+### 标准版与轻量版一并发布
 
-本地可构建仅内置七个 Wonder 自身程序集的最小版 EXE，保留完整功能；所有第三方依赖由用户准备，当前仅支持 Windows x64。使用 .NET 10 SDK 和 PowerShell 7.4+ 执行：
+在 PowerShell 中执行下列命令，标准版、轻量版和源码包都使用同一份源码快照。标准版固定包含 .NET 10.0.15，轻量版保留完整应用依赖：
 
 ```powershell
-pwsh -File packaging/Wonder.PublishMinimal.ps1
-# 同时从源码发布结果准备第三方 DLL
-pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies
+& ./packaging/Wonder.Publish.ps1 -Runtime @('win-x64','linux-x64') -IncludeLightweight
 ```
 
-产物为 `artifacts/Wonder-0.7.2-win-x64-minimal.exe` 和依赖清单 `artifacts/Wonder-0.7.2-win-x64-minimal.dependencies.json`。运行前须在系统安装 .NET 10 x64 运行时，并按 JSON 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方 DLL 放在 EXE 同目录；.NET 运行时通过系统安装，无需放在 EXE 旁。`-PrepareDependencies` 额外生成 `artifacts/Wonder-minimal-dependencies-win-x64/`，可将其中 DLL 复制到最小版 EXE 同目录；这些 DLL 不内置于最小版 EXE。依赖不齐时最小版无法运行，普通用户使用原自包含版更省步骤，默认 Release 仍为自包含版。详见[三端发行说明](Guides/32-native-cross-platform.md#windows-x64-可选最小版)。
+四个应用发行包、`Wonder-0.8.0-source.tar.gz` 及包含五条记录的 `Wonder-0.8.0-SHA256SUMS` 均位于 `artifacts/`。已有对应源码包时，可用 `pwsh -File packaging/Wonder.PublishLightweight.ps1` 单独重建两种轻量包；该命令读取源码归档而非后来编辑的源码，另写轻量校验文件。详细流程见[轻量版帮助](Guides/37-lightweight-distribution.md)。旧 `Wonder.PublishMinimal.ps1` 及其外置第三方 DLL 的 minimal 产物仍保留为开发用途，不等于本次轻量发行。
 
 `Wonder.slnx` 包含七个启动器工程和单独打包的《请稍候》插件工程，版本统一在 `Directory.Build.props` 中维护。三端使用相同设置与工作区格式，平台账户文件和绝对路径仍有差异。数据位于应用旁的 `WonderData/`，macOS 为 `.app` 的同级目录。更新前关闭启动器并保留数据目录；跨系统或更换桌面用户后，账户通常需要重新登录，游戏路径和 Java 也需重新设置。
 

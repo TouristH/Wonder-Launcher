@@ -12,7 +12,7 @@ namespace Wonder.Desktop;
 
 internal sealed class DirectorySettingsWindow : Window
 {
-    private bool _working;
+    private bool _working, _closed;
 
     public DirectorySettingsWindow(string path, Func<string, Task<string?>> move)
     {
@@ -36,15 +36,15 @@ internal sealed class DirectorySettingsWindow : Window
         // Moving a directory is not the place to make people type an absolute path from memory.
         var browse = PageStyles.Button("浏览…", "选择父目录", () => { });
         browse.Margin = new Thickness(0);
-        browse.Click += async (_, _) => UiOperation.Start(async () =>
+        browse.Click += (_, _) => UiOperation.Start(async () =>
         {
             if (StorageProvider.CanPickFolder)
             {
                 var picked = (await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "选择新的父目录", AllowMultiple = false })).FirstOrDefault()?.TryGetLocalPath();
-                if (!string.IsNullOrWhiteSpace(picked)) parent.Text = picked;
+                if (!_closed && !_working && !string.IsNullOrWhiteSpace(picked)) parent.Text = picked;
             }
             else error.Text = "当前平台不支持目录选择，请手动填写完整路径。";
-        }, () => !_working);
+        }, () => _closed || _working);
         var parentRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,8,Auto") };
         parentRow.Children.Add(parent);
         Grid.SetColumn(browse, 2); parentRow.Children.Add(browse);
@@ -82,7 +82,7 @@ internal sealed class DirectorySettingsWindow : Window
         save.Click += (_, _) => UiOperation.Start(async () =>
         {
             if (_working) return;
-            _working = true; save.IsEnabled = cancel.IsEnabled = parent.IsEnabled = name.IsEnabled = false;
+            _working = true; save.IsEnabled = cancel.IsEnabled = parent.IsEnabled = name.IsEnabled = browse.IsEnabled = false;
             try
             {
                 var problem = await move(Target());
@@ -90,10 +90,11 @@ internal sealed class DirectorySettingsWindow : Window
                 error.Text = problem;
             }
             catch (Exception ex) { error.Text = ex.Message; }
-            finally { _working = false; save.IsEnabled = cancel.IsEnabled = parent.IsEnabled = name.IsEnabled = true; }
+            finally { _working = false; save.IsEnabled = cancel.IsEnabled = parent.IsEnabled = name.IsEnabled = browse.IsEnabled = true; }
         });
         actions.Children.Add(cancel); actions.Children.Add(save); Grid.SetRow(actions, 1); layout.Children.Add(actions); Content = layout;
         Closing += (_, e) => { if (_working) e.Cancel = true; };
+        Closed += (_, _) => _closed = true;
         KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Escape && !_working) { Close(false); e.Handled = true; } };
     }
 }

@@ -1,9 +1,10 @@
 # Wonder Launcher 使用帮助
 
-适用版本：**0.7.2**。完整操作概览见 [Wonder.md](../Wonder.md)，安装与源码构建见 [README](../README.md)。
+适用版本：**0.8.0**。完整操作概览见 [Wonder.md](../Wonder.md)，安装与源码构建见 [README](../README.md)。
 
 ## 安装与平台
 
+- [标准版与轻量版：首启运行库安装、复用与重试](37-lightweight-distribution.md)
 - [Windows、Linux、macOS 同源原生发行与 macOS 试用](32-native-cross-platform.md)
 - [Linux x64 试发行：依赖、运行、更新与验收](31-linux-trial.md)
 

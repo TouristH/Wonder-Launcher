@@ -2,7 +2,7 @@
 
 本项目的 GPLv3 及适用附加条款仅适用于有权按该许可授权的项目内容，**不改变第三方组件的独立许可**。不能把下列 MIT、BSD、Apache 等许可的依赖、原始通知或第三方商标统一改标为本项目版权或品牌限制。组成受 GPL 覆盖的发行物时仍须满足各组件与 GPL 的适用要求。
 
-源码通过 NuGet 引用依赖，没有在本仓库提交依赖二进制、Minecraft 文件或用户数据。以下记录基于 0.7.0 当前依赖元数据及运行时可选下载，升级包或发布自包含程序时须重新核对实际分发内容。
+源码通过 NuGet 引用依赖，没有在本仓库提交依赖二进制、Minecraft 文件或用户数据。以下记录已按 0.8.0 Windows/Linux 发行依赖及运行时可选下载复核；升级包或发布其他平台程序时仍须核对实际分发内容。
 
 ## 运行与构建依赖
 
@@ -14,7 +14,7 @@
 | Avalonia.Angle.Windows.Natives | 2.1.27548.20260419 | 包内 LICENSE 为 BSD 3-Clause；保留其原文 |
 | [MicroCom](https://github.com/AvaloniaUI/MicroCom) Runtime | 0.11.6 | MIT |
 | [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | 0.94.1 | MIT |
-| [.NET runtime](https://github.com/dotnet/runtime) | 当前本地自包含发布使用 10.0.13 | MIT 及其第三方声明；系统安装的 SDK 不属于本项目原创代码 |
+| [.NET runtime](https://github.com/dotnet/runtime) | 0.8.0 Windows/Linux 标准版打包 10.0.15；轻量版缺失时下载 10.0.15 | MIT 及其第三方声明；系统安装的 SDK 不属于本项目原创代码 |
 
 ## 第三方认证运行时组件
 
@@ -36,9 +36,9 @@
 
 ## 原始许可与声明
 
-三端同源发行另附 macOS x64/arm64 `.NET runtime 10.0.13`、`SkiaSharp.NativeAssets.macOS 3.119.4`、`HarfBuzzSharp.NativeAssets.macOS 8.3.1.3` 的包内原始许可与第三方通知。源码组织方式参考 HMCL 的平台检测/分发思路，没有复制其实现；Wonder 使用自己的 .NET/Avalonia 工程与平台接口。
+此前 macOS 试发行所附 x64/arm64 `.NET runtime 10.0.13`、`SkiaSharp.NativeAssets.macOS 3.119.4`、`HarfBuzzSharp.NativeAssets.macOS 8.3.1.3` 的包内原始许可与第三方通知继续保留；同时补齐当前发布脚本所用 macOS x64/arm64 `.NET runtime 10.0.15` 的 NuGet 包内通知。0.8.0 本次交付 Windows/Linux，未进行 macOS 运行验收。源码组织方式参考 HMCL 的平台检测/分发思路，没有复制其实现；Wonder 使用自己的 .NET/Avalonia 工程与平台接口。
 
-Linux x64 0.7.2 试发行包另附 `.NET runtime linux-x64 10.0.13`、`SkiaSharp.NativeAssets.Linux 3.119.4` 与 `HarfBuzzSharp.NativeAssets.Linux 8.3.1.3` 的包内原始许可和第三方通知，保存在 `ThirdPartyLicenses/` 的同名目录中。系统提供的 X11、字体、GIO 与 Secret Service 工具需由用户按发行版安装，不打包进应用。
+0.8.0 为 Windows/Linux x64 `.NET runtime 10.0.15` 增补了实际 NuGet 包中的原始许可与第三方通知，保存在 `ThirdPartyLicenses/` 的同名版本目录中；旧版通知继续保留。轻量包不内置 .NET 二进制，经用户确认下载的微软运行库保留压缩包自带许可。Linux 还包含 `SkiaSharp.NativeAssets.Linux 3.119.4` 与 `HarfBuzzSharp.NativeAssets.Linux 8.3.1.3` 的通知。系统提供的 X11、字体、GIO 与 Secret Service 工具需由用户按发行版安装，不打包进应用。
 
 本仓库在 [ThirdPartyLicenses/](ThirdPartyLicenses/) 保留从当前 NuGet 包中复制的 SkiaSharp、HarfBuzzSharp、ANGLE、.NET runtime、Newtonsoft.Json 和 Microsoft 测试平台许可/第三方通知原文。对应版权归各原文中的权利人，不能删除、改写或覆盖为本项目版权。上游没有随包提供完整许可文件的依赖，记录其元数据中的许可表达式或许可链接。
 

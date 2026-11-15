@@ -36,6 +36,7 @@ internal sealed class InstanceManagerWindow : Window
     private readonly Dictionary<string, Draft> _drafts = new();
     private readonly Dictionary<string, Slider> _memorySliders = new();
     private bool _balanced;
+    private int _inheritedMinimumMemory = 512, _inheritedMaximumMemory = 4096;
     private readonly ComboBox _fullscreen = new() { ItemsSource = new[] { "继承来源", "窗口", "全屏" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly CheckBox _clearJvm = new() { Content = "清空来源的额外 JVM 参数" }, _clearGame = new() { Content = "清空来源的额外游戏参数" };
     private readonly TextBlock _details = Text(), _effective = Text(), _status = Text(), _error = Text(), _draftStatus = Text();
@@ -272,6 +273,9 @@ internal sealed class InstanceManagerWindow : Window
                 var warnings = instance.NativeConfigurationDiagnostic is { } diagnostic ? instance.Warnings.Prepend(diagnostic) : instance.Warnings;
                 _effective.Text = $"Java：{s.JavaPath ?? "自动查找"}\n内存：{s.MinimumMemoryMb}–{s.MaximumMemoryMb} MiB\n窗口：{s.WindowWidth} × {s.WindowHeight} · {(s.FullScreen == true ? "全屏" : "窗口")}\n游戏目录：{s.GameDirectory}\n配置来源：{instance.ConfigSource}\n\n" + string.Join("\n", warnings);
                 var inherited = (instance with { Overrides = new() }).EffectiveSettings;
+                _inheritedMinimumMemory = inherited.MinimumMemoryMb!.Value;
+                _inheritedMaximumMemory = inherited.MaximumMemoryMb!.Value;
+                RebalanceMemory();
                 _fields["min"].PlaceholderText = "继承 · " + inherited.MinimumMemoryMb; _fields["max"].PlaceholderText = "继承 · " + inherited.MaximumMemoryMb;
                 _fields["width"].PlaceholderText = "继承 · " + inherited.WindowWidth; _fields["height"].PlaceholderText = "继承 · " + inherited.WindowHeight;
             }
@@ -290,12 +294,16 @@ internal sealed class InstanceManagerWindow : Window
         var wasUpdating = _updating; _updating = true;
         try
         {
+            var inherited = (instance with { Overrides = new() }).EffectiveSettings;
+            _inheritedMinimumMemory = inherited.MinimumMemoryMb!.Value;
+            _inheritedMaximumMemory = inherited.MaximumMemoryMb!.Value;
             if (!_drafts.TryGetValue(instance.Id, out var draft))
             {
                 var s = instance.Overrides;
                 draft = new(new() { ["name"] = instance.Name, ["java"] = s.JavaPath ?? "", ["directory"] = s.GameDirectory ?? "", ["min"] = s.MinimumMemoryMb?.ToString() ?? "", ["max"] = s.MaximumMemoryMb?.ToString() ?? "", ["width"] = s.WindowWidth?.ToString() ?? "", ["height"] = s.WindowHeight?.ToString() ?? "", ["jvm"] = s.JvmArguments ?? "", ["game"] = s.GameArguments ?? "" }, s.FullScreen is null ? 0 : s.FullScreen == true ? 2 : 1, s.JvmArguments == "", s.GameArguments == "");
             }
             foreach (var field in _fields) field.Value.Text = draft.Text[field.Key];
+            RebalanceMemory();
             _fullscreen.SelectedIndex = draft.Fullscreen; _clearJvm.IsChecked = draft.ClearJvm; _clearGame.IsChecked = draft.ClearGame;
             _draftStatus.Text = _drafts.ContainsKey(instance.Id) ? "未保存的编辑 · 切换实例时保留" : "设置已保存 · 空白项继承全局或来源";
         }
@@ -380,13 +388,6 @@ internal sealed class InstanceManagerWindow : Window
         AutomationProperties.SetName(slider, label + "滑块");
         AutomationProperties.SetHelpText(slider, "拖动调整，或在上方直接输入精确值；留空表示继承。");
         var syncing = false;
-        void PushToSlider()
-        {
-            if (syncing) return;
-            syncing = true;
-            try { if (int.TryParse(box.Text, out var value)) slider.Value = Math.Clamp(value, slider.Minimum, slider.Maximum); }
-            finally { syncing = false; }
-        }
         slider.PropertyChanged += (_, e) =>
         {
             // A range change coerces Value too; that is not the user choosing a number, and writing
@@ -400,7 +401,6 @@ internal sealed class InstanceManagerWindow : Window
             }
             finally { syncing = false; }
         };
-        box.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) PushToSlider(); };
         panel.Children.Add(slider);
         _memorySliders[key] = slider;
     }
@@ -423,10 +423,13 @@ internal sealed class InstanceManagerWindow : Window
         {
             var hasMin = int.TryParse(_fields["min"].Text, out var minimum);
             var hasMax = int.TryParse(_fields["max"].Text, out var maximum);
-            min.Maximum = hasMax ? Math.Clamp(maximum - 512, 512, 32768) : 32768;
-            max.Minimum = hasMin ? Math.Clamp(minimum + 512, 512, 32768) : 512;
-            // An empty box means "inherit": the slider still sits at the inherited default and stays
-            // draggable — dragging is how a value stops being inherited — it is only dimmed.
+            if (!hasMin) minimum = _inheritedMinimumMemory;
+            if (!hasMax) maximum = _inheritedMaximumMemory;
+            min.Maximum = Math.Clamp(maximum, 512, 32768);
+            max.Minimum = Math.Clamp(minimum, 512, 32768);
+            // Update both ranges before their values; range coercion must never overwrite a draft.
+            min.Value = Math.Clamp(minimum, min.Minimum, min.Maximum);
+            max.Value = Math.Clamp(maximum, max.Minimum, max.Maximum);
             min.Opacity = hasMin ? 1 : .6; max.Opacity = hasMax ? 1 : .6;
         }
         finally { _balanced = false; }

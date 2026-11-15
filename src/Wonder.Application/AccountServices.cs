@@ -32,6 +32,12 @@ public interface IYggdrasilAccountAppearance
     Task<AccountProfile> ReadAppearanceAsync(AccountProfile profile, CancellationToken ct = default);
 }
 
+public interface IYggdrasilSessionValidator
+{
+    // False means the server explicitly rejected the token; transport/service failures must throw.
+    Task<bool> ValidateAsync(AccountProfile profile, AccountCredentials credentials, CancellationToken ct = default);
+}
+
 public interface ILaunchAccountProvider
 {
     Task<GameSession> GetSelectedSessionAsync(CancellationToken ct = default);

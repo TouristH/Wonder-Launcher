@@ -1,10 +1,12 @@
 # 隐私说明 / Privacy statement
 
-适用版本：Wonder Launcher 0.7.2。更新日期：2026-11-14。维护者：[TouristH](https://github.com/TouristH)，联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
+适用版本：Wonder Launcher 0.8.0。更新日期：2026-11-16。维护者：[TouristH](https://github.com/TouristH)，联系邮箱：[radiafidw@gmail.com](mailto:radiafidw@gmail.com)。
 
 ## 当前实现
 
 Wonder 将设置与工作区保存在应用旁的 `WonderData/`：Windows/Linux 位于可执行程序旁，macOS 位于 `Wonder Launcher.app` 同级，不写入 `.app` 内部。三端共用设置与工作区格式。没有项目自建云服务、账号同步或遥测上传功能。用户主动登录时会连接所选认证服务。
+
+轻量版入口在缺少 .NET 10 x64 运行库且用户明确同意时，访问 `builds.dotnet.microsoft.com` 下载固定的微软 .NET Runtime 10.0.15，核对官方 SHA-512 后安装到当前用户目录。请求不携带 Minecraft 账户令牌或 WonderData 内容，微软/CDN 可收到来源 IP 与文件请求。已安装兼容运行库时直接复用，不进行此次下载。不会更改永久 PATH 或请求管理员权限；安装目录、重试及移除方法见[轻量版帮助](Guides/37-lightweight-distribution.md)。
 
 | 本地数据 | 用途 |
 | --- | --- |
@@ -45,6 +47,8 @@ CurseForge 入口暂时隐藏。继续旧的 CurseForge 任务时，所需的 AP
 
 Yggdrasil 服务器发现会向用户填写的 HTTPS 地址发送不带凭据的元数据请求，可能根据 HTTPS 重定向或服务器声明找到实际 API 地址。界面会显示最终地址，由用户确认并保存；发现阶段不发送密码或账户令牌。登录只向所选服务器的实际 HTTPS API 根地址发送该服务自己的账号和密码，禁止自动跟随带凭据请求的 HTTP 重定向。密码不写入账户库，发送请求前清空密码输入框，登录后的第三方令牌加密保存。请勿在此输入微软密码。离线账户无需网络认证，也不代表游戏所有权。
 
+手动刷新第三方账户资料时，Wonder 向该认证服务的 `validate` 接口发送该服务的现有 access token 和 client token。有效时保留令牌，只有服务器明确判定无效才请求刷新会话；网络或服务错误不触发令牌轮换。启动前仍刷新所选会话。这些认证请求与后续不携带凭据的公开外观查询分开，不向该服务发送 Microsoft 令牌。
+
 显示正版角色外观时，Wonder 从 `textures.minecraft.net` 读取官方皮肤/披风纹理，请求不携带账户令牌；该服务仍会收到普通网络请求的来源 IP 等信息。选择皮肤文件只会先读取并预览本地 PNG，点击上传时才向固定的 Minecraft Services 外观接口提交图片和皮肤模型；恢复默认皮肤、应用或隐藏自有披风也由明确的按钮操作触发。外观请求使用经刷新验证的本人游戏会话，不向自定义服务器发送正版令牌。远端可能在请求超时前已接受修改，失败后应刷新资料核对。
 
 第三方登录和刷新后，会向已选择认证服务器的 session profile 接口查询所选 UUID 的公开皮肤与披风属性，该查询不发送密码或令牌。显示第三方外观时会访问其声明的 HTTPS 纹理域名，纹理请求不携带账户凭据、不跟随重定向；相关服务器仍可收到来源 IP 等普通网络信息。第三方纹理默认阻止私网、回环和其他受限网络目标；用户可在单个账户中明确允许可信 HTTPS 来源，许可不会从认证服务器或外观资料自动取得。该许可与纹理 URL/模型和当前披风资料一起保存在加密账户库，可逐项移除。第三方纹理直接连接，不经过系统 HTTP 代理，不发送 Cookie 或自动凭据；放行内网也仍执行系统 TLS 证书校验。解码图片仅在内存中显示于账户详情及原有账户组件头像，关闭控件时释放。工作区布局不保存这些账户信息。预览不会上传图片，也不向游戏注入皮肤。
@@ -69,9 +73,9 @@ Linux/macOS 删除账户条目或 `WonderData/` 不会自动删除系统密钥�
 
 ## English summary
 
-Version 0.7.2 stores local settings and an account vault in WonderData beside the application; on macOS this folder is outside and beside the .app bundle. Windows uses CurrentUser DPAPI. Linux and macOS share an AES-GCM vault implementation with separate platform files. Linux keys are held by the desktop Secret Service via secret-tool; macOS keys are held by the current user Keychain via native Security.framework APIs. An unavailable or denied key store blocks account operations rather than allowing plaintext storage. Copying the data folder does not copy system keys. Removing the vault does not automatically remove its keyring or Keychain entry. Microsoft device-code authentication uses the built-in public application ID and sends no Microsoft password to Wonder. Yggdrasil discovery sends no credentials and requires confirmation of the actual HTTPS API address; login passwords go only to that service and are not persisted. Official texture downloads carry no bearer token. Skin uploads, reset, and owned-cape changes require explicit actions and use fixed Minecraft Services endpoints. Third-party launch downloads and verifies the pinned authlib-injector from its official host without account credentials. These hosts can receive ordinary network metadata such as the source IP. Online launch refreshes the selected identity; failures do not fall back to offline. Local deletion removes stored credentials, but Microsoft cloud consent must be revoked separately. Game access tokens necessarily reach the game process; same-user malware, untrusted mods, and external game logs are outside at-rest encryption and launcher-output redaction guarantees. No project telemetry, cloud account service, or token-import feature is implemented. Live authentication and AppID approval are not asserted by synthetic tests.
+Version 0.8.0 stores local settings and an account vault in WonderData beside the application; on macOS this folder is outside and beside the .app bundle. Windows uses CurrentUser DPAPI. Linux and macOS share an AES-GCM vault implementation with separate platform files. Linux keys are held by the desktop Secret Service via secret-tool; macOS keys are held by the current user Keychain via native Security.framework APIs. An unavailable or denied key store blocks account operations rather than allowing plaintext storage. Copying the data folder does not copy system keys. Removing the vault does not automatically remove its keyring or Keychain entry. Microsoft device-code authentication uses the built-in public application ID and sends no Microsoft password to Wonder. Yggdrasil discovery sends no credentials and requires confirmation of the actual HTTPS API address; login passwords go only to that service and are not persisted. Official texture downloads carry no bearer token. Skin uploads, reset, and owned-cape changes require explicit actions and use fixed Minecraft Services endpoints. Third-party launch downloads and verifies the pinned authlib-injector from its official host without account credentials. These hosts can receive ordinary network metadata such as the source IP. Online launch refreshes the selected identity; failures do not fall back to offline. Local deletion removes stored credentials, but Microsoft cloud consent must be revoked separately. Game access tokens necessarily reach the game process; same-user malware, untrusted mods, and external game logs are outside at-rest encryption and launcher-output redaction guarantees. No project telemetry, cloud account service, or token-import feature is implemented. Live authentication and AppID approval are not asserted by synthetic tests.
 
-Third-party appearance lookup sends the selected UUID to that authentication service's public session-profile endpoint without account credentials. Its declared HTTPS texture hosts receive image requests without tokens or redirects. Texture metadata stays in the encrypted vault; decoded images remain in view memory and are not persisted in workspace layout.
+Manual third-party profile refresh sends that service's existing access token and client token to its validation endpoint. A valid session is preserved; only an explicit invalid-token response triggers token refresh. Network or service errors do not trigger rotation. Launch preparation still refreshes the session. Third-party appearance lookup separately sends the selected UUID to that authentication service's public session-profile endpoint without account credentials. Its declared HTTPS texture hosts receive image requests without tokens or redirects. Texture metadata stays in the encrypted vault; decoded images remain in view memory and are not persisted in workspace layout.
 
 After a launch failure or game crash, Wonder asks before saving a diagnostic ZIP under `WonderData/CrashReports/`. The ZIP stays local and may contain paths, usernames, and data recorded by the game or mods. Review the contents before sharing.
 

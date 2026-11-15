@@ -115,7 +115,7 @@ public sealed partial class AccountService
         var current = GetAccount(id);
         if (current.Profile.Kind == AccountKind.Offline) { Status = "离线账户无需网络验证。"; return; }
         Status = "正在刷新账户资料…"; Notify();
-        await RefreshAccount(current, ct).ConfigureAwait(false);
+        await RefreshAccount(current, ct, preserveValidSession: true).ConfigureAwait(false);
     });
 
     public Task UploadSkinAsync(string id, byte[] png, string variant) => ChangeAppearance(id,
@@ -141,9 +141,13 @@ public sealed partial class AccountService
         Status = "外观已更新。正在运行的游戏可能需要重新登录才能显示。";
     });
 
-    private async Task<AuthenticatedAccount> RefreshAccount(AuthenticatedAccount current, CancellationToken ct)
+    private async Task<AuthenticatedAccount> RefreshAccount(AuthenticatedAccount current, CancellationToken ct, bool preserveValidSession = false)
     {
-        var refreshed = current.Profile.Kind == AccountKind.Microsoft
+        // A profile refresh must not revoke the token held by an already-running game.
+        var validated = preserveValidSession && current.Profile.Kind == AccountKind.Yggdrasil &&
+            _yggdrasil is IYggdrasilSessionValidator validator &&
+            await validator.ValidateAsync(current.Profile, current.Credentials, ct).ConfigureAwait(false);
+        var refreshed = validated ? current : current.Profile.Kind == AccountKind.Microsoft
             ? await _microsoft.RefreshAsync(current.Profile, current.Credentials, ct).ConfigureAwait(false)
             : await _yggdrasil.RefreshAsync(current.Profile, current.Credentials, ct).ConfigureAwait(false);
         VerifyIdentity(current.Profile, refreshed.Profile);
@@ -152,7 +156,7 @@ public sealed partial class AccountService
         var result = new AuthenticatedAccount(refreshed.Profile with { Id = current.Profile.Id, LastValidatedAt = DateTimeOffset.UtcNow }, refreshed.Credentials);
         // A successful rotation may revoke the previous token. Commit only after identity and
         // session validation, but finish this commit even when the caller cancels preparation.
-        SaveAccount(result, CancellationToken.None, select: false, preserveCredentialsOnFailure: true);
+        SaveAccount(result, validated ? ct : CancellationToken.None, select: false, preserveCredentialsOnFailure: !validated);
         ct.ThrowIfCancellationRequested();
         if (current.Profile.Kind == AccountKind.Yggdrasil && _yggdrasil is IYggdrasilAccountAppearance appearance)
         {

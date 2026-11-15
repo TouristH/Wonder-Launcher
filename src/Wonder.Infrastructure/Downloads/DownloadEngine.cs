@@ -301,7 +301,7 @@ public sealed class DownloadEngine : IDownloadEngine, IDisposable
                 if (hop == MaximumRedirects || response.Headers.Location is not { } location ||
                     !Uri.TryCreate(current, location, out var target))
                     throw new InvalidDataException("下载重定向无效或次数过多。");
-                var next = DownloadSourceResolver.RequireUrl(target.OriginalString);
+                var next = DownloadSourceResolver.RequireRedirectUrl(source, target.OriginalString, metadata);
                 if (!DownloadSourceResolver.IsAllowedRedirect(source, next, metadata))
                     throw new InvalidDataException("下载重定向指向未经允许的主机。");
                 current = next;

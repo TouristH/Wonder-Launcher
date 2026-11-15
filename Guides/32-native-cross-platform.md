@@ -1,6 +1,6 @@
 # 同源原生三端发行
 
-适用版本：Wonder Launcher 0.7.2。Windows、Linux、macOS 共用 `Wonder.slnx` 和 `src/Wonder.*`，桌面、组件、账户业务、实例管理及启动计划均由同一份代码实现。系统凭据保护、回收站、路径规则和 Java/游戏原生库选择按宿主系统处理。
+适用版本：Wonder Launcher 0.8.0。Windows、Linux、macOS 共用 `Wonder.slnx` 和 `src/Wonder.*`，桌面、组件、账户业务、实例管理及启动计划均由同一份代码实现。系统凭据保护、回收站、路径规则和 Java/游戏原生库选择按宿主系统处理。
 
 组织方式参考 HMCL 的[平台检测与 Java 选择](https://github.com/HMCL-dev/HMCL/blob/main/HMCLCore/src/main/java/org/jackhuang/hmcl/util/platform/OperatingSystem.java)及[平台支持表](https://github.com/HMCL-dev/HMCL/blob/main/docs/PLATFORM.md)，没有复制 HMCL 代码。Wonder 继续使用 .NET 10 与 Avalonia，不改为 Java/JavaFX，也不借用 HMCL 的已验证平台范围。
 
@@ -8,16 +8,18 @@
 
 | 目标 | 应用产物 | 启动入口 |
 | --- | --- | --- |
-| Windows x64 | `Wonder-0.7.2-win-x64.exe` | 双击该 EXE |
-| Linux x64 | `Wonder-0.7.2-linux-x64` | `chmod +x Wonder-0.7.2-linux-x64` 后执行 `./Wonder-0.7.2-linux-x64` |
-| macOS Intel | `Wonder-0.7.2-osx-x64-preview.tar.gz` | `Wonder Launcher.app` |
-| macOS Apple Silicon | `Wonder-0.7.2-osx-arm64-preview.tar.gz` | `Wonder Launcher.app` |
+| Windows x64 | `Wonder-0.8.0-win-x64.exe` | 双击该 EXE |
+| Linux x64 | `Wonder-0.8.0-linux-x64` | `chmod +x Wonder-0.8.0-linux-x64` 后执行 `./Wonder-0.8.0-linux-x64` |
+| Windows x64 轻量版 | `Wonder-0.8.0-win-x64-lightweight.zip` | 完整解压后运行 `Wonder.cmd` |
+| Linux x64 轻量版 | `Wonder-0.8.0-linux-x64-lightweight.tar.gz` | 完整解压后执行 `./Wonder.sh` |
+| macOS Intel | `Wonder-0.8.0-osx-x64-preview.tar.gz` | `Wonder Launcher.app` |
+| macOS Apple Silicon | `Wonder-0.8.0-osx-arm64-preview.tar.gz` | `Wonder Launcher.app` |
 
-本次 Release 只上传 Windows 与 Linux 的单文件应用，下载后无需解压，也无需相邻文档或启动脚本。macOS 两种架构的 `.app` 与原命名的试发行压缩包保留本地构建，本次不上传。
+本次 Release 提供 Windows/Linux 的标准版与轻量版。标准版是单文件应用，下载后无需解压，也无需相邻文档或启动脚本；轻量版需完整解压并保留包内入口脚本，缺少 .NET 时经用户同意下载安装，见[轻量版帮助](37-lightweight-distribution.md)。macOS 两种架构的 `.app` 与原命名的试发行压缩包保留本地构建，本次不上传。
 
-各目标共用 **`Wonder-0.7.2-source.tar.gz`**，其中包含对应源码、构建与发布材料、公开文档及全部适用的项目与原始第三方许可、版权和通知；运行应用无需下载该源码包。统一校验文件为 **`Wonder-0.7.2-SHA256SUMS`**，按本次实际生成或上传的产物列出 SHA-256。一次发布从同一份源码快照生成所选目标；分发时仍须履行项目与第三方许可的源码和通知义务。
+各目标共用 **`Wonder-0.8.0-source.tar.gz`**，其中包含对应源码、构建与发布材料、公开文档及全部适用的项目与原始第三方许可、版权和通知；运行应用无需下载该源码包。统一校验文件为 **`Wonder-0.8.0-SHA256SUMS`**，按本次实际生成或上传的产物列出 SHA-256。一次发布从同一份源码快照生成所选目标；分发时仍须履行项目与第三方许可的源码和通知义务。
 
-各平台使用本机格式的入口程序和对应 .NET/图形原生库：Windows PE、Linux ELF、macOS Mach-O。应用自带 .NET，不要求 Wine 或运行 Windows EXE；托管业务仍由 .NET 执行，这不是 Native AOT 声明。Linux 当前采用 X11/XWayland，这是 Linux 的显示服务，详见[Linux 安装说明](31-linux-trial.md)。
+各平台使用本机格式的入口程序和对应 .NET/图形原生库：Windows PE、Linux ELF、macOS Mach-O。标准版自带 .NET，轻量版复用或安装用户目录中的 .NET；均不要求 Wine 或运行 Windows EXE。托管业务仍由 .NET 执行，这不是 Native AOT 声明。Linux 当前采用 X11/XWayland，这是 Linux 的显示服务，详见[Linux 安装说明](31-linux-trial.md)。
 
 ## Windows x64 可选最小版
 
@@ -29,7 +31,7 @@
 pwsh -File packaging/Wonder.PublishMinimal.ps1
 ```
 
-生成 `artifacts/Wonder-0.7.2-win-x64-minimal.exe` 和 `artifacts/Wonder-0.7.2-win-x64-minimal.dependencies.json`。运行前在系统安装 **.NET 10 x64 运行时**，再按 JSON 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方托管与原生 DLL 放到最小版 EXE 同目录。.NET 运行时通过系统安装，无需放在 EXE 旁；第三方 DLL 不内置于最小版 EXE，依赖不齐时无法运行。
+生成 `artifacts/Wonder-0.8.0-win-x64-minimal.exe` 和 `artifacts/Wonder-0.8.0-win-x64-minimal.dependencies.json`。运行前在系统安装 **.NET 10 x64 运行时**，再按 JSON 清单将 Avalonia、SkiaSharp、HarfBuzz 等第三方托管与原生 DLL 放到最小版 EXE 同目录。.NET 运行时通过系统安装，无需放在 EXE 旁；第三方 DLL 不内置于最小版 EXE，依赖不齐时无法运行。
 
 也可以让脚本从源码发布结果准备清单所需的第三方 DLL：
 
@@ -46,8 +48,8 @@ pwsh -File packaging/Wonder.PublishMinimal.ps1 -PrepareDependencies
 把完整发行目录解压到当前用户可写的位置。以下以 Apple Silicon 为例：
 
 ```bash
-shasum -a 256 -c Wonder-0.7.2-SHA256SUMS
-tar -xzf Wonder-0.7.2-osx-arm64-preview.tar.gz
+shasum -a 256 -c Wonder-0.8.0-SHA256SUMS
+tar -xzf Wonder-0.8.0-osx-arm64-preview.tar.gz
 cd Wonder-osx-arm64
 ./sign-Wonder-macos.sh
 open "Wonder Launcher.app"
@@ -80,6 +82,6 @@ pwsh -File packaging/Wonder.Publish.ps1
 pwsh -File packaging/Wonder.Publish.ps1 -Runtime osx-arm64
 ```
 
-默认 `all` 在 `artifacts/` 生成 `Wonder-0.7.2-win-x64.exe`、`Wonder-0.7.2-linux-x64`、两个 macOS 架构的本地 `.app` 试发行压缩包、统一源码包和校验文件。Windows/Linux 的发布工作目录分别为 `artifacts/Wonder-win-x64/` 与 `artifacts/Wonder-linux-x64/`；面向用户的应用是 `artifacts/` 根目录内的单文件。单目标发布的校验文件只列出该次应用产物和源码包；本次 Release 仅上传 Windows/Linux 应用、源码包及对应校验清单。macOS 包结构参考 [Avalonia 官方发布说明](https://docs.avaloniaui.net/docs/deployment/macos)，运行时与签名要求见 [.NET macOS 发布说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos)。
+默认 `all` 在 `artifacts/` 生成 `Wonder-0.8.0-win-x64.exe`、`Wonder-0.8.0-linux-x64`、两个 macOS 架构的本地 `.app` 试发行压缩包、统一源码包和校验文件。追加 `-IncludeLightweight` 可从同一份源码快照生成所选 Windows/Linux 目标的轻量包。标准版发布工作目录分别为 `artifacts/Wonder-win-x64/` 与 `artifacts/Wonder-linux-x64/`；面向用户的标准版应用是 `artifacts/` 根目录内的单文件。单目标发布的校验文件只列出该次应用产物和源码包；本次 Release 上传 Windows/Linux 标准版、两种轻量版、源码包及对应校验清单。macOS 包结构参考 [Avalonia 官方发布说明](https://docs.avaloniaui.net/docs/deployment/macos)，运行时与签名要求见 [.NET macOS 发布说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos)。
 
-当前验证环境为 Windows。交叉构建、Mach-O/ELF 架构检查、归档权限和自动化测试不等于 Linux/macOS 实机通过。两端还需验证中文界面、布局保存、同时启动锁、文件选择器、默认浏览器、系统密钥服务、临时实例回收及真实游戏启动。在线认证与 Minecraft AppID 审核状态不因增加平台而改变。
+本次验证环境包括 Windows 与 Ubuntu 24.04 x64 的 WSL2/WSLg。Linux 已执行自动化回归、原生窗口和中文绘制、主题图标与设置/布局重开恢复、实际 Secret Service 的合成账户加密与失败保全验证；部分 WSLg 入口测试使用软件渲染，范围和已观察到的虚拟 GPU 限制见[Linux 验证说明](31-linux-trial.md#本次-linux-验证范围)。交叉构建、架构检查和这些测试不能代替裸机 GPU、其他发行版、文件选择器、默认浏览器、临时实例回收与真实游戏启动验收；macOS 尚未实机验收。真实在线账户未在本次 Linux 验证中使用，Minecraft AppID 审核状态不因增加平台而改变。

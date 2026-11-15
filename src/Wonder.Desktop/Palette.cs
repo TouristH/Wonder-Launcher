@@ -93,6 +93,7 @@ internal static class Palette
         MarkRight.Color = Blend(Background.Color, Accent.Color, light ? .22 : .46);
         MarkCore.Color = Blend(Accent.Color, Color.Parse("#FFFFFF"), light ? .34 : .72);
         MarkTrail.Color = Blend(Accent.Color, Color.Parse("#FFFFFF"), light ? .12 : .42);
+        WonderMark.RefreshWindowIcons();
     }
 
     private static Color Blend(Color background, Color foreground, double amount) => Color.FromRgb(

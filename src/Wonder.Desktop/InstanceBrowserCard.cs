@@ -44,7 +44,7 @@ internal sealed class InstanceBrowserCard : Border
         SelectButton = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
-            Template = new FuncControlTemplate<Button>((_, _) => new Border { Background = Brushes.Transparent, Padding = new Thickness(12, 10, 52, 10), Child = selectionContent })
+            Template = new FuncControlTemplate<Button>((_, _) => new Border { Background = Brushes.Transparent, Padding = new Thickness(12, 10, 72, 10), Child = selectionContent })
         };
         AutomationProperties.SetName(SelectButton, name);
         SelectButton.Click += (_, e) => { e.Handled = true; select(); };

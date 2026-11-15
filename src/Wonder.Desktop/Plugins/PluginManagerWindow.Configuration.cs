@@ -23,6 +23,7 @@ internal sealed partial class PluginManagerWindow
                 WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Palette.Background,
                 Foreground = Palette.Text, FontFamily = FontFamily
             };
+            WonderMark.ApplyIcon(editor);
             var layout = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto"), Margin = new Thickness(22) };
             var heading = new StackPanel { Spacing = 8 };
             heading.Children.Add(Hint("保存后，正在运行的插件会使用新配置重新启用。"));

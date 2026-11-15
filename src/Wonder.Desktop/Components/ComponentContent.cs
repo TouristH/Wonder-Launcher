@@ -45,10 +45,14 @@ internal sealed class ComponentContent(Control control, Action? refresh = null, 
         body.IsHitTestVisible = false;
         var surface = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(16, 12), ClipToBounds = true, Child = body, Transitions = PageStyles.HoverTransitions() };
         PageStyles.EnablePressFeedback(surface);
+        // Keep pointer hits stable while the painted surface shrinks during a press.
+        var hitTarget = new Border { Background = Brushes.Transparent, CornerRadius = surface.CornerRadius, Child = surface };
         var button = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
-            Template = new FuncControlTemplate<Button>((_, _) => surface)
+            // The inner surface owns press feedback; Fluent must not scale the hit target too.
+            RenderTransform = new MatrixTransform(Matrix.Identity),
+            Template = new FuncControlTemplate<Button>((_, _) => hitTarget)
         };
         AutomationProperties.SetName(button, label);
         button.Click += (_, _) => context.Invoke(action);

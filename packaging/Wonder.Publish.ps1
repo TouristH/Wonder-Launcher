@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Additional terms: see ADDITIONAL_TERMS.md in the repository root.
 [CmdletBinding()]
-param([ValidateSet('all', 'linux-x64', 'win-x64', 'osx-x64', 'osx-arm64')][string[]]$Runtime = 'all')
+param([ValidateSet('all', 'linux-x64', 'win-x64', 'osx-x64', 'osx-arm64')][string[]]$Runtime = 'all', [switch]$IncludeLightweight)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.Formats.Tar
@@ -19,7 +19,7 @@ $guides = @('README.md','13-wonder-ui-foundation.md','14-settings-component.md',
     '15-portable-data-and-motion.md','16-component-system.md','18-instance-management-and-launch.md',
     '21-settings-pages-and-instance-cards.md','22-instance-selection-and-directory-actions.md',
     '26-account-management.md','28-login-diagnostics-and-default-skins.md',
-    '30-layered-skins-capes-and-avatars.md','31-linux-trial.md','32-native-cross-platform.md','33-download-center.md','35-plugins.md','36-plugin-development.md')
+    '30-layered-skins-capes-and-avatars.md','31-linux-trial.md','32-native-cross-platform.md','33-download-center.md','35-plugins.md','36-plugin-development.md','37-lightweight-distribution.md')
 
 function Copy-ReleaseDocs([string]$destination) {
     New-Item -ItemType Directory -Path (Join-Path $destination 'Guides') -Force | Out-Null
@@ -51,7 +51,7 @@ try {
     New-Item -ItemType Directory -Path $source -Force | Out-Null
     # An explicit source allowlist includes current local changes and new files, never user data.
     Copy-ReleaseDocs $source
-    foreach ($name in @('Wonder.slnx','Directory.Build.props','.gitignore')) {
+    foreach ($name in @('Wonder.slnx','Directory.Build.props','.gitignore','.gitattributes')) {
         Copy-Item -LiteralPath (Join-Path $root $name) -Destination $source
     }
     foreach ($folder in @('src','packaging')) {
@@ -63,7 +63,7 @@ try {
             $pluginSource = $relative.Replace('\','/') -in @(
                 'src/Wonder.Plugin.PleaseWait/plugin.json','src/Wonder.Plugin.PleaseWait/README.md',
                 'src/Wonder.Desktop/Plugins/index.json')
-            if (!$instanceLogo -and !$brandAsset -and !$pluginSource -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.sh','.plist')) { throw "Review new source file type: $relative" }
+            if (!$instanceLogo -and !$brandAsset -and !$pluginSource -and $item.Extension -notin @('.cs','.csproj','.manifest','.axaml','.props','.targets','.ps1','.cmd','.sh','.plist')) { throw "Review new source file type: $relative" }
             $destination = Join-Path $source $relative
             New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
             Copy-Item -LiteralPath $item.FullName -Destination $destination
@@ -81,6 +81,7 @@ try {
         $publish = if ($macOS) { Join-Path $app 'Wonder Launcher.app/Contents/MacOS' } else { $app }
         New-Item -ItemType Directory -Path $publish -Force | Out-Null
         dotnet publish (Join-Path $source 'src/Wonder.Desktop/Wonder.Desktop.csproj') -c Release -r $targetRuntime --self-contained true `
+            -p:RuntimeFrameworkVersion=10.0.15 `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false `
             -p:DebugType=None -p:DebugSymbols=false -o $publish --nologo
         if ($LASTEXITCODE -ne 0) { throw "Publish failed: $targetRuntime" }
@@ -151,6 +152,16 @@ try {
         }
         Write-Output "Application: $output"
         Write-Output "Download: $archive"
+    }
+    if ($IncludeLightweight) {
+        $lightweightRuntimes = @($runtimes | Where-Object { $_ -in @('win-x64','linux-x64') })
+        if ($lightweightRuntimes.Count -gt 0) {
+            & (Join-Path $source 'packaging/Wonder.PublishLightweight.ps1') -Runtime $lightweightRuntimes -SourceRoot $source -OutputDirectory $artifactRoot
+            foreach ($rid in $lightweightRuntimes) {
+                $extension = if ($rid -eq 'win-x64') { 'zip' } else { 'tar.gz' }
+                $archives += Join-Path $artifactRoot "Wonder-$version-$rid-lightweight.$extension"
+            }
+        }
     }
     $checksums = foreach ($path in $archives) {
         (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + (Split-Path $path -Leaf)

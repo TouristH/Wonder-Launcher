@@ -124,7 +124,8 @@ internal sealed class StartupCometLogo : Canvas
     {
         for (var index = 0; index < _parts.Sparks.Length; index++)
         {
-            var release = FlightMilliseconds * .38 + index * 160;
+            // The mark stores sparks largest first; release them from smallest to largest.
+            var release = FlightMilliseconds * .38 + (_parts.Sparks.Length - 1 - index) * 160;
             var progress = Math.Clamp((elapsed - release) / 720, 0, 1);
             var travel = Smooth(progress);
             var initialTravel = Smooth(release / FlightMilliseconds);

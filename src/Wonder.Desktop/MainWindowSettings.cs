@@ -142,7 +142,7 @@ public sealed partial class MainWindow
         // The window asks for confirmation before replacing an unreadable file.
         // From this point Retry means retry the confirmed write, not reload the bad file.
         _settingsLoadFailed = false;
-        _settings = new LauncherSettings();
+        _settings = new LauncherSettings { LastStartupLogoDate = _settings.LastStartupLogoDate };
         ApplySettings();
         _settingsWindow?.SetValues(_settings);
         SaveSettings();

@@ -9,6 +9,7 @@ namespace Wonder.Workspace;
 public enum LauncherTheme { System, Dark, Light }
 public enum AccentColor { Mint, Blue, Amber, Rose }
 public enum InstanceLayout { Grid, List }
+public enum StartupLogoAnimation { SettledTwinkle = 0, FragmentRelease = 1 }
 
 public sealed record LauncherSettings
 {
@@ -19,6 +20,9 @@ public sealed record LauncherSettings
     [JsonRequired] public int Version { get; init; } = 1;
     [JsonRequired] public LauncherTheme Theme { get; init; } = LauncherTheme.Dark;
     [JsonRequired] public AccentColor Accent { get; init; } = AccentColor.Mint;
+    public bool ShowDailyStartupLogo { get; init; } = true;
+    public StartupLogoAnimation StartupLogoAnimation { get; init; } = StartupLogoAnimation.SettledTwinkle;
+    public DateOnly? LastStartupLogoDate { get; init; }
     [JsonRequired] public int WorkspacePadding { get; init; } = 22;
     public int ComponentScalePercent { get; init; } = 100;
     public bool ShowAreaNumbers { get; init; }
@@ -42,6 +46,8 @@ public sealed record LauncherSettings
             throw new InvalidDataException("设置中的主题或强调色无效。");
         if (!Enum.IsDefined(InstanceLayout))
             throw new InvalidDataException("实例排列方式无效。");
+        if (!Enum.IsDefined(StartupLogoAnimation))
+            throw new InvalidDataException("开场动画样式无效。");
         if (!Enum.IsDefined(DownloadSource) || !Enum.IsDefined(DefaultResourceProvider) || ConcurrentDownloads is < 1 or > 32 ||
             DownloadConnections is < 1 or > 16 || DownloadRetries is < 0 or > 8)
             throw new InvalidDataException("下载源或下载并发参数无效。");

@@ -28,6 +28,9 @@ internal sealed class SettingsWindow : Window
     private readonly Slider _downloadFiles, _downloadConnections, _downloadRetries;
     private readonly ToggleSwitch _showAreaNumbers;
     private readonly ToggleSwitch _snapComponentsToGrid;
+    private readonly ToggleSwitch _showDailyStartupLogo;
+    private readonly ComboBox _startupLogoAnimation;
+    private StartupLogoPreviewWindow? _startupLogoPreview;
     private readonly Slider _padding, _componentScale, _hold, _extent, _closeDelay;
     private readonly TextBlock _status, _error, _resetDescription;
     private readonly Border _errorBanner, _confirmation;
@@ -113,6 +116,21 @@ internal sealed class SettingsWindow : Window
         _accent = Choice("强调色", ["薄荷绿", "晴空蓝", "琥珀金", "蔷薇粉"]);
         _accent.SelectionChanged += (_, _) => Change(_settings with { Accent = (AccentColor)_accent.SelectedIndex });
         appearance.Children.Add(ChoiceRow("强调色", _accent));
+        _showDailyStartupLogo = new ToggleSwitch { OnContent = "开启", OffContent = "关闭" };
+        AutomationProperties.SetName(_showDailyStartupLogo, "每日首次启动显示 Logo");
+        _showDailyStartupLogo.IsCheckedChanged += (_, _) => Change(_settings with { ShowDailyStartupLogo = _showDailyStartupLogo.IsChecked == true });
+        appearance.Children.Add(ChoiceRow("每日首次启动显示 Logo", _showDailyStartupLogo));
+        appearance.Children.Add(PageStyles.Hint("按本机日期，每天第一次打开时在进入桌面前显示当前主题色的 Wonder 标志。"));
+        _startupLogoAnimation = Choice("开场动画样式", ["A · 停稳闪星", "B · 碎星剥落"]);
+        _startupLogoAnimation.SelectionChanged += (_, _) =>
+        {
+            if (_startupLogoAnimation.SelectedIndex >= 0)
+                Change(_settings with { StartupLogoAnimation = (StartupLogoAnimation)_startupLogoAnimation.SelectedIndex });
+        };
+        appearance.Children.Add(ChoiceRow("开场动画样式", _startupLogoAnimation));
+        var compareStartup = PageStyles.Button("对比预览", "对比预览开场动画", OpenStartupLogoPreview);
+        compareStartup.HorizontalAlignment = HorizontalAlignment.Left;
+        appearance.Children.Add(compareStartup);
         _personalizationPage.Children.Add(Card(appearance));
 
         var workspace = Section("工作区", "保留自由布置，让拖动更顺手。");
@@ -199,6 +217,7 @@ internal sealed class SettingsWindow : Window
         layout.Children.Add(_footer);
         Grid.SetRow(_gameFooter, 2); layout.Children.Add(_gameFooter);
         Content = layout;
+        Closed += (_, _) => _startupLogoPreview?.Close();
         SetValues(settings);
         UpdateStatus(null, false);
         SelectCategory(0);
@@ -219,6 +238,9 @@ internal sealed class SettingsWindow : Window
             _settings = settings;
             _theme.SelectedIndex = (int)settings.Theme;
             _accent.SelectedIndex = (int)settings.Accent;
+            _showDailyStartupLogo.IsChecked = settings.ShowDailyStartupLogo;
+            _startupLogoAnimation.SelectedIndex = (int)settings.StartupLogoAnimation;
+            _startupLogoPreview?.SetSelected(settings.StartupLogoAnimation);
             _showAreaNumbers.IsChecked = settings.ShowAreaNumbers;
             _snapComponentsToGrid.IsChecked = settings.SnapComponentsToGrid;
             _padding.Value = settings.WorkspacePadding;
@@ -249,6 +271,24 @@ internal sealed class SettingsWindow : Window
     }
 
     public void ShowLauncherSettings() => SelectCategory(2);
+
+    private void OpenStartupLogoPreview()
+    {
+        if (_startupLogoPreview is not null)
+        {
+            if (_startupLogoPreview.WindowState == WindowState.Minimized) _startupLogoPreview.WindowState = WindowState.Normal;
+            _startupLogoPreview.Activate();
+            return;
+        }
+        var preview = new StartupLogoPreviewWindow(_settings.StartupLogoAnimation, animation =>
+        {
+            Change(_settings with { StartupLogoAnimation = animation });
+            SetValues(_settings);
+        }) { FontFamily = FontFamily };
+        _startupLogoPreview = preview;
+        preview.Closed += (_, _) => { if (ReferenceEquals(_startupLogoPreview, preview)) _startupLogoPreview = null; };
+        preview.Show(this);
+    }
 
     private void AddCurseForgeKeyField(StackPanel downloads, Func<string?, bool> setKey, bool hasKey)
     {
@@ -316,6 +356,7 @@ internal sealed class SettingsWindow : Window
         if (_updating || settings == _settings) return;
         settings.Validate();
         _settings = settings;
+        _startupLogoPreview?.SetSelected(settings.StartupLogoAnimation);
         _change(settings);
     }
 

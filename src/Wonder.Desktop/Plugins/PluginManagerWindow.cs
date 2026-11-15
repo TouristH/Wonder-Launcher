@@ -175,6 +175,10 @@ internal sealed partial class PluginManagerWindow : Window
                 (plugin.Enabled ? "关闭插件 " : "启用插件 ") + plugin.Manifest.Name));
             actions.Children.Add(ActionButton("修改配置", () => UiOperation.Start(() => EditConfigurationAsync(plugin), () => _closed), "修改配置 " + plugin.Manifest.Name));
             actions.Children.Add(ActionButton("打开目录", () => OpenDirectory(plugin.Directory), "打开插件目录 " + plugin.Manifest.Name));
+            var delete = ActionButton("删除", () => UiOperation.Start(() => DeletePluginAsync(plugin), () => _closed),
+                "删除插件 " + plugin.Manifest.Name);
+            delete.Foreground = Palette.Error;
+            actions.Children.Add(delete);
             body.Children.Add(actions);
             if (plugin.Messages.Count > 0)
             {

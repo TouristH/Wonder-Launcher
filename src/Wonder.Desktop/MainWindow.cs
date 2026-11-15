@@ -114,9 +114,9 @@ public sealed partial class MainWindow : Window
                 _workspace.SetRuntimeVisible(IsVisible && WindowState != WindowState.Minimized);
         };
 
-        var layout = new Grid { RowDefinitions = new RowDefinitions("64,*") };
+        var layout = new Grid { RowDefinitions = new RowDefinitions("47,*") };
         var top = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), Background = Palette.Header };
-        var brand = new Button { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(22, 10), HorizontalContentAlignment = HorizontalAlignment.Left };
+        var brand = new Button { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(22, 3), HorizontalContentAlignment = HorizontalAlignment.Left, VerticalContentAlignment = VerticalAlignment.Center };
         var brandContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
         brandContent.Children.Add(WonderMark.Create(30));
         var brandText = new StackPanel { Spacing = 2 };
@@ -190,7 +190,7 @@ public sealed partial class MainWindow : Window
         {
             Content = surface,
             Width = 46,
-            Height = 64,
+            Height = 46,
             Padding = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Stretch,

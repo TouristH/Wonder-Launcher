@@ -40,7 +40,7 @@ internal sealed partial class AccountManagerWindow
                 card = new AccountCard(() => { _viewId = id; Navigate("details"); });
                 _accountCards.Add(id, card);
             }
-            card.Update(account, instance, alternatives, _textureDownload, account.Id == _service.SelectedAccount?.Id,
+            card.Update(account, instance, alternatives, _textureDownload, AccountAvatarLoader.For(_service), account.Id == _service.SelectedAccount?.Id,
                 account.Id == _viewId && _mode == "details", account.ServerUrl is { } url ? ServerName(url) : null);
             children.Add(card.Button);
         }
@@ -65,6 +65,7 @@ internal sealed partial class AccountManagerWindow
         private readonly Border _surface;
         private AccountSkinPreview? _avatar;
         private string? _avatarKey;
+        private string? _avatarRetentionKey;
 
         public AccountCard(Action select)
         {
@@ -82,7 +83,7 @@ internal sealed partial class AccountManagerWindow
         }
 
         public void Update(AccountProfile account, GameInstance? instance, IReadOnlyList<GameInstance>? alternatives, Func<string, CancellationToken, Task<byte[]>>? download,
-            bool current, bool viewed, string? serverName)
+            AccountAvatarLoader.Cache cache, bool current, bool viewed, string? serverName)
         {
             _name.Text = account.Username;
             _kind.Text = AccountService.KindLabel(account.Kind) + (current ? " · 当前使用" : "");
@@ -94,11 +95,15 @@ internal sealed partial class AccountManagerWindow
             var key = AccountAvatarLoader.Key(account, instance, alternatives);
             if (_avatarKey == key) return;
             _avatarKey = key;
+            var retentionKey = AccountAvatarLoader.RetentionKey(account);
+            var retained = _avatarRetentionKey == retentionKey ? _avatar?.Avatar : null;
+            _avatarRetentionKey = retentionKey;
             if (_avatar is not null) { _avatar.Dispose(); _content.Children.Remove(_avatar); }
             var avatar = new AccountSkinPreview(download) { Width = 40, Height = 40, HeadOnly = true, VerticalAlignment = VerticalAlignment.Center };
+            if (retained is not null) avatar.RestoreAvatar(retained);
             _avatar = avatar; _content.Children.Insert(0, avatar);
             avatar.LoadedTexture += () => ToolTip.SetTip(avatar, avatar.Description);
-            UiOperation.Start(() => AccountAvatarLoader.LoadAsync(avatar, account, instance, alternatives));
+            UiOperation.Start(() => AccountAvatarLoader.LoadAsync(avatar, account, instance, alternatives, cache));
         }
 
         public void Dispose() => _avatar?.Dispose();

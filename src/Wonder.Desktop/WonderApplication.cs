@@ -26,7 +26,11 @@ public sealed class WonderApplication : Avalonia.Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            desktop.MainWindow = new MainWindow();
+        {
+            var window = new MainWindow();
+            window.PrepareDailyStartupLogo();
+            desktop.MainWindow = window;
+        }
         base.OnFrameworkInitializationCompleted();
     }
 }

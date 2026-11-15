@@ -22,6 +22,7 @@ internal static class WonderMark
 {
     // Head centre and reach, in the shared 64-unit box.
     private const double HeadX = 43, HeadY = 41, HeadReach = 20.5, CoreReach = 9.8;
+    internal static readonly Point HeadCenter = new(HeadX, HeadY);
 
     // Concavity of the star's sides: 0 is a diamond, 1 collapses to the centre.
     private const double Waist = .20;
@@ -107,17 +108,34 @@ internal static class WonderMark
     public static Control Create(double size)
     {
         var canvas = new Canvas { Width = size, Height = size, IsHitTestVisible = false };
-        canvas.Children.Add(Trail(size));
-        canvas.Children.Add(Star(HeadX, HeadY, HeadReach, Waist, Palette.MarkTop, size));
-        canvas.Children.Add(Star(HeadX, HeadY, CoreReach, Waist, Palette.MarkCore, size));
-        canvas.Children.Add(Star(14, 49, 5.2, .24, Palette.MarkLeft, size));
-        canvas.Children.Add(Star(56, 12, 4.8, .24, Palette.MarkCore, size));
-        canvas.Children.Add(Star(28, 57, 2.8, .24, Palette.MarkRight, size));
+        var parts = CreateParts(size);
+        canvas.Children.Add(parts.Trail);
+        canvas.Children.Add(parts.Head);
+        canvas.Children.Add(parts.Core);
+        foreach (var spark in parts.Sparks) canvas.Children.Add(spark);
         return canvas;
     }
 
+    internal sealed record MarkParts(ShapePath Trail, ShapePath Head, ShapePath Core, ShapePath[] Sparks);
+
+    internal static MarkParts CreateParts(double size) => new(
+        new ShapePath { Data = TrailGeometry(size), Fill = Palette.MarkTrail, IsHitTestVisible = false },
+        Star(HeadX, HeadY, HeadReach, Waist, Palette.MarkTop, size),
+        Star(HeadX, HeadY, CoreReach, Waist, Palette.MarkCore, size),
+        [Star(14, 49, 5.2, .24, Palette.MarkLeft, size),
+         Star(56, 12, 4.8, .24, Palette.MarkCore, size),
+         Star(28, 57, 2.8, .24, Palette.MarkRight, size)]);
+
+    // Parameter zero is beside the head; one is the far, upper-left tip.
+    internal static Point TrailPoint(double t)
+    {
+        var mt = 1 - t;
+        return new Point(mt * mt * 36 + 2 * mt * t * 22 + t * t * 3,
+            mt * mt * 34 + 2 * mt * t * 22 + t * t * 12);
+    }
+
     /// <summary>The tapered comet trail, sampled along a quadratic spine from the head to the tail tip.</summary>
-    private static ShapePath Trail(double size)
+    internal static StreamGeometry TrailGeometry(double size, double reveal = 1)
     {
         // Start at the head, control point in the middle, end at the tail tip.
         (double X, double Y) p0 = (36, 34), c = (22, 22), p1 = (3, 12);
@@ -128,18 +146,17 @@ internal static class WonderMark
         var right = new List<Point>(steps + 1);
         for (var i = 0; i <= steps; i++)
         {
-            var t = i / (double)steps;
+            var t = 1 - reveal + reveal * i / steps;
             var mt = 1 - t;
-            var x = mt * mt * p0.X + 2 * mt * t * c.X + t * t * p1.X;
-            var y = mt * mt * p0.Y + 2 * mt * t * c.Y + t * t * p1.Y;
+            var point = TrailPoint(t);
             var dx = 2 * mt * (c.X - p0.X) + 2 * t * (p1.X - c.X);
             var dy = 2 * mt * (c.Y - p0.Y) + 2 * t * (p1.Y - c.Y);
             var length = Math.Sqrt(dx * dx + dy * dy);
             var nx = -dy / length;
             var ny = dx / length;
             var w = width * Math.Pow(1 - t, taper);
-            left.Add(new Point((x + nx * w) / 64 * size, (y + ny * w) / 64 * size));
-            right.Add(new Point((x - nx * w) / 64 * size, (y - ny * w) / 64 * size));
+            left.Add(new Point((point.X + nx * w) / 64 * size, (point.Y + ny * w) / 64 * size));
+            right.Add(new Point((point.X - nx * w) / 64 * size, (point.Y - ny * w) / 64 * size));
         }
 
         var geometry = new StreamGeometry();
@@ -152,7 +169,7 @@ internal static class WonderMark
             ctx.EndFigure(true);
         }
 
-        return new ShapePath { Data = geometry, Fill = Palette.MarkTrail, IsHitTestVisible = false };
+        return geometry;
     }
 
     /// <summary>A four-pointed star with concave sides, drawn as four quadratic arcs.</summary>

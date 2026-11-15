@@ -40,7 +40,8 @@ internal static class AccountComponents
         identity.Children.Add(avatar); var details = new StackPanel { VerticalAlignment = VerticalAlignment.Center }; details.Children.Add(name); details.Children.Add(detail);
         Grid.SetColumn(details, 2); identity.Children.Add(details); body.Children.Add(identity);
         body.Children.Add(choices);
-        Grid.SetRow(body, 1); layout.Children.Add(body); string? skinKey = null;
+        Grid.SetRow(body, 1); layout.Children.Add(body); string? skinKey = null, retentionKey = null;
+        var avatarCache = AccountAvatarLoader.For(service);
         var button = new Button
         {
             Content = "管理账户", Margin = new Thickness(12, 0, 12, 7), MinWidth = 160, MinHeight = 28, FontSize = 11, Padding = new Thickness(10, 4),
@@ -61,12 +62,16 @@ internal static class AccountComponents
             var key = AccountAvatarLoader.Key(profile, instance, alternatives);
             if (key != skinKey)
             {
+                var nextRetentionKey = AccountAvatarLoader.RetentionKey(profile);
+                var retained = retentionKey == nextRetentionKey ? avatar.Avatar : null;
+                retentionKey = nextRetentionKey;
                 skinKey = key; avatar.Dispose(); identity.Children.Remove(avatar);
                 avatar = new(textureDownload) { Width = avatarSize, Height = avatarSize, HeadOnly = true }; identity.Children.Insert(0, avatar);
+                if (retained is not null) avatar.RestoreAvatar(retained);
                 AutomationProperties.SetName(avatar, "当前账户皮肤头像");
                 var currentAvatar = avatar;
                 currentAvatar.LoadedTexture += () => ToolTip.SetTip(currentAvatar, currentAvatar.Description);
-                if (profile is not null) UiOperation.Start(() => AccountAvatarLoader.LoadAsync(currentAvatar, profile, instance, alternatives));
+                if (profile is not null) UiOperation.Start(() => AccountAvatarLoader.LoadAsync(currentAvatar, profile, instance, alternatives, avatarCache));
                 else ToolTip.SetTip(currentAvatar, context.IsPreview ? "显示当前账户的皮肤头像与头部外层" : "添加并选择账户以显示头像");
             }
             ToolTip.SetTip(name, name.Text); refreshing = true;

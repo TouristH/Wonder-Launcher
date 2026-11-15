@@ -21,6 +21,13 @@ internal sealed class AccountSkinPreview : Control, IDisposable
     private bool _back, _slim, _disposed;
     private int _revision;
     private int _capeRevision;
+    private byte[]? _avatarPng;
+    private int _loadedAvatarRevision = -1;
+    private bool _loadingAvatar;
+    internal sealed record AvatarSnapshot(byte[] Png, string Description);
+    internal AvatarSnapshot? Avatar => !_disposed && HeadOnly && _avatarPng is { } png ? new(png, Description) : null;
+    internal AvatarSnapshot? LoadedAvatar => _loadedAvatarRevision == _revision ? Avatar : null;
+    internal int TextureRevision => _revision;
     public string Description { get; private set; } = "默认角色示意";
     public event Action? LoadedTexture;
     public AccountSkinPreview(Func<string, CancellationToken, Task<byte[]>>? download = null)
@@ -33,18 +40,30 @@ internal sealed class AccountSkinPreview : Control, IDisposable
     public bool HeadOnly { get; init; }
     public bool CapeOnly { get; init; }
     public bool Slim { get => _slim; set { _slim = value; InvalidateVisual(); } }
+    internal void RestoreAvatar(AvatarSnapshot snapshot)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!HeadOnly) return;
+        var bitmap = Decode(snapshot.Png, cape: false, allowHighDefinition: true);
+        _skin?.Dispose(); _skin = bitmap; _avatarPng = snapshot.Png;
+        Description = snapshot.Description; InvalidateVisual();
+    }
     public void SetLocal(byte[] png)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var bitmap = Decode(png, cape: false);
-        _revision++; _skin?.Dispose(); _skin = bitmap; Description = "待上传皮肤 · 仅本地预览"; InvalidateVisual();
+        _revision++; _skin?.Dispose(); _skin = bitmap;
+        if (HeadOnly) { _avatarPng = png; _loadedAvatarRevision = _revision; _loadingAvatar = false; }
+        Description = "待上传皮肤 · 仅本地预览"; InvalidateVisual();
     }
-    public async Task LoadAsync(AccountProfile profile)
+    public async Task LoadAsync(AccountProfile profile, bool retainAvatar = false)
     {
         if (_disposed) return;
         var revision = ++_revision;
         var capeRevision = ++_capeRevision;
-        ClearTextures();
+        if (!HeadOnly || !retainAvatar) ClearTextures();
+        _loadedAvatarRevision = -1;
+        _loadingAvatar = HeadOnly && profile.SkinUrl is not null;
         Slim = profile.SkinVariant == "slim";
         var selectedCape = profile.Capes.FirstOrDefault(x => x.Id == profile.ActiveCapeId);
         Description = CapeOnly && selectedCape is null ? "未选择披风" : "正在读取角色外观…";
@@ -53,6 +72,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         // Independent downloads let a valid selected cape remain visible when its skin is unavailable.
         await Task.WhenAll(LoadTexture(profile.SkinUrl, cape: false), LoadTexture(selectedCape?.Url, cape: true));
         if (_disposed || revision != _revision) return;
+        _loadingAvatar = false;
         var retryHint = profile.Kind == AccountKind.Yggdrasil ? " · 可刷新账户或检查纹理来源许可" : " · 可刷新账户重试";
         Description = CapeOnly
             ? selectedCape is null ? "未选择披风" : capeFailed ? "披风暂不可用" + retryHint : selectedCape.Name + " · 已选披风"
@@ -71,7 +91,11 @@ internal sealed class AccountSkinPreview : Control, IDisposable
                 if (_disposed || (cape ? capeRevision != _capeRevision : revision != _revision)) return;
                 var bitmap = Decode(bytes, cape, allowHighDefinition: profile.Kind == AccountKind.Yggdrasil);
                 if (cape) { _cape?.Dispose(); _cape = bitmap; }
-                else { _skin?.Dispose(); _skin = bitmap; }
+                else
+                {
+                    _skin?.Dispose(); _skin = bitmap;
+                    if (HeadOnly) { _avatarPng = bytes; _loadedAvatarRevision = revision; }
+                }
                 InvalidateVisual();
             }
             catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -83,7 +107,8 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         }
     }
     public async Task LoadDefaultAsync(GameInstance? instance, string textureName, string variant, bool legacy,
-        IReadOnlyList<GameInstance>? alternatives = null, Func<string, string, CancellationToken, Task<byte[]?>>? readOfficial = null)
+        IReadOnlyList<GameInstance>? alternatives = null, Func<string, string, CancellationToken, Task<byte[]?>>? readOfficial = null,
+        bool retainAvatar = false)
     {
         if (_disposed) return;
         _defaultLoad?.Cancel();
@@ -91,7 +116,8 @@ internal sealed class AccountSkinPreview : Control, IDisposable
         _defaultLoad = load;
         var revision = ++_revision;
         _capeRevision++;
-        ClearTextures(); Slim = variant == "slim";
+        if (!HeadOnly || !retainAvatar) ClearTextures();
+        _loadedAvatarRevision = -1; _loadingAvatar = HeadOnly; Slim = variant == "slim";
         Description = textureName + " · 正在读取默认纹理…"; InvalidateVisual(); LoadedTexture?.Invoke();
         try
         {
@@ -99,7 +125,9 @@ internal sealed class AccountSkinPreview : Control, IDisposable
             if (_disposed || revision != _revision) return;
             if (local is { } match)
             {
-                _skin = Decode(match.Bytes, cape: false);
+                var bitmap = Decode(match.Bytes, cape: false);
+                _skin?.Dispose(); _skin = bitmap;
+                if (HeadOnly) { _avatarPng = match.Bytes; _loadedAvatarRevision = revision; }
                 Description = textureName + (match.SelectedInstance ? " · 来自所选实例" : " · 来自其他已登记实例");
             }
             else
@@ -109,20 +137,22 @@ internal sealed class AccountSkinPreview : Control, IDisposable
                 if (_disposed || revision != _revision) return;
                 if (png is not null)
                 {
-                    _skin = Decode(png, cape: false);
+                    var bitmap = Decode(png, cape: false);
+                    _skin?.Dispose(); _skin = bitmap;
+                    if (HeadOnly) { _avatarPng = png; _loadedAvatarRevision = revision; }
                     Description = textureName + (legacy ? " · Minecraft 26.3 同名纹理参考" : " · 来自 Minecraft 官方默认纹理");
                 }
-                else Description = textureName + " · 纹理未安装，显示模型示意";
+                else Description = textureName + (HeadOnly && _skin is not null ? " · 纹理未安装，保留上次头像" : " · 纹理未安装，显示模型示意");
             }
         }
         catch (OperationCanceledException) when (load.IsCancellationRequested) { }
         catch (Exception error)
         {
             LauncherDiagnostics.Warn("LoadDefaultSkin", error);
-            if (!_disposed && revision == _revision) Description = textureName + " · 纹理不可用，显示模型示意";
+            if (!_disposed && revision == _revision) Description = textureName + (HeadOnly && _skin is not null ? " · 纹理不可用，保留上次头像" : " · 纹理不可用，显示模型示意");
         }
         finally { if (ReferenceEquals(_defaultLoad, load)) _defaultLoad = null; }
-        if (!_disposed && revision == _revision) { InvalidateVisual(); LoadedTexture?.Invoke(); }
+        if (!_disposed && revision == _revision) { _loadingAvatar = false; InvalidateVisual(); LoadedTexture?.Invoke(); }
     }
     private static Bitmap Decode(byte[] png, bool cape, bool allowHighDefinition = false)
     {
@@ -147,6 +177,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
     private void ClearTextures()
     {
         _skin?.Dispose(); _skin = null; _cape?.Dispose(); _cape = null;
+        _avatarPng = null; _loadedAvatarRevision = -1;
     }
 
     public override void Render(DrawingContext context)
@@ -170,7 +201,7 @@ internal sealed class AccountSkinPreview : Control, IDisposable
                 DrawTexture(context, _skin, new Rect(_back ? 24 : 8, 8, 8, 8), rect.Deflate(size / 18));
                 DrawTexture(context, _skin, new Rect(_back ? 56 : 40, 8, 8, 8), rect);
             }
-            else
+            else if (!_loadingAvatar)
             {
                 context.DrawRectangle(Palette.Sunken, null, rect);
                 var unit = size / 8;

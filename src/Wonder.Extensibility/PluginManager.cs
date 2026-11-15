@@ -31,6 +31,7 @@ public sealed partial class PluginManager : IDisposable
     private readonly Dictionary<string, LocalPlugin> _installed = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RunningPlugin> _running = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _failures = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _failedStops = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ActivityLog> _logs = new(StringComparer.Ordinal);
     private HashSet<string> _enabled = new(StringComparer.Ordinal);
     private Dictionary<string, string> _consents = new(StringComparer.Ordinal);
@@ -295,7 +296,7 @@ public sealed partial class PluginManager : IDisposable
         }
         catch (Exception error)
         {
-            Release(plugin, loader, context);
+            if (Release(plugin, loader, context) is not null) _failedStops.Add(id);
             _failures[id] = "启用插件失败：" + (error is TargetInvocationException { InnerException: { } inner }
                 ? inner.Message : error.Message);
             return false;
@@ -306,7 +307,10 @@ public sealed partial class PluginManager : IDisposable
     {
         _failures.Remove(id);
         if (_running.Remove(id, out var running) && Release(running.Instance, running.Loader, running.Context) is { } error)
+        {
+            _failedStops.Add(id);
             _failures[id] = "停用插件失败：" + error.Message;
+        }
     }
 
     private static Exception? Release(IWonderPlugin? plugin, PluginLoadContext? loader, PluginContext? context)
